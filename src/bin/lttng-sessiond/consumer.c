@@ -995,7 +995,10 @@ int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 	msg.u.relayd_sock.net_index = consumer->net_seq_index;
 	msg.u.relayd_sock.type = type;
 	msg.u.relayd_sock.session_id = session_id;
-	memcpy(&msg.u.relayd_sock.sock, rsock, sizeof(msg.u.relayd_sock.sock));
+	ret = lttcomm_relayd_sock_serialize(rsock, &msg.u.relayd_sock.sock);
+	if (ret) {
+		goto error;
+	}
 
 	DBG3("Sending relayd sock info to consumer on %d", *consumer_sock->fd_ptr);
 	ret = consumer_send_msg(consumer_sock, &msg);

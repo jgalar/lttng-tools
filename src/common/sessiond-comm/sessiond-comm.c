@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
+#include <endian.h>
 
 #include <common/common.h>
 
@@ -74,6 +75,191 @@ static const char *lttcomm_readable_code[] = {
 };
 
 static unsigned long network_timeout;
+
+LTTNG_HIDDEN
+int sockaddr_in_serialize(const struct sockaddr_in *src,
+		struct sockaddr_in_serialized *dst)
+{
+	assert(src && dst);
+	dst->sin_family = htobe32((uint32_t) src->sin_family);
+	dst->sin_port = htobe16((uint16_t) src->sin_port);
+	dst->sin_addr.s_addr = htobe32(src->sin_addr.s_addr);
+	return 0;
+}
+
+LTTNG_HIDDEN
+int sockaddr_in_deserialize(const struct sockaddr_in_serialized *src,
+		struct sockaddr_in *dst)
+{
+	assert(src && dst);
+	dst->sin_family = (sa_family_t) be32toh(src->sin_family);
+	dst->sin_port = (in_port_t) be16toh(src->sin_port);
+	dst->sin_addr.s_addr = be32toh(src->sin_addr.s_addr);
+	return 0;
+}
+
+LTTNG_HIDDEN
+int sockaddr_in6_serialize(const struct sockaddr_in6 *src,
+		struct sockaddr_in6_serialized *dst)
+{
+	assert(src && dst);
+
+	dst->sin6_family = htobe32((uint32_t) src->sin6_family);
+	dst->sin6_port = htobe16((uint16_t) src->sin6_port);
+	dst->sin6_flowinfo = htobe32(src->sin6_flowinfo);
+	memcpy(&dst->sin6_addr._s6_addr, src->sin6_addr.s6_addr,
+			sizeof(dst->sin6_addr._s6_addr));
+	dst->sin6_scope_id = htobe32(src->sin6_scope_id);
+	return 0;
+}
+
+LTTNG_HIDDEN
+int sockaddr_in6_deserialize(const struct sockaddr_in6_serialized *src,
+		struct sockaddr_in6 *dst)
+{
+	assert(src && dst);
+
+	dst->sin6_family = (sa_family_t) be32toh(src->sin6_family);
+	dst->sin6_port = (in_port_t) be16toh(src->sin6_port);
+	dst->sin6_flowinfo = be32toh(src->sin6_flowinfo);
+	memcpy(&dst->sin6_addr.s6_addr, src->sin6_addr._s6_addr,
+	       sizeof(dst->sin6_addr.s6_addr));
+	dst->sin6_scope_id = be32toh(src->sin6_scope_id);
+	return 0;
+}
+
+LTTNG_HIDDEN
+int lttcomm_sockaddr_serialize(const struct lttcomm_sockaddr *src,
+		struct lttcomm_sockaddr_serialized *dst)
+{
+	int ret = 0;
+
+	assert(src && dst);
+
+	dst->type = (int32_t) htobe32((uint32_t) src->type);
+
+	switch (src->type) {
+	case LTTCOMM_INET:
+	{
+		sockaddr_in_serialize(&src->addr.sin,
+				&dst->addr.sin);
+		break;
+	}
+	case LTTCOMM_INET6:
+	{
+		sockaddr_in6_serialize(&src->addr.sin6,
+				&dst->addr.sin6);
+		break;
+	}
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttcomm_sockaddr_deserialize(const struct lttcomm_sockaddr_serialized *src,
+		struct lttcomm_sockaddr *dst)
+{
+	int ret = 0;
+
+	assert(src && dst);
+
+	dst->type = (enum lttcomm_sock_domain) be32toh(src->type);
+
+	switch (dst->type) {
+	case LTTCOMM_INET:
+	{
+		sockaddr_in_deserialize(&src->addr.sin,
+				&dst->addr.sin);
+		break;
+	}
+	case LTTCOMM_INET6:
+	{
+		sockaddr_in6_deserialize(&src->addr.sin6,
+				&dst->addr.sin6);
+		break;
+	}
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttcomm_sock_serialize(const struct lttcomm_sock *src,
+		struct lttcomm_sock_serialized *dst)
+{
+	int ret;
+
+	assert(src && dst);
+
+	dst->fd = (int32_t) htobe32(src->fd);
+	if (src->proto != LTTCOMM_SOCK_UDP &&
+		src->proto != LTTCOMM_SOCK_TCP) {
+		/* Code flow error. */
+		assert(0);
+	}
+	dst->proto = (int32_t) htobe32((uint32_t) src->proto);
+	ret = lttcomm_sockaddr_serialize(&src->sockaddr, &dst->sockaddr);
+
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttcomm_sock_deserialize(const struct lttcomm_sock_serialized *src,
+		struct lttcomm_sock *dst)
+{
+	int ret;
+
+	assert(src && dst);
+
+	dst->fd = be32toh((uint32_t) src->fd);
+	dst->proto = (enum lttcomm_sock_proto) be32toh(src->proto);
+	if (dst->proto != LTTCOMM_SOCK_UDP &&
+		dst->proto != LTTCOMM_SOCK_TCP) {
+		ret = -EINVAL;
+		goto end;
+	}
+	dst->ops = NULL;
+	ret = lttcomm_sockaddr_deserialize(&src->sockaddr, &dst->sockaddr);
+
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttcomm_relayd_sock_serialize(const struct lttcomm_relayd_sock *src,
+		struct lttcomm_relayd_sock_serialized *dst)
+{
+	int ret;
+
+	assert(src && dst);
+	dst->major = htobe32(src->major);
+	dst->minor = htobe32(src->minor);
+	ret = lttcomm_sock_serialize(&src->sock, &dst->sock);
+
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttcomm_relayd_sock_deserialize(
+		const struct lttcomm_relayd_sock_serialized *src,
+		struct lttcomm_relayd_sock *dst)
+{
+	int ret;
+
+	assert(src && dst);
+	dst->major = be32toh(src->major);
+	dst->minor = be32toh(src->minor);
+	ret = lttcomm_sock_deserialize(&src->sock, &dst->sock);
+
+	return ret;
+}
 
 /*
  * Return ptr to string representing a human readable error code from the

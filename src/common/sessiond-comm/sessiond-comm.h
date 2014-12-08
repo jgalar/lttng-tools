@@ -2,16 +2,17 @@
  * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
  *                      Julien Desfossez <julien.desfossez@polymtl.ca>
  *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ *                      Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 only,
  * as published by the Free Software Foundation.
- * 
+ *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License along
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
@@ -177,30 +178,136 @@ struct lttcomm_metadata_request_msg {
 	uint64_t key; /* Metadata channel key. */
 } LTTNG_PACKED;
 
+/* For internal use only */
 struct lttcomm_sockaddr {
 	enum lttcomm_sock_domain type;
 	union {
 		struct sockaddr_in sin;
 		struct sockaddr_in6 sin6;
 	} addr;
+};
+
+/*
+ * Serialized version of the sockaddr_in system structure (may only be used
+ * for communication).
+ * Fields are fixed-size, big endian and packed.
+ */
+struct sockaddr_in_serialized {
+	uint32_t sin_family;
+	uint16_t sin_port;
+	struct in_addr_serialized {
+		uint32_t s_addr;
+	} LTTNG_PACKED sin_addr;
 } LTTNG_PACKED;
 
+extern
+int sockaddr_in_serialize(const struct sockaddr_in *src,
+		struct sockaddr_in_serialized *dst);
+extern
+int sockaddr_in_deserialize(const struct sockaddr_in_serialized *src,
+		struct sockaddr_in *dst);
+
+/*
+ * Serialized version of the sockaddr_in6 system structure (may only be used
+ * for communication).
+ * Fields are fixed-size, big endian and packed.
+ */
+struct sockaddr_in6_serialized {
+	uint32_t sin6_family;
+	uint16_t sin6_port;
+	uint32_t sin6_flowinfo;
+	struct in6_addr_serialized {
+		/* 
+		 * Prefixing with "_" since s6_addr is a "DEFINE"
+		 * which clashes with this.
+		 */
+		uint8_t _s6_addr[16];
+	} LTTNG_PACKED sin6_addr;
+	uint32_t sin6_scope_id;
+} LTTNG_PACKED;
+
+extern
+int sockaddr_in6_serialize(const struct sockaddr_in6 *src,
+		struct sockaddr_in6_serialized *dst);
+extern
+int sockaddr_in6_deserialize(const struct sockaddr_in6_serialized *src,
+		struct sockaddr_in6 *dst);
+
+/*
+ * Serialized version of struct lttcomm_sockaddr (may be used for
+ * communication only).
+ * The struct and its members are packed and its fields are fixed-size, big
+ * endian.
+ */
+struct lttcomm_sockaddr_serialized {
+	int32_t type; /* Maps to enum lttcomm_sock_domain */
+	union {
+		struct sockaddr_in_serialized sin;
+		struct sockaddr_in6_serialized sin6;
+	} addr;
+} LTTNG_PACKED;
+
+extern
+int sockaddr_in6_serialize(const struct sockaddr_in6 *src,
+		struct sockaddr_in6_serialized *dst);
+extern
+int sockaddr_in6_deserialize(const struct sockaddr_in6_serialized *src,
+		struct sockaddr_in6 *dst);
+
+/* For internal use only */
 struct lttcomm_sock {
 	int32_t fd;
 	enum lttcomm_sock_proto proto;
 	struct lttcomm_sockaddr sockaddr;
 	const struct lttcomm_proto_ops *ops;
+};
+
+/*
+ * Serialized version of struct lttcomm_sock (may be used for
+ * communication only).
+ * Fields are fixed-size, big endian. Structure is packed.
+ */
+struct lttcomm_sock_serialized {
+	int32_t fd;
+	int32_t proto; /* Maps to enum lttcomm_sock_proto */
+	struct lttcomm_sockaddr_serialized sockaddr;
 } LTTNG_PACKED;
+
+extern
+int lttcomm_sock_serialize(const struct lttcomm_sock *src,
+		struct lttcomm_sock_serialized *dst);
+extern
+int lttcomm_sock_deserialize(const struct lttcomm_sock_serialized *src,
+		struct lttcomm_sock *dst);
 
 /*
  * Relayd sock. Adds the protocol version to use for the communications with
- * the relayd.
+ * the relayd. Internal use only.
  */
 struct lttcomm_relayd_sock {
 	struct lttcomm_sock sock;
 	uint32_t major;
 	uint32_t minor;
+};
+
+/*
+ * Serialized version of struct lttcomm_relayd_sock (may be used for
+ * communications only).
+ * Fields are fixed-size, big endian. Structure is packed.
+ */
+struct lttcomm_relayd_sock_serialized {
+	struct lttcomm_sock_serialized sock;
+	uint32_t major;
+	uint32_t minor;
 } LTTNG_PACKED;
+
+extern
+int lttcomm_relayd_sock_serialize(const struct lttcomm_relayd_sock *src,
+		struct lttcomm_relayd_sock_serialized *dst);
+extern
+int lttcomm_relayd_sock_deserialize(
+		const struct lttcomm_relayd_sock_serialized *src,
+		struct lttcomm_relayd_sock *dst);
 
 struct lttcomm_net_family {
 	int family;
@@ -382,7 +489,7 @@ struct lttcomm_consumer_msg {
 			uint64_t net_index;
 			enum lttng_stream_type type;
 			/* Open socket to the relayd */
-			struct lttcomm_relayd_sock sock;
+			struct lttcomm_relayd_sock_serialized sock;
 			/* Tracing session id associated to the relayd. */
 			uint64_t session_id;
 			/* Relayd session id, only used with control socket. */
@@ -400,7 +507,7 @@ struct lttcomm_consumer_msg {
 			int32_t overwrite;			/* 1: overwrite, 0: discard */
 			uint32_t switch_timer_interval;		/* usec */
 			uint32_t read_timer_interval;		/* usec */
-			unsigned int live_timer_interval;		/* usec */
+		        uint64_t live_timer_interval;		/* usec */
 			int32_t output;				/* splice, mmap */
 			int32_t type;				/* metadata or per_cpu */
 			uint64_t session_id;			/* Tracing session id */

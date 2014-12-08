@@ -1129,10 +1129,19 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	switch (msg.cmd_type) {
 	case LTTNG_CONSUMER_ADD_RELAYD_SOCKET:
 	{
+		struct lttcomm_relayd_sock relayd_sock;
+
+		ret = lttcomm_relayd_sock_deserialize(&msg.u.relayd_sock.sock,
+				&relayd_sock);
+		if (ret) {
+			/* Received an invalid relayd_sock. */
+			goto error_fatal;
+		}
+
 		/* Session daemon status message are handled in the following call. */
 		ret = consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
 				msg.u.relayd_sock.type, ctx, sock, consumer_sockpoll,
-				&msg.u.relayd_sock.sock, msg.u.relayd_sock.session_id,
+				&relayd_sock, msg.u.relayd_sock.session_id,
 				msg.u.relayd_sock.relayd_session_id);
 		goto end_nosignal;
 	}
