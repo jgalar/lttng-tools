@@ -393,6 +393,7 @@ int cmd_enable_channels(int argc, const char **argv)
 	static poptContext pc;
 	char *session_name = NULL;
 	char *opt_arg = NULL;
+	char *path;
 
 	init_channel_config();
 
@@ -607,6 +608,9 @@ int cmd_enable_channels(int argc, const char **argv)
 	if (!opt_session_name) {
 		session_name = get_session_name();
 		if (session_name == NULL) {
+			path = utils_get_home_dir();
+			ERR("Can't find valid lttng config %s/.lttngrc", path);
+			MSG("Did you create a session? (lttng create <my_session>)");
 			command_ret = CMD_ERROR;
 			success = 0;
 			goto mi_closing;

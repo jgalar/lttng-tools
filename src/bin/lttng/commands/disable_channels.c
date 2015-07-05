@@ -27,6 +27,7 @@
 #include <assert.h>
 
 #include <common/mi-lttng.h>
+#include <common/utils.h>
 
 #include "../command.h"
 
@@ -239,6 +240,7 @@ int cmd_disable_channels(int argc, const char **argv)
 	int opt, ret = CMD_SUCCESS, command_ret = CMD_SUCCESS, success = 1;
 	static poptContext pc;
 	char *session_name = NULL;
+	char *path;
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 0);
 	poptReadDefaultConfig(pc, 0);
@@ -272,6 +274,9 @@ int cmd_disable_channels(int argc, const char **argv)
 	if (!opt_session_name) {
 		session_name = get_session_name();
 		if (session_name == NULL) {
+			path = utils_get_home_dir();
+			ERR("Can't find valid lttng config %s/.lttngrc", path);
+			MSG("Did you create a session? (lttng create <my_session>)");
 			ret = CMD_ERROR;
 			goto end;
 		}

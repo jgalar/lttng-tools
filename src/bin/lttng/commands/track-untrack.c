@@ -30,6 +30,7 @@
 #include <urcu/list.h>
 
 #include <common/mi-lttng.h>
+#include <common/utils.h>
 
 #include "../command.h"
 
@@ -305,6 +306,7 @@ int cmd_track_untrack(enum cmd_type cmd_type, const char *cmd_str,
 	static poptContext pc;
 	char *session_name = NULL;
 	struct mi_writer *writer = NULL;
+	char *path;
 
 	if (argc < 1) {
 		usage(stderr, cmd_str);
@@ -344,6 +346,9 @@ int cmd_track_untrack(enum cmd_type cmd_type, const char *cmd_str,
 	if (!opt_session_name) {
 		session_name = get_session_name();
 		if (session_name == NULL) {
+			path = utils_get_home_dir();
+			ERR("Can't find valid lttng config %s/.lttngrc", path);
+			MSG("Did you create a session? (lttng create <my_session>)");
 			ret = CMD_ERROR;
 			goto end;
 		}

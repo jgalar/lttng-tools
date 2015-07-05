@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2011 - David Goulet <david.goulet@polymtl.ca>
  *
@@ -29,6 +30,7 @@
 
 #include <common/mi-lttng.h>
 #include <common/sessiond-comm/sessiond-comm.h>
+#include <common/utils.h>
 
 static char *opt_session_name;
 static int opt_destroy_all;
@@ -75,6 +77,7 @@ static void usage(FILE *ofp)
 static int destroy_session(struct lttng_session *session)
 {
 	int ret;
+	char *session_name = NULL;
 
 	ret = lttng_destroy_session(session->name);
 	if (ret < 0) {
@@ -90,7 +93,13 @@ static int destroy_session(struct lttng_session *session)
 	}
 
 	MSG("Session %s destroyed", session->name);
-	config_destroy_default();
+
+	session_name = get_session_name();
+	if (session_name && strncmp(session->name, session_name, NAME_MAX) == 0) {
+		config_destroy_default();
+	}
+	free(session_name);
+
 
 	if (lttng_opt_mi) {
 		ret = mi_lttng_session(writer, session, 0);
@@ -144,6 +153,7 @@ int cmd_destroy(int argc, const char **argv)
 	struct lttng_session *sessions;
 	int count;
 	int found;
+	char *path;
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 0);
 	poptReadDefaultConfig(pc, 0);
@@ -217,6 +227,9 @@ int cmd_destroy(int argc, const char **argv)
 			/* No session name specified, lookup default */
 			session_name = get_session_name();
 			if (session_name == NULL) {
+				path = utils_get_home_dir();
+				ERR("Can't find valid lttng config %s/.lttngrc", path);
+				MSG("Did you create a session? (lttng create <my_session>)");
 				command_ret = CMD_ERROR;
 				success = 0;
 				goto mi_closing;

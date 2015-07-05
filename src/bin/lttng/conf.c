@@ -199,8 +199,6 @@ char *config_read_session_name(char *path)
 
 	fp = open_config(path, "r");
 	if (fp == NULL) {
-		ERR("Can't find valid lttng config %s/.lttngrc", path);
-		MSG("Did you create a session? (lttng create <my_session>)");
 		free(session_name);
 		goto error;
 	}

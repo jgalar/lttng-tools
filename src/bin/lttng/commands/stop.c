@@ -28,6 +28,7 @@
 
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/mi-lttng.h>
+#include <common/utils.h>
 
 #include "../command.h"
 
@@ -107,10 +108,14 @@ static int stop_tracing(void)
 {
 	int ret;
 	char *session_name;
+	char *path;
 
 	if (opt_session_name == NULL) {
 		session_name = get_session_name();
 		if (session_name == NULL) {
+			path = utils_get_home_dir();
+			ERR("Can't find valid lttng config %s/.lttngrc", path);
+			MSG("Did you create a session? (lttng create <my_session>)");
 			ret = CMD_ERROR;
 			goto error;
 		}

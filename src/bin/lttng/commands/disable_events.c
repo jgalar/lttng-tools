@@ -27,7 +27,7 @@
 #include <assert.h>
 
 #include <common/mi-lttng.h>
-
+#include <common/utils.h>
 #include "../command.h"
 
 static char *opt_event_list;
@@ -338,6 +338,7 @@ int cmd_disable_events(int argc, const char **argv)
 	static poptContext pc;
 	char *session_name = NULL;
 	int event_type = -1;
+	char *path;
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 0);
 	poptReadDefaultConfig(pc, 0);
@@ -388,6 +389,9 @@ int cmd_disable_events(int argc, const char **argv)
 	if (!opt_session_name) {
 		session_name = get_session_name();
 		if (session_name == NULL) {
+			path = utils_get_home_dir();
+			ERR("Can't find valid lttng config %s/.lttngrc", path);
+			MSG("Did you create a session? (lttng create <my_session>)");
 			ret = CMD_ERROR;
 			goto end;
 		}

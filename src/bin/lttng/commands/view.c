@@ -27,6 +27,7 @@
 
 #include "../command.h"
 #include <config.h>
+#include <common/utils.h>
 
 static char *opt_session_name;
 static char *opt_viewer;
@@ -328,6 +329,7 @@ static int view_trace(void)
 	int ret;
 	char *session_name, *trace_path = NULL;
 	struct lttng_session *sessions = NULL;
+	char *path;
 
 	/*
 	 * Safety net. If lttng is suid at some point for *any* useless reasons,
@@ -351,6 +353,9 @@ static int view_trace(void)
 	} else if(opt_session_name == NULL) {
 		session_name = get_session_name();
 		if (session_name == NULL) {
+			path = utils_get_home_dir();
+			ERR("Can't find valid lttng config %s/.lttngrc", path);
+			MSG("Did you create a session? (lttng create <my_session>)");
 			ret = CMD_ERROR;
 			goto error;
 		}
