@@ -1715,11 +1715,11 @@ error:
 }
 
 /*
- * Lookup sesison wrapper.
+ * Lookup session wrapper.
  */
 static
 void __lookup_session_by_app(struct ltt_ust_session *usess,
-			struct ust_app *app, struct lttng_ht_iter *iter)
+		struct ust_app *app, struct lttng_ht_iter *iter)
 {
 	/* Get right UST app session from app */
 	lttng_ht_lookup(app->sessions, &usess->id, iter);
