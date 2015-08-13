@@ -1048,6 +1048,8 @@ error:
  * event loglevel.
  *
  * Return an ust_app_event object or NULL on error.
+ *
+ * Must be called with RCU read-side lock held.
  */
 static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
 		char *name, struct lttng_ust_filter_bytecode *filter, int loglevel,
@@ -1523,6 +1525,7 @@ static void shadow_copy_event(struct ust_app_event *ua_event,
 
 /*
  * Copy data between an UST app channel and a LTT channel.
+ * Must be called with RCU read-side lock held.
  */
 static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 		struct ltt_ust_channel *uchan)
@@ -1588,6 +1591,7 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 
 /*
  * Copy data between a UST app session and a regular LTT session.
+ * Must be called with RCU read-side lock held.
  */
 static void shadow_copy_session(struct ust_app_session *ua_sess,
 		struct ltt_ust_session *usess, struct ust_app *app)
@@ -1887,6 +1891,8 @@ error:
  *
  * Returns 0 on success or else a negative code which is either -ENOMEM or
  * -ENOTCONN which is the default code if the ustctl_create_session fails.
+ *
+ * Must be called with RCU read-side lock held.
  */
 static int create_ust_app_session(struct ltt_ust_session *usess,
 		struct ust_app *app, struct ust_app_session **ua_sess_ptr,
@@ -2816,6 +2822,7 @@ error_alloc:
  * Create UST app event and create it on the tracer side.
  *
  * Called with ust app session mutex held.
+ * Must be called with RCU read-side lock held.
  */
 static
 int create_ust_app_event(struct ust_app_session *ua_sess,
@@ -4365,6 +4372,9 @@ int ust_app_destroy_trace_all(struct ltt_ust_session *usess)
 	return 0;
 }
 
+/*
+ * Must be called with RCU read-side lock held.
+ */
 static
 void ust_app_global_create(struct ltt_ust_session *usess, struct ust_app *app)
 {
