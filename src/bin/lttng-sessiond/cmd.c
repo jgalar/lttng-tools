@@ -1321,7 +1321,9 @@ int cmd_add_context(struct ltt_session *session, int domain,
 
 		assert(usess);
 
+		rcu_read_lock();
 		chan_count = lttng_ht_get_count(usess->domain_global.channels);
+		rcu_read_unlock();
 		if (chan_count == 0) {
 			struct lttng_channel *attr;
 			/* Create default channel */
