@@ -1582,6 +1582,15 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
+		if (!len) {
+			/*
+			 * There is nothing to receive. We have simply
+			 * checked whether the channel can be found.
+			 */
+			ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+			goto end_msg_sessiond;
+		}
+
 		/* Tell session daemon we are ready to receive the metadata. */
 		ret = consumer_send_status_msg(sock, LTTCOMM_CONSUMERD_SUCCESS);
 		if (ret < 0) {

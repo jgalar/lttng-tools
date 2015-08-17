@@ -509,7 +509,7 @@ int ust_consumer_metadata_request(struct consumer_socket *socket)
 	assert(ust_reg);
 
 	pthread_mutex_lock(&ust_reg->lock);
-	ret_push = ust_app_push_metadata(ust_reg, socket, 1);
+	ret_push = ust_app_push_metadata(ust_reg, socket, 1, 0);
 	pthread_mutex_unlock(&ust_reg->lock);
 	if (ret_push == -EPIPE) {
 		DBG("Application or relay closed while pushing metadata");

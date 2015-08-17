@@ -436,21 +436,25 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
  * terminated concurrently).
  */
 ssize_t ust_app_push_metadata(struct ust_registry_session *registry,
-		struct consumer_socket *socket, int send_zero_data)
+		struct consumer_socket *socket, int send_zero_data,
+		int peek_consumer)
 {
 	int ret;
 	char *metadata_str = NULL;
 	size_t len, offset;
 	ssize_t ret_val;
+	uint64_t metadata_key;
 
 	assert(registry);
 	assert(socket);
+
+	metadata_key = registry->metadata_key;
 
 	/*
 	 * Means that no metadata was assigned to the session. This can
 	 * happens if no start has been done previously.
 	 */
-	if (!registry->metadata_key) {
+	if (!metadata_key) {
 		return 0;
 	}
 
@@ -464,6 +468,42 @@ ssize_t ust_app_push_metadata(struct ust_registry_session *registry,
 	 */
 	if (registry->metadata_closed) {
 		return -EPIPE;
+	}
+
+	if (peek_consumer) {
+		pthread_mutex_unlock(&registry->lock);
+		/*
+		 * Always need to unlock registry while sending metadata to
+		 * consumer due to deadlock (see below). Try to push empty
+		 * metadata to detect cases where the metadata stream is not
+		 * created on the consumer side. This allows us to assume it is
+		 * there in the following push, which should not fail.
+		 */
+		ret = consumer_push_metadata(socket, metadata_key,
+				NULL, 0, 0);
+		pthread_mutex_lock(&registry->lock);
+		if (ret < 0) {
+			/*
+			 * There is an acceptable race here between the registry
+			 * metadata key assignment and the creation on the
+			 * consumer. The session daemon can concurrently push
+			 * metadata for this registry while being created on the
+			 * consumer since the metadata key of the registry is
+			 * assigned *before* it is setup to avoid the consumer
+			 * to ask for metadata that could possibly be not found
+			 * in the session daemon.
+			 *
+			 * The metadata will get pushed either by the session
+			 * being stopped or the consumer requesting metadata if
+			 * that race is triggered.
+			 */
+			if (ret == -LTTCOMM_CONSUMERD_CHANNEL_FAIL) {
+				ret = 0;
+			}
+
+			ret_val = ret;
+			goto error_push;
+		}
 	}
 
 	offset = registry->metadata_len_sent;
@@ -488,39 +528,39 @@ ssize_t ust_app_push_metadata(struct ust_registry_session *registry,
 	}
 	/* Copy what we haven't send out. */
 	memcpy(metadata_str, registry->metadata + offset, len);
+	/*
+	 * Metadata may have been concurrently pushed, since we're not
+	 * holding the registry lock while pushing to consumer. This is
+	 * handled by the fact that we send the metadata content, size,
+	 * and the offset at which that metadata belongs. This may
+	 * arrive out of order on the consumer side, and the consumer is
+	 * able to reorder the fragments. The consumer supports
+	 * non-consecutive fragments, but not overlapping fragments.
+	 */
 	registry->metadata_len_sent += len;
 
 push_data:
-	ret = consumer_push_metadata(socket, registry->metadata_key,
+	pthread_mutex_unlock(&registry->lock);
+	/*
+	 * We need to unlock the registry while we push metadata to
+	 * break a circular dependency between the consumerd metadata
+	 * lock and the sessiond registry lock. Indeed, pushing metadata
+	 * to the consumerd awaits that it gets pushed all the way to
+	 * relayd, but doing so requires grabbing the metadata lock. If
+	 * a concurrent metadata request is being performed by
+	 * consumerd, this can try to grab the registry lock on the
+	 * sessiond while holding the metadata lock on the consumer
+	 * daemon. Those push and pull schemes are performed on two
+	 * different bidirectionnal communication sockets.
+	 */
+	ret = consumer_push_metadata(socket, metadata_key,
 			metadata_str, len, offset);
+	pthread_mutex_lock(&registry->lock);
 	if (ret < 0) {
-		/*
-		 * There is an acceptable race here between the registry
-		 * metadata key assignment and the creation on the
-		 * consumer. The session daemon can concurrently push
-		 * metadata for this registry while being created on the
-		 * consumer since the metadata key of the registry is
-		 * assigned *before* it is setup to avoid the consumer
-		 * to ask for metadata that could possibly be not found
-		 * in the session daemon.
-		 *
-		 * The metadata will get pushed either by the session
-		 * being stopped or the consumer requesting metadata if
-		 * that race is triggered.
-		 */
-		if (ret == -LTTCOMM_CONSUMERD_CHANNEL_FAIL) {
-			ret = 0;
-		}
-
-		/*
-		 * Update back the actual metadata len sent since it
-		 * failed here.
-		 */
-		registry->metadata_len_sent -= len;
-		ret_val = ret;
-		goto error_push;
+		ERR("Error pushing metadata to consumer");
+		ret_val = -LTTCOMM_CONSUMERD_CHANNEL_FAIL;
+		goto error;
 	}
-
 	free(metadata_str);
 	return len;
 
@@ -579,7 +619,7 @@ static int push_metadata(struct ust_registry_session *registry,
 		goto error;
 	}
 
-	ret = ust_app_push_metadata(registry, socket, 0);
+	ret = ust_app_push_metadata(registry, socket, 0, 1);
 	if (ret < 0) {
 		ret_val = ret;
 		goto error;
