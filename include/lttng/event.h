@@ -28,6 +28,7 @@ extern "C" {
  * Instrumentation type of tracing event.
  */
 enum lttng_event_type {
+	/* Means any type of event */
 	LTTNG_EVENT_ALL                       = -1,
 	LTTNG_EVENT_TRACEPOINT                = 0,
 	LTTNG_EVENT_PROBE                     = 1,

@@ -1252,6 +1252,7 @@ int cmd_disable_event(struct ltt_session *session, int domain,
 
 		switch (event->type) {
 		case LTTNG_EVENT_ALL:
+		case LTTNG_EVENT_TRACEPOINT:
 			ret = event_ust_disable_tracepoint(usess, uchan, event_name);
 			if (ret != LTTNG_OK) {
 				goto error_unlock;
@@ -1277,6 +1278,7 @@ int cmd_disable_event(struct ltt_session *session, int domain,
 
 		switch (event->type) {
 		case LTTNG_EVENT_ALL:
+		case LTTNG_EVENT_TRACEPOINT:
 			break;
 		default:
 			ret = LTTNG_ERR_UNK;
