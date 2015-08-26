@@ -53,6 +53,14 @@ struct ltt_ust_event {
 	char *filter_expression;
 	struct lttng_ust_filter_bytecode *filter;
 	struct lttng_event_exclusion *exclusion;
+	/*
+	 * An internal event is an event which was created by the session daemon
+	 * as an internal "funnel". This is used to hide internal events from
+	 * external clients as they should never be modified by clients.
+	 *
+	 * The main usecase for this is internal UST events created to
+	 * accomodate the multiple agents (JUL, Log4j, Python, ...).
+	 */
 	bool internal;
 };
 
