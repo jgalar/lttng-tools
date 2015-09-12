@@ -1,6 +1,9 @@
 LTTng-tools
 ===========
 
+[![Jenkins](https://img.shields.io/jenkins/s/https/ci.lttng.org/lttng-tools.svg)](https://ci.lttng.org/job/lttng-tools/)
+[![Coverity](https://img.shields.io/coverity/scan/lttng-tools.svg)](https://scan.coverity.com/projects/lttng-tools)
+
 LTTng-tools is a set of tools to control [LTTng](https://lttng.org/)
 tracing. The project includes the LTTng session daemon, consumer damon
 and relay daemon, as well as `liblttng-ctl`, a C library used to
