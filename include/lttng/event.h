@@ -121,21 +121,22 @@ enum lttng_event_output {
 
 /* Event context possible type */
 enum lttng_event_context_type {
-	LTTNG_EVENT_CONTEXT_PID               = 0,
-	LTTNG_EVENT_CONTEXT_PERF_COUNTER      = 1,	/* Backward compat. */
-	LTTNG_EVENT_CONTEXT_PROCNAME          = 2,
-	LTTNG_EVENT_CONTEXT_PRIO              = 3,
-	LTTNG_EVENT_CONTEXT_NICE              = 4,
-	LTTNG_EVENT_CONTEXT_VPID              = 5,
-	LTTNG_EVENT_CONTEXT_TID               = 6,
-	LTTNG_EVENT_CONTEXT_VTID              = 7,
-	LTTNG_EVENT_CONTEXT_PPID              = 8,
-	LTTNG_EVENT_CONTEXT_VPPID             = 9,
-	LTTNG_EVENT_CONTEXT_PTHREAD_ID        = 10,
-	LTTNG_EVENT_CONTEXT_HOSTNAME          = 11,
-	LTTNG_EVENT_CONTEXT_IP                = 12,
-	LTTNG_EVENT_CONTEXT_PERF_CPU_COUNTER  = 13,
+	LTTNG_EVENT_CONTEXT_PID			= 0,
+	LTTNG_EVENT_CONTEXT_PERF_COUNTER	= 1,	/* Backward compat. */
+	LTTNG_EVENT_CONTEXT_PROCNAME		= 2,
+	LTTNG_EVENT_CONTEXT_PRIO		= 3,
+	LTTNG_EVENT_CONTEXT_NICE		= 4,
+	LTTNG_EVENT_CONTEXT_VPID		= 5,
+	LTTNG_EVENT_CONTEXT_TID			= 6,
+	LTTNG_EVENT_CONTEXT_VTID		= 7,
+	LTTNG_EVENT_CONTEXT_PPID		= 8,
+	LTTNG_EVENT_CONTEXT_VPPID		= 9,
+	LTTNG_EVENT_CONTEXT_PTHREAD_ID		= 10,
+	LTTNG_EVENT_CONTEXT_HOSTNAME		= 11,
+	LTTNG_EVENT_CONTEXT_IP			= 12,
+	LTTNG_EVENT_CONTEXT_PERF_CPU_COUNTER	= 13,
 	LTTNG_EVENT_CONTEXT_PERF_THREAD_COUNTER = 14,
+	LTTNG_EVENT_CONTEXT_APP_CONTEXT		= 15,
 };
 
 enum lttng_event_field_type {
@@ -178,6 +179,10 @@ struct lttng_event_context {
 
 	union {
 		struct lttng_event_perf_counter_ctx perf_counter;
+		struct {
+			char *provider_name;
+			char *ctx_name;
+		} app_ctx;
 		char padding[LTTNG_EVENT_CONTEXT_PADDING2];
 	} u;
 };
