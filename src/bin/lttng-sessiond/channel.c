@@ -38,17 +38,12 @@ struct lttng_channel *channel_new_default_attr(int dom,
 		enum lttng_buffer_type type)
 {
 	struct lttng_channel *chan;
+	const char *channel_name = DEFAULT_CHANNEL_NAME;
 
 	chan = zmalloc(sizeof(struct lttng_channel));
 	if (chan == NULL) {
 		PERROR("zmalloc channel init");
 		goto error_alloc;
-	}
-
-	if (snprintf(chan->name, sizeof(chan->name), "%s",
-				DEFAULT_CHANNEL_NAME) < 0) {
-		PERROR("snprintf default channel name");
-		goto error;
 	}
 
 	/* Same for all domains. */
@@ -67,7 +62,17 @@ struct lttng_channel *channel_new_default_attr(int dom,
 		chan->attr.read_timer_interval = DEFAULT_KERNEL_CHANNEL_READ_TIMER;
 		chan->attr.live_timer_interval = DEFAULT_KERNEL_CHANNEL_LIVE_TIMER;
 		break;
+	case LTTNG_DOMAIN_JUL:
+		channel_name = DEFAULT_JUL_CHANNEL_NAME;
+		goto common_ust;
+	case LTTNG_DOMAIN_LOG4J:
+		channel_name = DEFAULT_LOG4J_CHANNEL_NAME;
+		goto common_ust;
+	case LTTNG_DOMAIN_PYTHON:
+		channel_name = DEFAULT_PYTHON_CHANNEL_NAME;
+		goto common_ust;
 	case LTTNG_DOMAIN_UST:
+common_ust:
 		switch (type) {
 		case LTTNG_BUFFER_PER_UID:
 			chan->attr.subbuf_size = default_get_ust_uid_channel_subbuf_size();
@@ -98,6 +103,11 @@ struct lttng_channel *channel_new_default_attr(int dom,
 		goto error;	/* Not implemented */
 	}
 
+	if (snprintf(chan->name, sizeof(chan->name), "%s",
+			channel_name) < 0) {
+		PERROR("snprintf default channel name");
+		goto error;
+	}
 	return chan;
 
 error:

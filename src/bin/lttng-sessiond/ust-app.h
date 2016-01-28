@@ -101,7 +101,7 @@ struct ust_app_stream_list {
 
 struct ust_app_ctx {
 	int handle;
-	struct lttng_ust_context ctx;
+	struct lttng_ust_context_attr ctx;
 	struct lttng_ust_object_data *obj;
 	struct lttng_ht_node_ulong node;
 	struct cds_list_head list;
