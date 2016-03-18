@@ -53,24 +53,6 @@ static struct poptOption long_options[] = {
 };
 
 /*
- * usage
- */
-static void usage(FILE *ofp)
-{
-	fprintf(ofp, "usage: lttng destroy [NAME] [OPTIONS]\n");
-	fprintf(ofp, "\n");
-	fprintf(ofp, "Where NAME is an optional session name. If not specified, lttng will\n");
-	fprintf(ofp, "get it from the configuration directory (.lttng).\n");
-	fprintf(ofp, "\n");
-	fprintf(ofp, "Options:\n");
-	fprintf(ofp, "  -h, --help           Show this help\n");
-	fprintf(ofp, "  -a, --all            Destroy all sessions\n");
-	fprintf(ofp, "      --list-options   Simple listing of options\n");
-	fprintf(ofp, "  -n, --no-wait        Don't wait for data availability\n");
-	fprintf(ofp, "\n");
-}
-
-/*
  * destroy_session
  *
  * Unregister the provided session to the session daemon. On success, removes
@@ -88,8 +70,8 @@ static int destroy_session(struct lttng_session *session)
 	}
 	session_was_stopped = ret == -LTTNG_ERR_TRACE_ALREADY_STOPPED;
 	if (!opt_no_wait) {
-		_MSG("Waiting for data availability");
-		fflush(stdout);
+		bool printed_wait_msg = false;
+
 		do {
 			ret = lttng_data_pending(session->name);
 			if (ret < 0) {
@@ -102,12 +84,20 @@ static int destroy_session(struct lttng_session *session)
 			 * returned value indicates availability.
 			 */
 			if (ret) {
+				if (!printed_wait_msg) {
+					_MSG("Waiting for data availability");
+					fflush(stdout);
+				}
+
+				printed_wait_msg = true;
 				usleep(DEFAULT_DATA_AVAILABILITY_WAIT_TIME);
 				_MSG(".");
 				fflush(stdout);
 			}
 		} while (ret != 0);
-		MSG("");
+		if (printed_wait_msg) {
+			MSG("");
+		}
 	}
 	if (!session_was_stopped) {
 		/*
@@ -189,13 +179,12 @@ int cmd_destroy(int argc, const char **argv)
 	while ((opt = poptGetNextOpt(pc)) != -1) {
 		switch (opt) {
 		case OPT_HELP:
-			usage(stdout);
+			SHOW_HELP();
 			break;
 		case OPT_LIST_OPTIONS:
 			list_cmd_options(stdout, long_options);
 			break;
 		default:
-			usage(stderr);
 			ret = CMD_UNDEFINED;
 			break;
 		}

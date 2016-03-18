@@ -56,23 +56,6 @@ static struct cmd_struct actions[] = {
 };
 
 /*
- * usage
- */
-static void usage(FILE *ofp)
-{
-	fprintf(ofp, "usage: lttng metadata [OPTION] ACTION\n");
-	fprintf(ofp, "\n");
-	fprintf(ofp, "Actions:\n");
-	fprintf(ofp, "   regenerate\n");
-	fprintf(ofp, "      Regenerate and overwrite the metadata of the session.\n");
-	fprintf(ofp, "Options:\n");
-	fprintf(ofp, "  -h, --help               Show this help.\n");
-	fprintf(ofp, "      --list-options       Simple listing of options.\n");
-	fprintf(ofp, "  -s, --session NAME       Apply to session name.\n");
-	fprintf(ofp, "\n");
-}
-
-/*
  * Count and return the number of arguments in argv.
  */
 static int count_arguments(const char **argv)
@@ -111,7 +94,7 @@ static int handle_command(const char **argv)
 	int ret = CMD_SUCCESS, i = 0, argc, command_ret = CMD_SUCCESS;
 
 	if (argv == NULL) {
-		usage(stderr);
+		SHOW_HELP();
 		command_ret = CMD_ERROR;
 		goto end;
 	}
@@ -171,7 +154,7 @@ int cmd_metadata(int argc, const char **argv)
 	static poptContext pc;
 
 	if (argc < 1) {
-		usage(stderr);
+		SHOW_HELP();
 		ret = CMD_ERROR;
 		goto end;
 	}
@@ -205,7 +188,7 @@ int cmd_metadata(int argc, const char **argv)
 	while ((opt = poptGetNextOpt(pc)) != -1) {
 		switch (opt) {
 		case OPT_HELP:
-			usage(stdout);
+			SHOW_HELP();
 			goto end;
 		case OPT_LIST_OPTIONS:
 			list_cmd_options(stdout, long_options);
@@ -214,7 +197,7 @@ int cmd_metadata(int argc, const char **argv)
 			list_commands(actions, stdout);
 			goto end;
 		default:
-			usage(stderr);
+			SHOW_HELP();
 			ret = CMD_UNDEFINED;
 			goto end;
 		}
