@@ -1,45 +1,57 @@
 lttng-metadata(1)
-================
+=================
 
 
 NAME
 ----
-lttng-metadata - Regenerate LTTng tracing session metadata
+lttng-metadata - Manage an LTTng tracing session's metadata generation
 
 
 SYNOPSIS
 --------
-Regenerate a tracing session's metadata:
-
 [verse]
-*lttng* ['GENERAL OPTIONS'] *metadata regenerate*
+*lttng* ['GENERAL OPTIONS'] *metadata regenerate* [option:--session='SESSION']
+
 
 DESCRIPTION
 -----------
 The `lttng metadata` command manages a tracing session's metadata
 generation options.
 
+As of this version, only the `regenerate` command's action is available.
 Regenerating a tracing session's metadata can be used to
-re-sample the offset between the system's monotonic clock and
+resample the offset between the system's monotonic clock and
 the wall-clock time.
 
-This command is meant to be used to re-sample the wall-time
-following a major NTP correction. As such, a system booting with
-an incorrect wall-time can be traced before its wall-time is
-NTP-corrected. Regenerating the tracing session's metadata
-ensures that trace viewers can accurately determine the events
-time relative to EPOCH.
+This command is meant to be used to resample the wall-clock time
+following a major
+link:https://en.wikipedia.org/wiki/Network_Time_Protocol[NTP]
+correction. As such, a system booting with an incorrect wall time can be
+traced before its wall time is NTP-corrected. Regenerating the tracing
+session's metadata ensures that trace viewers can accurately determine
+the events time relative to Unix Epoch.
 
-LIMITATIONS
------------
-The `lttng metadata regenerate` command can only be used on kernel
-and userspace tracing sessions (using per-UID buffers), in
-non-live configurations.
 
 include::common-cmd-options-head.txt[]
 
 
+option:-s, option:--session='SESSION'::
+    Manage the metadata generation of the tracing session named 'SESSION'
+    instead of the current tracing session.
+
+
 include::common-cmd-help-options.txt[]
+
+
+LIMITATIONS
+-----------
+The `lttng metadata regenerate` command can only be used on kernel and
+user space tracing sessions (using per-user buffering), in non-live
+mode.
+
+See linklttng:lttng-enable-channel(1) for more information about
+buffering schemes and linklttng:lttng-create(1) for more information
+about the different tracing session modes.
 
 
 include::common-cmd-footer.txt[]
