@@ -32,16 +32,47 @@ name is rendered in bold, whereas the HTML5 output renders a hyperlink.
 Usage example: `linklttng:lttng-enable-channel(1)`.
 
 
+### linkgenoptions
+
+The linkgenoptions macro is used to link to the general options
+section of the `lttng(1)` command.
+
+Usage example: `See the linkgenoptions:(general options).`.
+
+
 ### option
 
-The option macro is used to write a command-line option.
+The option macro is used to write a command-line option which is
+defined in the same man page.
 
 Usage example: `option:--no-output`, `option:--loglevel=TRACE_WARNING`
+
+
+### nloption
+
+Command-line option generating no link. This is used when talking
+about a generic option which is defined in many man pages.
+
+Usage example: `nloption:--jul`
+
+
+### genoption
+
+General (`lttng(1)`) command-line option, for generating the appropriate
+cross-man-page link.
+
+Usage example: `genoption:--group`, `genoption:--sessiond-path`
 
 
 ### not
 
 The `:not:` macro is used to emphasize on _not_.
+
+
+### escwc
+
+The `:escwc:` macro is used to output `\*` literally in the man page,
+which is not so easy to do otherwise.
 
 
 Includes
@@ -63,7 +94,7 @@ writing new ones:
 
   * Always use macros when possible (link to other LTTng man page,
     command-line option, NOT, etc.).
-  * Use callouts for command-line examples.
+  * Use callouts with the `term` role for command-line examples.
   * Always refer to _long_ options in the text.
   * Use the `option:--option=parameter` format (with `=`) when providing
     a parameter to long options.

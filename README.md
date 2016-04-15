@@ -5,7 +5,7 @@ LTTng-tools
 [![Coverity](https://img.shields.io/coverity/scan/lttng-tools.svg)](https://scan.coverity.com/projects/lttng-tools)
 
 LTTng-tools is a set of tools to control [LTTng](https://lttng.org/)
-tracing. The project includes the LTTng session daemon, consumer damon
+tracing. The project includes the LTTng session daemon, consumer daemon
 and relay daemon, as well as `liblttng-ctl`, a C library used to
 communicate with the session daemon, and `lttng`, a command line
 interface to `liblttng-ctl`.
@@ -52,7 +52,7 @@ The following items are _optional_ dependencies:
     - Debian/Ubuntu packages: `swig2.0` and `python3-dev`
   - **modprobe**: needed for automatic LTTng kernel modules loading
     (kernel tracing).
-  - **bash**: needed for running `make check`.
+  - **bash**: needed to run `make check`.
   - **man** (manual pager): needed to view LTTng-tools commands' man
     pages with the `--help` option or with the `lttng help` command.
     Note that without `man`, you cannot get offline help with
@@ -78,7 +78,7 @@ order to compile the Git repository tree:
 
   - **GNU Autotools** (**Automake >= 1.10**, **Autoconf >= 2.64**,
     **Autoheader >= 2.50**; make sure your system-wide `automake` points
-    to a recent version!)
+    to a recent version)
   - **[GNU Libtool](http://www.gnu.org/software/autoconf/) >= 2.2**
   - **Flex >= 2.5.35**
   - **Bison >= 2.4**

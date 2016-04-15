@@ -12,7 +12,7 @@ SYNOPSIS
 Create or enable Linux kernel event rules:
 
 [verse]
-*lttng* ['GENERAL OPTIONS'] *enable-event* option:--kernel
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *enable-event* option:--kernel
       [option:--probe='SOURCE' | option:--function='SOURCE' | option:--syscall]
       [option:--filter='EXPR'] [option:--session='SESSION']
       [option:--channel='CHANNEL'] 'EVENT'[,'EVENT']...
@@ -20,13 +20,13 @@ Create or enable Linux kernel event rules:
 Create or enable an "all" Linux kernel event rule:
 
 [verse]
-*lttng* ['GENERAL OPTIONS'] *enable-event* option:--kernel option:--all [option:--syscall]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *enable-event* option:--kernel option:--all [option:--syscall]
       [option:--filter='EXPR'] [option:--session='SESSION'] [option:--channel='CHANNEL']
 
 Create or enable application event rules:
 
 [verse]
-*lttng* ['GENERAL OPTIONS'] *enable-event*
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *enable-event*
       (option:--userspace | option:--jul | option:--log4j | option:--python)
       [option:--filter='EXPR'] [option:--exclude='EVENT'[,'EVENT']...]
       [option:--loglevel='LOGLEVEL' | option:--loglevel-only='LOGLEVEL']
@@ -106,6 +106,7 @@ a _don't care_.
 
 For example, consider the following commands:
 
+[role="term"]
 ----------------------------------------------------------------
 lttng enable-event --userspace hello:world
 lttng enable-event --userspace hello:world --loglevel=TRACE_INFO
@@ -180,6 +181,10 @@ when creating a new event rule. If the filter expression evaluates
 to true when executed against the dynamic values of an event's fields
 when tracing, the filtering condition passes.
 
+NOTE: Make sure to **single-quote** the filter expression when running
+the command from a shell, as filter expressions typically include
+characters having a special meaning for most shells.
+
 The filter expression syntax is very similar to C language conditional
 expressions (expressions that can be evaluated by an `if` statement).
 
@@ -229,7 +234,7 @@ expression evaluates to false (the event is discarded).
 C integer and floating point number constants are supported, as well as
 literal strings between double quotes (`"`). Literal strings can contain
 a wildcard character (`*`) at the end to match more than one string.
-This wildcard can be escaped using `\\*`.
+This wildcard can be escaped using :escwc:.
 
 LTTng-UST enumeration fields can be compared to integer values (fields
 or constants).

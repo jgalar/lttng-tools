@@ -12,7 +12,7 @@ SYNOPSIS
 Add context fields to a channel:
 
 [verse]
-*lttng* ['GENERAL OPTIONS'] *add-context*
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *add-context*
       (option:--kernel | option:--userspace | option:--jul | option:--log4j)
       [option:--session='SESSION'] [option:--channel='CHANNEL']
       option:--type='TYPE' [option:--type='TYPE']...
@@ -20,7 +20,7 @@ Add context fields to a channel:
 List the available context fields:
 
 [verse]
-*lttng* ['GENERAL OPTIONS'] *add-context* --list
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *add-context* option:--list
 
 
 DESCRIPTION
@@ -58,6 +58,10 @@ with:
 
 'TYPE'::
     Context type name.
+
+NOTE: Make sure to **single-quote** the type when running the command
+from a shell, as `$` is a special character for variable substitution in
+most shells.
 
 Use the option:--list option without other arguments to list the
 available context field names.
