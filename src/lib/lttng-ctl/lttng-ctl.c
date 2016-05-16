@@ -519,10 +519,6 @@ struct lttng_handle *lttng_create_handle(const char *session_name,
 {
 	struct lttng_handle *handle = NULL;
 
-	if (domain == NULL) {
-		goto end;
-	}
-
 	handle = zmalloc(sizeof(struct lttng_handle));
 	if (handle == NULL) {
 		PERROR("malloc handle");
@@ -533,8 +529,10 @@ struct lttng_handle *lttng_create_handle(const char *session_name,
 	lttng_ctl_copy_string(handle->session_name, session_name,
 			sizeof(handle->session_name));
 
-	/* Copy lttng domain */
-	lttng_ctl_copy_lttng_domain(&handle->domain, domain);
+	/* Copy lttng domain or leave initialized to 0. */
+	if (domain) {
+		lttng_ctl_copy_lttng_domain(&handle->domain, domain);
+	}
 
 end:
 	return handle;
@@ -1561,6 +1559,7 @@ int lttng_create_session(const char *name, const char *url)
  * Destroy session using name.
  * Returns size of returned session payload data or a negative error code.
  */
+static
 int _lttng_destroy_session(const char *session_name)
 {
 	struct lttcomm_session_msg lsm;

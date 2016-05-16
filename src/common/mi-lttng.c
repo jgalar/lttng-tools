@@ -30,17 +30,17 @@
 #define MI_SCHEMA_MINOR_VERSION 0
 
 /* Machine interface namespace URI */
-const char * const mi_lttng_xmlns = "xmlns";
-const char * const mi_lttng_xmlns_xsi = "xmlns:xsi";
-const char * const mi_lttng_w3_schema_uri = "http://www.w3.org/2001/XMLSchema-instance";
-const char * const mi_lttng_schema_location = "xsi:schemaLocation";
-const char * const mi_lttng_schema_location_uri =
+LTTNG_HIDDEN const char * const mi_lttng_xmlns = "xmlns";
+LTTNG_HIDDEN const char * const mi_lttng_xmlns_xsi = "xmlns:xsi";
+LTTNG_HIDDEN const char * const mi_lttng_w3_schema_uri = "http://www.w3.org/2001/XMLSchema-instance";
+LTTNG_HIDDEN const char * const mi_lttng_schema_location = "xsi:schemaLocation";
+LTTNG_HIDDEN const char * const mi_lttng_schema_location_uri =
 	DEFAULT_LTTNG_MI_NAMESPACE " "
 	"http://lttng.org/xml/schemas/lttng-mi/" XSTR(MI_SCHEMA_MAJOR_VERSION)
 	"/lttng-mi-" XSTR(MI_SCHEMA_MAJOR_VERSION) "."
 	XSTR(MI_SCHEMA_MINOR_VERSION) ".xsd";
-const char * const mi_lttng_schema_version = "schemaVersion";
-const char * const mi_lttng_schema_version_value = XSTR(MI_SCHEMA_MAJOR_VERSION)
+LTTNG_HIDDEN const char * const mi_lttng_schema_version = "schemaVersion";
+LTTNG_HIDDEN const char * const mi_lttng_schema_version_value = XSTR(MI_SCHEMA_MAJOR_VERSION)
 	"." XSTR(MI_SCHEMA_MINOR_VERSION);
 
 /* Strings related to command */
@@ -56,8 +56,8 @@ const char * const mi_lttng_element_command_enable_channels = "enable-channel";
 const char * const mi_lttng_element_command_enable_event = "enable-event";
 const char * const mi_lttng_element_command_list = "list";
 const char * const mi_lttng_element_command_load = "load";
-const char * const mi_lttng_element_command_metadata = "metadata";
-const char * const mi_lttng_element_command_metadata_action = "metadata_action";
+LTTNG_HIDDEN const char * const mi_lttng_element_command_metadata = "metadata";
+LTTNG_HIDDEN const char * const mi_lttng_element_command_metadata_action = "metadata_action";
 const char * const mi_lttng_element_command_name = "name";
 const char * const mi_lttng_element_command_output = "output";
 const char * const mi_lttng_element_command_save = "save";
@@ -180,6 +180,12 @@ const char * const mi_lttng_element_snapshots = "snapshots";
 /* String related to track/untrack command */
 const char * const mi_lttng_element_track_untrack_all_wildcard = "*";
 
+/* Deprecated symbols preserved for ABI compatibility. */
+const char * const mi_lttng_context_type_perf_counter;
+const char * const mi_lttng_context_type_perf_cpu_counter;
+const char * const mi_lttng_context_type_perf_thread_counter;
+const char * const mi_lttng_element_track_untrack_pid_target;
+const char * const mi_lttng_element_track_untrack_targets;
 
 /* This is a merge of jul loglevel and regular loglevel
  * Those should never overlap by definition
@@ -296,10 +302,9 @@ const char *mi_lttng_loglevel_string(int value, enum lttng_domain_type domain)
 			return mi_lttng_loglevel_str_unknown;
 		}
 		break;
+	default:
+		return mi_lttng_loglevel_str_unknown;
 	}
-
-	/* Reaching this means the domain is unknown. */
-	return mi_lttng_loglevel_str_unknown;
 }
 
 LTTNG_HIDDEN

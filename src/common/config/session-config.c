@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 
 #include <common/defaults.h>
 #include <common/error.h>
@@ -95,23 +96,23 @@ const char * const config_element_output_type = "output_type";
 const char * const config_element_tracefile_size = "tracefile_size";
 const char * const config_element_tracefile_count = "tracefile_count";
 const char * const config_element_live_timer_interval = "live_timer_interval";
-const char * const config_element_discarded_events = "discarded_events";
-const char * const config_element_lost_packets = "lost_packets";
+LTTNG_HIDDEN const char * const config_element_discarded_events = "discarded_events";
+LTTNG_HIDDEN const char * const config_element_lost_packets = "lost_packets";
 const char * const config_element_type = "type";
 const char * const config_element_buffer_type = "buffer_type";
 const char * const config_element_session = "session";
 const char * const config_element_sessions = "sessions";
-const char * const config_element_context_perf = "perf";
-const char * const config_element_context_app = "app";
-const char * const config_element_context_app_provider_name = "provider_name";
-const char * const config_element_context_app_ctx_name = "ctx_name";
+LTTNG_HIDDEN const char * const config_element_context_perf = "perf";
+LTTNG_HIDDEN const char * const config_element_context_app = "app";
+LTTNG_HIDDEN const char * const config_element_context_app_provider_name = "provider_name";
+LTTNG_HIDDEN const char * const config_element_context_app_ctx_name = "ctx_name";
 const char * const config_element_config = "config";
 const char * const config_element_started = "started";
 const char * const config_element_snapshot_mode = "snapshot_mode";
 const char * const config_element_loglevel = "loglevel";
 const char * const config_element_loglevel_type = "loglevel_type";
 const char * const config_element_filter = "filter";
-const char * const config_element_filter_expression = "filter_expression";
+LTTNG_HIDDEN const char * const config_element_filter_expression = "filter_expression";
 const char * const config_element_snapshot_outputs = "snapshot_outputs";
 const char * const config_element_consumer_output = "consumer_output";
 const char * const config_element_destination = "destination";
@@ -171,11 +172,19 @@ const char * const config_event_context_pthread_id = "PTHREAD_ID";
 const char * const config_event_context_hostname = "HOSTNAME";
 const char * const config_event_context_ip = "IP";
 const char * const config_event_context_perf_thread_counter = "PERF_THREAD_COUNTER";
-const char * const config_event_context_app = "APP";
-const char * const config_event_context_interruptible = "INTERRUPTIBLE";
-const char * const config_event_context_preemptible = "PREEMPTIBLE";
-const char * const config_event_context_need_reschedule = "NEED_RESCHEDULE";
-const char * const config_event_context_migratable = "MIGRATABLE";
+LTTNG_HIDDEN const char * const config_event_context_app = "APP";
+LTTNG_HIDDEN const char * const config_event_context_interruptible = "INTERRUPTIBLE";
+LTTNG_HIDDEN const char * const config_event_context_preemptible = "PREEMPTIBLE";
+LTTNG_HIDDEN const char * const config_event_context_need_reschedule = "NEED_RESCHEDULE";
+LTTNG_HIDDEN const char * const config_event_context_migratable = "MIGRATABLE";
+
+/* Deprecated symbols */
+const char * const config_element_perf;
+
+enum process_event_node_phase {
+	CREATION = 0,
+	ENABLE = 1,
+};
 
 struct consumer_output {
 	int enabled;
@@ -1151,17 +1160,16 @@ end:
 }
 
 static
-int create_session_net_output(const char *name, struct lttng_domain *domain,
-	const char *control_uri, const char *data_uri)
+int create_session_net_output(const char *name, const char *control_uri,
+		const char *data_uri)
 {
 	int ret;
 	struct lttng_handle *handle;
 	const char *uri = NULL;
 
 	assert(name);
-	assert(domain);
 
-	handle = lttng_create_handle(name, domain);
+	handle = lttng_create_handle(name, NULL);
 	if (!handle) {
 		ret = -LTTNG_ERR_NOMEM;
 		goto end;
@@ -1343,11 +1351,6 @@ int create_session(const char *name,
 	}
 
 	if (output.control_uri || output.data_uri) {
-		int i;
-		struct lttng_domain *domain;
-		struct lttng_domain *domains[] =
-			{ kernel_domain, ust_domain, jul_domain, log4j_domain };
-
 		/* network destination */
 		if (live_timer_interval && live_timer_interval != UINT64_MAX) {
 			/*
@@ -1363,18 +1366,12 @@ int create_session(const char *name,
 			goto end;
 		}
 
-		for (i = 0; i < (sizeof(domains) / sizeof(domains[0])); i++) {
-			domain = domains[i];
-			if (!domain) {
-				continue;
-			}
-
-			ret = create_session_net_output(name, domain, output.control_uri,
-					output.data_uri);
-			if (ret) {
-				goto end;
-			}
+		ret = create_session_net_output(name, output.control_uri,
+				output.data_uri);
+		if (ret) {
+			goto end;
 		}
+
 	} else {
 		/* either local output or no output */
 		ret = lttng_create_session(name, output.path);
@@ -1467,9 +1464,9 @@ end:
 
 static
 int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
-	const char *channel_name)
+	const char *channel_name, const enum process_event_node_phase phase)
 {
-	int ret, i;
+	int ret = 0, i;
 	xmlNodePtr node;
 	struct lttng_event event;
 	char **exclusions = NULL;
@@ -1720,25 +1717,14 @@ int process_event_node(xmlNodePtr event_node, struct lttng_handle *handle,
 		}
 	}
 
-	ret = lttng_enable_event_with_exclusions(handle, &event, channel_name,
-			filter_expression, exclusion_count, exclusions);
-	if (ret) {
-		goto end;
-	}
-
-	if (!event.enabled) {
-		/*
-		 * Note that we should use lttng_disable_event_ext() (2.6+) to
-		 * eliminate the risk of clashing on events of the same
-		 * name (with different event types and loglevels).
-		 *
-		 * Unfortunately, lttng_disable_event_ext() only performs a
-		 * match on the name and event type and errors out if any other
-		 * event attribute is not set to its default value.
-		 *
-		 * This will disable all events that match this name.
-		 */
-		ret = lttng_disable_event(handle, event.name, channel_name);
+	if ((event.enabled && phase == ENABLE) || phase == CREATION) {
+		ret = lttng_enable_event_with_exclusions(handle, &event, channel_name,
+				filter_expression, exclusion_count, exclusions);
+		if (ret < 0) {
+			WARN("Enabling event (name:%s) on load failed.", event.name);
+			ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+			goto end;
+		}
 	}
 end:
 	for (i = 0; i < exclusion_count; i++) {
@@ -1755,6 +1741,7 @@ int process_events_node(xmlNodePtr events_node, struct lttng_handle *handle,
 	const char *channel_name)
 {
 	int ret = 0;
+	struct lttng_event event;
 	xmlNodePtr node;
 
 	assert(events_node);
@@ -1763,11 +1750,33 @@ int process_events_node(xmlNodePtr events_node, struct lttng_handle *handle,
 
 	for (node = xmlFirstElementChild(events_node); node;
 		node = xmlNextElementSibling(node)) {
-		ret = process_event_node(node, handle, channel_name);
+		ret = process_event_node(node, handle, channel_name, CREATION);
 		if (ret) {
 			goto end;
 		}
 	}
+
+	/*
+	 * Disable all events to enable only the necessary events.
+	 * Limitations regarding lttng_disable_events and tuple descriptor
+	 * force this approach.
+	 */
+	memset(&event, 0, sizeof(event));
+	event.loglevel = -1;
+	event.type = LTTNG_EVENT_ALL;
+	ret = lttng_disable_event_ext(handle, &event, channel_name, NULL);
+	if (ret) {
+		goto end;
+	}
+
+	for (node = xmlFirstElementChild(events_node); node;
+			node = xmlNextElementSibling(node)) {
+		ret = process_event_node(node, handle, channel_name, ENABLE);
+		if (ret) {
+			goto end;
+		}
+	}
+
 end:
 	return ret;
 }
@@ -2832,8 +2841,8 @@ end:
 		}
 	}
 
-	if (!session_found) {
-		ret = -LTTNG_ERR_LOAD_SESSION_NOENT;
+	if (session_found) {
+		ret = 0;
 	}
 
 	return ret;
@@ -2878,6 +2887,7 @@ int config_load_session(const char *path, const char *session_name,
 		int override, unsigned int autoload)
 {
 	int ret;
+	bool session_loaded = false;
 	const char *path_ptr = NULL;
 	struct session_config_validation_ctx validation_ctx = { 0 };
 
@@ -2936,6 +2946,7 @@ int config_load_session(const char *path, const char *session_name,
 				 * Continue even if the session was found since we have to try
 				 * the system wide sessions.
 				 */
+				session_loaded = true;
 			}
 		}
 
@@ -2958,6 +2969,9 @@ int config_load_session(const char *path, const char *session_name,
 		if (path_ptr) {
 			ret = load_session_from_path(path_ptr, session_name,
 					&validation_ctx, override);
+			if (!ret) {
+				session_loaded = true;
+			}
 		}
 	} else {
 		ret = access(path, F_OK);
@@ -2988,6 +3002,11 @@ end:
 		 * Don't report an error if no sessions are found when called
 		 * without a session_name or a search path.
 		 */
+		ret = 0;
+	}
+
+	if (session_loaded && ret == -LTTNG_ERR_LOAD_SESSION_NOENT) {
+		/* A matching session was found in one of the search paths. */
 		ret = 0;
 	}
 	return ret;

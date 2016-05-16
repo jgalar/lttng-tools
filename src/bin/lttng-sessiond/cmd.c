@@ -187,6 +187,11 @@ static int get_ust_runtime_stats(struct ltt_session *session,
 	int ret;
 	struct ltt_ust_session *usess;
 
+	if (!discarded_events || !lost_packets) {
+		ret = -1;
+		goto end;
+	}
+
 	usess = session->ust_session;
 	assert(discarded_events);
 	assert(lost_packets);
@@ -270,7 +275,7 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 		rcu_read_lock();
 		cds_lfht_for_each_entry(session->ust_session->domain_global.channels->ht,
 				&iter.iter, uchan, node.node) {
-			uint64_t discarded_events, lost_packets;
+			uint64_t discarded_events = 0, lost_packets = 0;
 
 			strncpy(channels[i].name, uchan->name, LTTNG_SYMBOL_NAME_LEN);
 			channels[i].attr.overwrite = uchan->attr.overwrite;
@@ -3588,13 +3593,6 @@ static int record_kernel_snapshot(struct ltt_kernel_session *ksess,
 	assert(output);
 	assert(session);
 
-	/* Get the datetime for the snapshot output directory. */
-	ret = utils_get_current_time_str("%Y%m%d-%H%M%S", output->datetime,
-			sizeof(output->datetime));
-	if (!ret) {
-		ret = LTTNG_ERR_INVALID;
-		goto error;
-	}
 
 	/*
 	 * Copy kernel session sockets so we can communicate with the right
@@ -3642,14 +3640,6 @@ static int record_ust_snapshot(struct ltt_ust_session *usess,
 	assert(output);
 	assert(session);
 
-	/* Get the datetime for the snapshot output directory. */
-	ret = utils_get_current_time_str("%Y%m%d-%H%M%S", output->datetime,
-			sizeof(output->datetime));
-	if (!ret) {
-		ret = LTTNG_ERR_INVALID;
-		goto error;
-	}
-
 	/*
 	 * Copy UST session sockets so we can communicate with the right
 	 * consumer for the snapshot record command.
@@ -3670,9 +3660,6 @@ static int record_ust_snapshot(struct ltt_ust_session *usess,
 		switch (-ret) {
 		case EINVAL:
 			ret = LTTNG_ERR_INVALID;
-			break;
-		case ENODATA:
-			ret = LTTNG_ERR_SNAPSHOT_NODATA;
 			break;
 		default:
 			ret = LTTNG_ERR_SNAPSHOT_FAIL;
@@ -3791,11 +3778,20 @@ int cmd_snapshot_record(struct ltt_session *session,
 	unsigned int use_tmp_output = 0;
 	struct snapshot_output tmp_output;
 	unsigned int snapshot_success = 0;
+	char datetime[16];
 
 	assert(session);
 	assert(output);
 
 	DBG("Cmd snapshot record for session %s", session->name);
+
+	/* Get the datetime for the snapshot output directory. */
+	ret = utils_get_current_time_str("%Y%m%d-%H%M%S", datetime,
+			sizeof(datetime));
+	if (!ret) {
+		ret = LTTNG_ERR_INVALID;
+		goto error;
+	}
 
 	/*
 	 * Permission denied to create an output if the session is not
@@ -3827,138 +3823,100 @@ int cmd_snapshot_record(struct ltt_session *session,
 		}
 		/* Use the global session count for the temporary snapshot. */
 		tmp_output.nb_snapshot = session->snapshot.nb_snapshot;
+
+		/* Use the global datetime */
+		memcpy(tmp_output.datetime, datetime, sizeof(datetime));
 		use_tmp_output = 1;
 	}
 
-	if (session->kernel_session) {
-		struct ltt_kernel_session *ksess = session->kernel_session;
+	if (use_tmp_output) {
+		int64_t nb_packets_per_stream;
 
-		if (use_tmp_output) {
-			int64_t nb_packets_per_stream;
-
-			nb_packets_per_stream = get_session_nb_packets_per_stream(session,
-					tmp_output.max_size);
-			if (nb_packets_per_stream < 0) {
-				ret = LTTNG_ERR_MAX_SIZE_INVALID;
-				goto error;
-			}
-			ret = record_kernel_snapshot(ksess, &tmp_output, session,
-					wait, nb_packets_per_stream);
-			if (ret != LTTNG_OK) {
-				goto error;
-			}
-			snapshot_success = 1;
-		} else {
-			struct snapshot_output *sout;
-			struct lttng_ht_iter iter;
-
-			rcu_read_lock();
-			cds_lfht_for_each_entry(session->snapshot.output_ht->ht,
-					&iter.iter, sout, node.node) {
-				int64_t nb_packets_per_stream;
-
-				/*
-				 * Make a local copy of the output and assign the possible
-				 * temporary value given by the caller.
-				 */
-				memset(&tmp_output, 0, sizeof(tmp_output));
-				memcpy(&tmp_output, sout, sizeof(tmp_output));
-
-				if (output->max_size != (uint64_t) -1ULL) {
-					tmp_output.max_size = output->max_size;
-				}
-
-				nb_packets_per_stream = get_session_nb_packets_per_stream(session,
-						tmp_output.max_size);
-				if (nb_packets_per_stream < 0) {
-					ret = LTTNG_ERR_MAX_SIZE_INVALID;
-					goto error;
-				}
-
-				/* Use temporary name. */
-				if (*output->name != '\0') {
-					strncpy(tmp_output.name, output->name,
-							sizeof(tmp_output.name));
-				}
-
-				tmp_output.nb_snapshot = session->snapshot.nb_snapshot;
-
-				ret = record_kernel_snapshot(ksess, &tmp_output,
-						session, wait, nb_packets_per_stream);
-				if (ret != LTTNG_OK) {
-					rcu_read_unlock();
-					goto error;
-				}
-				snapshot_success = 1;
-			}
-			rcu_read_unlock();
+		nb_packets_per_stream = get_session_nb_packets_per_stream(session,
+				tmp_output.max_size);
+		if (nb_packets_per_stream < 0) {
+			ret = LTTNG_ERR_MAX_SIZE_INVALID;
+			goto error;
 		}
-	}
 
-	if (session->ust_session) {
-		struct ltt_ust_session *usess = session->ust_session;
+		if (session->kernel_session) {
+			ret = record_kernel_snapshot(session->kernel_session,
+					&tmp_output, session,
+					wait, nb_packets_per_stream);
+			if (ret != LTTNG_OK) {
+				goto error;
+			}
+		}
 
-		if (use_tmp_output) {
+		if (session->ust_session) {
+			ret = record_ust_snapshot(session->ust_session,
+					&tmp_output, session,
+					wait, nb_packets_per_stream);
+			if (ret != LTTNG_OK) {
+				goto error;
+			}
+		}
+
+		snapshot_success = 1;
+	} else {
+		struct snapshot_output *sout;
+		struct lttng_ht_iter iter;
+
+		rcu_read_lock();
+		cds_lfht_for_each_entry(session->snapshot.output_ht->ht,
+				&iter.iter, sout, node.node) {
 			int64_t nb_packets_per_stream;
+
+			/*
+			 * Make a local copy of the output and assign the possible
+			 * temporary value given by the caller.
+			 */
+			memset(&tmp_output, 0, sizeof(tmp_output));
+			memcpy(&tmp_output, sout, sizeof(tmp_output));
+
+			if (output->max_size != (uint64_t) -1ULL) {
+				tmp_output.max_size = output->max_size;
+			}
 
 			nb_packets_per_stream = get_session_nb_packets_per_stream(session,
 					tmp_output.max_size);
 			if (nb_packets_per_stream < 0) {
 				ret = LTTNG_ERR_MAX_SIZE_INVALID;
+				rcu_read_unlock();
 				goto error;
 			}
-			ret = record_ust_snapshot(usess, &tmp_output, session,
-					wait, nb_packets_per_stream);
-			if (ret != LTTNG_OK) {
-				goto error;
+
+			/* Use temporary name. */
+			if (*output->name != '\0') {
+				strncpy(tmp_output.name, output->name,
+						sizeof(tmp_output.name));
 			}
-			snapshot_success = 1;
-		} else {
-			struct snapshot_output *sout;
-			struct lttng_ht_iter iter;
 
-			rcu_read_lock();
-			cds_lfht_for_each_entry(session->snapshot.output_ht->ht,
-					&iter.iter, sout, node.node) {
-				int64_t nb_packets_per_stream;
+			tmp_output.nb_snapshot = session->snapshot.nb_snapshot;
+			memcpy(tmp_output.datetime, datetime, sizeof(datetime));
 
-				/*
-				 * Make a local copy of the output and assign the possible
-				 * temporary value given by the caller.
-				 */
-				memset(&tmp_output, 0, sizeof(tmp_output));
-				memcpy(&tmp_output, sout, sizeof(tmp_output));
-
-				if (output->max_size != (uint64_t) -1ULL) {
-					tmp_output.max_size = output->max_size;
-				}
-
-				nb_packets_per_stream = get_session_nb_packets_per_stream(session,
-						tmp_output.max_size);
-				if (nb_packets_per_stream < 0) {
-					ret = LTTNG_ERR_MAX_SIZE_INVALID;
-					rcu_read_unlock();
-					goto error;
-				}
-
-				/* Use temporary name. */
-				if (*output->name != '\0') {
-					strncpy(tmp_output.name, output->name,
-							sizeof(tmp_output.name));
-				}
-
-				tmp_output.nb_snapshot = session->snapshot.nb_snapshot;
-
-				ret = record_ust_snapshot(usess, &tmp_output, session,
+			if (session->kernel_session) {
+				ret = record_kernel_snapshot(session->kernel_session,
+						&tmp_output, session,
 						wait, nb_packets_per_stream);
 				if (ret != LTTNG_OK) {
 					rcu_read_unlock();
 					goto error;
 				}
-				snapshot_success = 1;
 			}
-			rcu_read_unlock();
+
+			if (session->ust_session) {
+				ret = record_ust_snapshot(session->ust_session,
+						&tmp_output, session,
+						wait, nb_packets_per_stream);
+				if (ret != LTTNG_OK) {
+					rcu_read_unlock();
+					goto error;
+				}
+			}
+			snapshot_success = 1;
 		}
+		rcu_read_unlock();
 	}
 
 	if (snapshot_success) {

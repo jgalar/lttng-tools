@@ -1,32 +1,31 @@
 #!/bin/bash
 #
-# Copyright (C) - 2015 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+# Copyright (C) - 2013 Christian Babeux <christian.babeux@efficios.com>
+# Copyright (C) - 2014, 2016 Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 #
-# This library is free software; you can redistribute it and/or modify it under
-# the terms of the GNU Lesser General Public License as published by the Free
-# Software Foundation; version 2.1 of the License.
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License, version 2 only, as
+# published by the Free Software Foundation.
 #
-# This library is distributed in the hope that it will be useful, but WITHOUT
-# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
-# details.
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
 #
-# You should have received a copy of the GNU Lesser General Public License
-# along with this library; if not, write to the Free Software Foundation, Inc.,
-# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
-TEST_DESC="UST - Clock override plugin"
+# You should have received a copy of the GNU General Public License along with
+# this program; if not, write to the Free Software Foundation, Inc., 51
+# Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+TEST_DESC="Kernel tracer - Clock override plugin"
 
 CURDIR=$(dirname $0)/
-TESTDIR=$CURDIR/../../..
+TESTDIR=$CURDIR/../..
 SESSION_NAME="clock_override"
 
-TESTAPP_PATH="$TESTDIR/utils/testapp"
-TESTAPP_NAME="gen-ust-events"
-TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
-NUM_EVENT=256
-EVENT_NAME="tp:tptest"
-LTTNG_UST_CLOCK_PLUGIN_SO="lttng-ust-clock-override-test.so"
-LIBS_DIR=".libs"
+NUM_TESTS=30
+EVENT_NAME="lttng_test_filter_event"
+
+TESTCMD="echo -n 10 > /proc/lttng-test-filter-event"
 
 METADATA_CLOCK_START_TOKEN="clock {"
 METADATA_CLOCK_END_TOKEN="};"
@@ -38,22 +37,23 @@ METADATA_TOKEN_LIST=(
 	"freq"
 )
 
-UST_CLOCK_TOKEN_VALUE=(
+CLOCK_TOKEN_VALUE=(
 	"lttng_test_clock_override"
 	"83c63deb-7aa4-48fb-abda-946f400d76e6"
 	"Freeze time with 1KHz for regression test"
 	"1000"
 )
 
-NUM_TESTS=33
-
 source $TESTDIR/utils/utils.sh
 
-# MUST set TESTDIR before calling those functions
-function run_app()
+function signal_cleanup()
 {
-	$TESTAPP_BIN $NUM_EVENT
-	ok $? "Application done"
+	diag "*** Exiting ***"
+	rmmod lttng-test
+	stop_lttng_sessiond
+	rmmod lttng-clock-plugin-test
+	rmmod lttng-clock
+	exit 1
 }
 
 function extract_clock_metadata()
@@ -74,7 +74,7 @@ function extract_clock_metadata_token()
 	cat $clock_metadata_file | grep $token | awk -F"= |;" '{print $2}' | tr -d '"'
 }
 
-function test_getcpu_override_metadata()
+function test_clock_override_metadata()
 {
 	local ctf_metadata_file=$(mktemp -p $TRACE_PATH ctf-metadata.XXXXX)
 	local clock_metadata_file=$(mktemp -p $TRACE_PATH clock-metadata.XXXXX)
@@ -82,50 +82,56 @@ function test_getcpu_override_metadata()
 
 	diag "Clock override plugin metadata test"
 
-	# LTTNG_UST_CLOCK_PLUGIN need to be defined for lttng-sessiond.
-	export LTTNG_UST_CLOCK_PLUGIN=$CURDIR/.libs/$LTTNG_UST_CLOCK_PLUGIN_SO
+	modprobe lttng-clock-plugin-test
 	start_lttng_sessiond
-	unset LTTNG_UST_CLOCK_PLUGIN
+	modprobe lttng-test
 
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
-	enable_ust_lttng_event_ok $SESSION_NAME "$EVENT_NAME"
+	enable_kernel_lttng_event_ok $SESSION_NAME "$EVENT_NAME"
 	start_lttng_tracing_ok $SESSION_NAME
-	run_app
+	eval ${TESTCMD}
 	stop_lttng_tracing_ok $SESSION_NAME
 	destroy_lttng_session_ok $SESSION_NAME
+
+	rmmod lttng-test
 	stop_lttng_sessiond
+	rmmod lttng-clock-plugin-test
+	rmmod lttng-clock
 
 	$BABELTRACE_BIN -o ctf-metadata -w $ctf_metadata_file $TRACE_PATH
 	ok $? "Metadata extraction from babeltrace"
 
 	extract_clock_metadata $ctf_metadata_file $clock_metadata_file
 
-	test ${#METADATA_TOKEN_LIST[@]} -eq ${#UST_CLOCK_TOKEN_VALUE[@]}
-	ok $? "Tokens to check(${#METADATA_TOKEN_LIST[@]}) and provided values(${#UST_CLOCK_TOKEN_VALUE[@]}) count is equal"
+	test ${#METADATA_TOKEN_LIST[@]} -eq ${#CLOCK_TOKEN_VALUE[@]}
+	ok $? "Tokens to check(${#METADATA_TOKEN_LIST[@]}) and provided values(${#CLOCK_TOKEN_VALUE[@]}) count is equal"
 
 	local counter=0
 	while [ "$counter" -lt "${#METADATA_TOKEN_LIST[@]}" ]; do
 		result=$(extract_clock_metadata_token $clock_metadata_file \
 			${METADATA_TOKEN_LIST[$counter]})
-		test "$result" == "${UST_CLOCK_TOKEN_VALUE[$counter]}"
-		ok $? "Token \"${METADATA_TOKEN_LIST[$counter]}\" expect:${UST_CLOCK_TOKEN_VALUE[$counter]} got:$result"
+		test "$result" == "${CLOCK_TOKEN_VALUE[$counter]}"
+		ok $? "Token \"${METADATA_TOKEN_LIST[$counter]}\" expect:${CLOCK_TOKEN_VALUE[$counter]} got:$result"
 		let "counter++"
 	done
 	rm -rf $ctf_metadata_file
 	rm -rf $clock_metadata_file
 }
 
-function test_getcpu_override_timestamp()
+function test_clock_override_timestamp()
 {
 	diag "Clock override test"
 
 	# Test without the plugin
 	diag "Plugin disabled"
+
 	start_lttng_sessiond
+	modprobe lttng-test
+
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
-	enable_ust_lttng_event_ok $SESSION_NAME "$EVENT_NAME"
+	enable_kernel_lttng_event_ok $SESSION_NAME "$EVENT_NAME"
 	start_lttng_tracing_ok $SESSION_NAME
-	run_app
+	eval ${TESTCMD}
 	stop_lttng_tracing_ok $SESSION_NAME
 	destroy_lttng_session_ok $SESSION_NAME
 
@@ -135,21 +141,28 @@ function test_getcpu_override_timestamp()
 		cut -d, -f1 | uniq | wc -l)
 	test $unique_timestamps_count -gt 1
 	ok $? "Unique event timestamps without clock override: $unique_timestamps_count expect >1"
+	rmmod lttng-test
 	stop_lttng_sessiond
 
 	# Test with clock override plugin.
-	# LTTNG_UST_CLOCK_PLUGIN need to be defined for both lttng-sessiond.
 	diag "Plugin enabled"
-	export LTTNG_UST_CLOCK_PLUGIN=$CURDIR/.libs/$LTTNG_UST_CLOCK_PLUGIN_SO
+
+	modprobe lttng-clock-plugin-test
+	start_lttng_sessiond
+	modprobe lttng-test
+
 	start_lttng_sessiond
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
-	enable_ust_lttng_event_ok $SESSION_NAME "$EVENT_NAME"
+	enable_kernel_lttng_event_ok $SESSION_NAME "$EVENT_NAME"
 	start_lttng_tracing_ok $SESSION_NAME
-	run_app
-	unset LTTNG_UST_CLOCK_PLUGIN
+	eval ${TESTCMD}
 	stop_lttng_tracing_ok $SESSION_NAME
 	destroy_lttng_session_ok $SESSION_NAME
+
+	rmmod lttng-test
 	stop_lttng_sessiond
+	rmmod lttng-clock-plugin-test
+	rmmod lttng-clock
 
 	# Use Babeltrace with "-n all" to give a comma separated list for
 	# easy extraction of timestamps.
@@ -159,35 +172,38 @@ function test_getcpu_override_timestamp()
 	ok $? "Unique event timestamps with clock override: $unique_timestamps_count expect 1"
 }
 
+# MUST set TESTDIR before calling those functions
 plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
 
-if [ -x "$CURDIR/$LIBS_DIR/$LTTNG_UST_CLOCK_PLUGIN_SO" ]; then
-	foundobj=1
-else
-	foundobj=0
-fi
-
-skip $foundobj "No shared object generated. Skipping all tests." $NUM_TESTS && exit 0
-
 TESTS=(
-	"test_getcpu_override_metadata"
-	"test_getcpu_override_timestamp"
+	"test_clock_override_metadata"
+	"test_clock_override_timestamp"
 )
 
 TEST_COUNT=${#TESTS[@]}
 i=0
 
-while [ "$i" -lt "$TEST_COUNT" ]; do
+if [ "$(id -u)" == "0" ]; then
+	isroot=1
+else
+	isroot=0
+fi
 
-	TRACE_PATH=$(mktemp -d)
+skip $isroot "Root access is needed. Skipping all tests." $NUM_TESTS ||
+{
+	trap signal_cleanup SIGTERM SIGINT
 
-	# Execute test
-	${TESTS[$i]}
+	while [ "$i" -lt "$TEST_COUNT" ]; do
 
-	rm -rf $TRACE_PATH
+		TRACE_PATH=$(mktemp -d)
 
-	let "i++"
-done
+		# Execute test
+		${TESTS[$i]}
 
+		rm -rf $TRACE_PATH
+
+		let "i++"
+	done
+}
