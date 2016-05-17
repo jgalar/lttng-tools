@@ -230,10 +230,21 @@ ssize_t send_viewer_streams(struct lttcomm_sock *sock,
 		send_stream.ctf_trace_id = htobe64(ctf_trace->id);
 		send_stream.metadata_flag = htobe32(
 				vstream->stream->is_metadata);
-		strncpy(send_stream.path_name, vstream->path_name,
-				sizeof(send_stream.path_name));
-		strncpy(send_stream.channel_name, vstream->channel_name,
-				sizeof(send_stream.channel_name));
+		if (lttng_strncpy(send_stream.path_name, vstream->path_name,
+				sizeof(send_stream.path_name))) {
+			pthread_mutex_unlock(&vstream->stream->lock);
+			viewer_stream_put(vstream);
+			ret = -1;	/* Error. */
+			goto end_unlock;
+		}
+		if (lttng_strncpy(send_stream.channel_name,
+				vstream->channel_name,
+				sizeof(send_stream.channel_name))) {
+			pthread_mutex_unlock(&vstream->stream->lock);
+			viewer_stream_put(vstream);
+			ret = -1;	/* Error. */
+			goto end_unlock;
+		}
 
 		DBG("Sending stream %" PRIu64 " to viewer",
 				vstream->stream->stream_handle);
@@ -794,7 +805,7 @@ end:
 static
 int viewer_list_sessions(struct relay_connection *conn)
 {
-	int ret;
+	int ret = 0;
 	struct lttng_viewer_list_sessions session_list;
 	struct lttng_ht_iter iter;
 	struct relay_session *session;
@@ -824,17 +835,23 @@ int viewer_list_sessions(struct relay_connection *conn)
 				new_buf_count * sizeof(*send_session_buf));
 			if (!newbuf) {
 				ret = -1;
-				rcu_read_unlock();
-				goto end_free;
+				break;
 			}
 			send_session_buf = newbuf;
 			buf_count = new_buf_count;
 		}
 		send_session = &send_session_buf[count];
-		strncpy(send_session->session_name, session->session_name,
-				sizeof(send_session->session_name));
-		strncpy(send_session->hostname, session->hostname,
-				sizeof(send_session->hostname));
+		if (lttng_strncpy(send_session->session_name,
+				session->session_name,
+				sizeof(send_session->session_name))) {
+			ret = -1;
+			break;
+		}
+		if (lttng_strncpy(send_session->hostname, session->hostname,
+				sizeof(send_session->hostname))) {
+			ret = -1;
+			break;
+		}
 		send_session->id = htobe64(session->id);
 		send_session->live_timer = htobe32(session->live_timer);
 		if (session->viewer_attached) {
@@ -846,6 +863,9 @@ int viewer_list_sessions(struct relay_connection *conn)
 		count++;
 	}
 	rcu_read_unlock();
+	if (ret < 0) {
+		goto end_free;
+	}
 
 	session_list.sessions_count = htobe32(count);
 

@@ -38,7 +38,7 @@
 #define RANDOM_STRING_LEN	11
 
 /* Number of TAP tests in this file */
-#define NUM_TESTS 12
+#define NUM_TESTS 15
 
 /* For error.h */
 int lttng_opt_quiet = 1;
@@ -101,8 +101,8 @@ static void test_create_ust_channel(void)
 
 	memset(&attr, 0, sizeof(attr));
 
-	strncpy(attr.name, "channel0", 8);
-
+	ok(lttng_strncpy(attr.name, "channel0", sizeof(attr.name)) == 0,
+		"Validate channel name length");
 	uchan = trace_ust_create_channel(&attr, LTTNG_DOMAIN_UST);
 	ok(uchan != NULL, "Create UST channel");
 
@@ -123,7 +123,9 @@ static void test_create_ust_event(void)
 	struct lttng_event ev;
 
 	memset(&ev, 0, sizeof(ev));
-	strncpy(ev.name, get_random_string(), LTTNG_SYMBOL_NAME_LEN);
+	ok(lttng_strncpy(ev.name, get_random_string(),
+			LTTNG_SYMBOL_NAME_LEN) == 0,
+		"Validate string length");
 	ev.type = LTTNG_EVENT_TRACEPOINT;
 	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;
 
@@ -154,7 +156,8 @@ static void test_create_ust_event_exclusion(void)
 	/* make a wildcarded event name */
 	name = get_random_string();
 	name[strlen(name) - 1] = '*';
-	strncpy(ev.name, name, LTTNG_SYMBOL_NAME_LEN);
+	ok(lttng_strncpy(ev.name, name, LTTNG_SYMBOL_NAME_LEN) == 0,
+		"Validate string length");
 
 	ev.type = LTTNG_EVENT_TRACEPOINT;
 	ev.loglevel_type = LTTNG_EVENT_LOGLEVEL_ALL;

@@ -277,7 +277,10 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 				&iter.iter, uchan, node.node) {
 			uint64_t discarded_events = 0, lost_packets = 0;
 
-			strncpy(channels[i].name, uchan->name, LTTNG_SYMBOL_NAME_LEN);
+			if (lttng_strncpy(channels[i].name, uchan->name,
+					LTTNG_SYMBOL_NAME_LEN)) {
+				break;
+			}
 			channels[i].attr.overwrite = uchan->attr.overwrite;
 			channels[i].attr.subbuf_size = uchan->attr.subbuf_size;
 			channels[i].attr.num_subbuf = uchan->attr.num_subbuf;
@@ -758,12 +761,15 @@ static int add_uri_to_consumer(struct consumer_output *consumer,
 		DBG2("Setting trace directory path from URI to %s", uri->dst.path);
 		memset(consumer->dst.trace_path, 0,
 				sizeof(consumer->dst.trace_path));
-		strncpy(consumer->dst.trace_path, uri->dst.path,
-				sizeof(consumer->dst.trace_path));
+		/* Explicit length checks for strcpy and strcat. */
+		if (strlen(uri->dst.path) + strlen(default_trace_dir)
+				>= sizeof(consumer->dst.trace_path)) {
+			ret = LTTNG_ERR_FATAL;
+			goto error;
+		}
+		strcpy(consumer->dst.trace_path, uri->dst.path);
 		/* Append default trace dir */
-		strncat(consumer->dst.trace_path, default_trace_dir,
-				sizeof(consumer->dst.trace_path) -
-				strlen(consumer->dst.trace_path) - 1);
+		strcat(consumer->dst.trace_path, default_trace_dir);
 		/* Flag consumer as local. */
 		consumer->type = CONSUMER_DST_LOCAL;
 		break;
@@ -1810,7 +1816,7 @@ static int _cmd_enable_event(struct ltt_session *session,
 		int wpipe, bool internal_event)
 {
 	int ret, channel_created = 0;
-	struct lttng_channel *attr;
+	struct lttng_channel *attr = NULL;
 
 	assert(session);
 	assert(event);
@@ -1853,15 +1859,16 @@ static int _cmd_enable_event(struct ltt_session *session,
 				ret = LTTNG_ERR_FATAL;
 				goto error;
 			}
-			strncpy(attr->name, channel_name, sizeof(attr->name));
+			if (lttng_strncpy(attr->name, channel_name,
+					sizeof(attr->name))) {
+				ret = LTTNG_ERR_INVALID;
+				goto error;
+			}
 
 			ret = cmd_enable_channel(session, domain, attr, wpipe);
 			if (ret != LTTNG_OK) {
-				free(attr);
 				goto error;
 			}
-			free(attr);
-
 			channel_created = 1;
 		}
 
@@ -1990,14 +1997,16 @@ static int _cmd_enable_event(struct ltt_session *session,
 				ret = LTTNG_ERR_FATAL;
 				goto error;
 			}
-			strncpy(attr->name, channel_name, sizeof(attr->name));
+			if (lttng_strncpy(attr->name, channel_name,
+					sizeof(attr->name))) {
+				ret = LTTNG_ERR_INVALID;
+				goto error;
+			}
 
 			ret = cmd_enable_channel(session, domain, attr, wpipe);
 			if (ret != LTTNG_OK) {
-				free(attr);
 				goto error;
 			}
-			free(attr);
 
 			/* Get the newly created channel reference back */
 			uchan = trace_ust_find_channel_by_name(
@@ -2172,6 +2181,7 @@ error:
 	free(filter_expression);
 	free(filter);
 	free(exclusion);
+	free(attr);
 	rcu_read_unlock();
 	return ret;
 }
@@ -3349,10 +3359,18 @@ ssize_t cmd_snapshot_list_outputs(struct ltt_session *session,
 		assert(output->consumer);
 		list[idx].id = output->id;
 		list[idx].max_size = output->max_size;
-		strncpy(list[idx].name, output->name, sizeof(list[idx].name));
+		if (lttng_strncpy(list[idx].name, output->name,
+				sizeof(list[idx].name))) {
+			ret = -LTTNG_ERR_INVALID;
+			goto error;
+		}
 		if (output->consumer->type == CONSUMER_DST_LOCAL) {
-			strncpy(list[idx].ctrl_url, output->consumer->dst.trace_path,
-					sizeof(list[idx].ctrl_url));
+			if (lttng_strncpy(list[idx].ctrl_url,
+					output->consumer->dst.trace_path,
+					sizeof(list[idx].ctrl_url))) {
+				ret = -LTTNG_ERR_INVALID;
+				goto error;
+			}
 		} else {
 			/* Control URI. */
 			ret = uri_to_str_url(&output->consumer->dst.net.control,
@@ -3888,8 +3906,12 @@ int cmd_snapshot_record(struct ltt_session *session,
 
 			/* Use temporary name. */
 			if (*output->name != '\0') {
-				strncpy(tmp_output.name, output->name,
-						sizeof(tmp_output.name));
+				if (lttng_strncpy(tmp_output.name, output->name,
+						sizeof(tmp_output.name))) {
+					ret = LTTNG_ERR_INVALID;
+					rcu_read_unlock();
+					goto error;
+				}
 			}
 
 			tmp_output.nb_snapshot = session->snapshot.nb_snapshot;

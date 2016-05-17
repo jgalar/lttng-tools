@@ -715,7 +715,10 @@ int consumer_set_network_uri(struct consumer_output *obj,
 			goto error;
 		}
 
-		strncpy(obj->subdir, tmp_path, sizeof(obj->subdir));
+		if (lttng_strncpy(obj->subdir, tmp_path, sizeof(obj->subdir))) {
+			ret = -LTTNG_ERR_INVALID;
+			goto error;
+		}
 		DBG3("Consumer set network uri subdir path %s", tmp_path);
 	}
 
@@ -1086,7 +1089,11 @@ int consumer_set_subdir(struct consumer_output *consumer,
 		goto error;
 	}
 
-	strncpy(consumer->subdir, tmp_path, sizeof(consumer->subdir));
+	if (lttng_strncpy(consumer->subdir, tmp_path,
+			sizeof(consumer->subdir))) {
+		ret = -EINVAL;
+		goto error;
+	}
 	DBG2("Consumer subdir set to %s", consumer->subdir);
 
 error:

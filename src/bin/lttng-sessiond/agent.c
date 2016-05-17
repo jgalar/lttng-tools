@@ -353,8 +353,11 @@ static ssize_t list_events(struct agent_app *app, struct lttng_event **events)
 
 	for (i = 0; i < nb_event; i++) {
 		offset += len;
-		strncpy(tmp_events[i].name, reply->payload + offset,
-				sizeof(tmp_events[i].name));
+		if (lttng_strncpy(tmp_events[i].name, reply->payload + offset,
+				sizeof(tmp_events[i].name))) {
+			ret = LTTNG_ERR_INVALID;
+			goto error;
+		}
 		tmp_events[i].pid = app->pid;
 		tmp_events[i].enabled = -1;
 		len = strlen(reply->payload + offset) + 1;
@@ -408,16 +411,19 @@ static int enable_event(struct agent_app *app, struct agent_event *event)
 	}
 	data_size = sizeof(msg) + filter_expression_length;
 
+	memset(&msg, 0, sizeof(msg));
+	msg.loglevel_value = htobe32(event->loglevel_value);
+	msg.loglevel_type = htobe32(event->loglevel_type);
+	if (lttng_strncpy(msg.name, event->name, sizeof(msg.name))) {
+		ret = LTTNG_ERR_INVALID;
+		goto error;
+	}
+	msg.filter_expression_length = htobe32(filter_expression_length);
+
 	ret = send_header(app->sock, data_size, AGENT_CMD_ENABLE, 0);
 	if (ret < 0) {
 		goto error_io;
 	}
-
-	memset(&msg, 0, sizeof(msg));
-	msg.loglevel_value = htobe32(event->loglevel_value);
-	msg.loglevel_type = htobe32(event->loglevel_type);
-	strncpy(msg.name, event->name, sizeof(msg.name));
-	msg.filter_expression_length = htobe32(filter_expression_length);
 
 	bytes_to_send = zmalloc(data_size);
 	if (!bytes_to_send) {
@@ -591,14 +597,17 @@ static int disable_event(struct agent_app *app, struct agent_event *event)
 			app->pid, app->sock->fd);
 
 	data_size = sizeof(msg);
+	memset(&msg, 0, sizeof(msg));
+	if (lttng_strncpy(msg.name, event->name, sizeof(msg.name))) {
+		ret = LTTNG_ERR_INVALID;
+		goto error;
+	}
 
 	ret = send_header(app->sock, data_size, AGENT_CMD_DISABLE, 0);
 	if (ret < 0) {
 		goto error_io;
 	}
 
-	memset(&msg, 0, sizeof(msg));
-	strncpy(msg.name, event->name, sizeof(msg.name));
 	ret = send_payload(app->sock, &msg, sizeof(msg));
 	if (ret < 0) {
 		goto error_io;
