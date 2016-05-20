@@ -38,7 +38,7 @@
 #define RANDOM_STRING_LEN	11
 
 /* Number of TAP tests in this file */
-#define NUM_TESTS 15
+#define NUM_TESTS 16
 
 /* For error.h */
 int lttng_opt_quiet = 1;
@@ -165,11 +165,11 @@ static void test_create_ust_event_exclusion(void)
 	/* set up an exclusion set */
 	exclusion = zmalloc(sizeof(*exclusion) +
 		LTTNG_SYMBOL_NAME_LEN * exclusion_count);
+	ok(exclusion != NULL, "Create UST exclusion");
 	if (!exclusion) {
 		PERROR("zmalloc");
+		abort();
 	}
-
-	ok(exclusion != NULL, "Create UST exclusion");
 
 	exclusion->count = exclusion_count;
 	random_name = get_random_string();
@@ -179,13 +179,16 @@ static void test_create_ust_event_exclusion(void)
 		LTTNG_SYMBOL_NAME_LEN);
 
 	event = trace_ust_create_event(&ev, NULL, NULL, exclusion, false);
+	exclusion = NULL;
 
 	ok(!event, "Create UST event with identical exclusion names fails");
 
 	exclusion = zmalloc(sizeof(*exclusion) +
 		LTTNG_SYMBOL_NAME_LEN * exclusion_count);
+	ok(exclusion != NULL, "Create UST exclusion");
 	if (!exclusion) {
 		PERROR("zmalloc");
+		abort();
 	}
 
 	exclusion->count = exclusion_count;

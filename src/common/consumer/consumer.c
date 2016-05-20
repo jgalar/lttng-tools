@@ -1021,7 +1021,7 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 
 	CDS_INIT_LIST_HEAD(&channel->streams.head);
 
-	DBG("Allocated channel (key %" PRIu64 ")", channel->key)
+	DBG("Allocated channel (key %" PRIu64 ")", channel->key);
 
 end:
 	return channel;
@@ -1229,9 +1229,15 @@ void lttng_consumer_should_exit(struct lttng_consumer_local_data *ctx)
 	DBG("Consumer flag that it should quit");
 }
 
+
+/*
+ * Flush pending writes to trace output disk file.
+ */
+static
 void lttng_consumer_sync_trace_file(struct lttng_consumer_stream *stream,
 		off_t orig_offset)
 {
+	int ret;
 	int outfd = stream->out_fd;
 
 	/*
@@ -1262,8 +1268,12 @@ void lttng_consumer_sync_trace_file(struct lttng_consumer_stream *stream,
 	 * defined. So it can be expected to lead to lower throughput in
 	 * streaming.
 	 */
-	posix_fadvise(outfd, orig_offset - stream->max_sb_size,
+	ret = posix_fadvise(outfd, orig_offset - stream->max_sb_size,
 			stream->max_sb_size, POSIX_FADV_DONTNEED);
+	if (ret && ret != -ENOSYS) {
+		errno = ret;
+		PERROR("posix_fadvise on fd %i", outfd);
+	}
 }
 
 /*
@@ -1682,8 +1692,8 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 		lttng_sync_file_range(outfd, stream->out_fd_offset, len,
 				SYNC_FILE_RANGE_WRITE);
 		stream->out_fd_offset += len;
+		lttng_consumer_sync_trace_file(stream, orig_offset);
 	}
-	lttng_consumer_sync_trace_file(stream, orig_offset);
 
 write_error:
 	/*
@@ -1912,7 +1922,9 @@ ssize_t lttng_consumer_on_read_subbuffer_splice(
 		stream->output_written += ret_splice;
 		written += ret_splice;
 	}
-	lttng_consumer_sync_trace_file(stream, orig_offset);
+	if (!relayd) {
+		lttng_consumer_sync_trace_file(stream, orig_offset);
+	}
 	goto end;
 
 write_error:

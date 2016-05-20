@@ -189,6 +189,10 @@ char *utils_partial_realpath(const char *path, char *resolved_path, size_t size)
 error:
 	free(resolved_path);
 	free(cut_path);
+	free(try_path);
+	if (try_path_prev != try_path) {
+		free(try_path_prev);
+	}
 	return NULL;
 }
 
@@ -850,6 +854,7 @@ int utils_rotate_stream_file(char *path_name, char *file_name, uint64_t size,
 		PERROR("Closing tracefile");
 		goto error;
 	}
+	*stream_fd = -1;
 
 	if (count > 0) {
 		/*
@@ -1347,7 +1352,7 @@ end:
 
 static const char *get_man_bin_path(void)
 {
-	char *env_man_path = getenv(DEFAULT_MAN_BIN_PATH_ENV);
+	char *env_man_path = lttng_secure_getenv(DEFAULT_MAN_BIN_PATH_ENV);
 
 	if (env_man_path) {
 		return env_man_path;

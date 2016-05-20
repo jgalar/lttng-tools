@@ -60,6 +60,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_STREAMS_SENT,
 	LTTNG_CONSUMER_DISCARDED_EVENTS,
 	LTTNG_CONSUMER_LOST_PACKETS,
+	LTTNG_CONSUMER_CLEAR_QUIESCENT_CHANNEL,
 };
 
 /* State of each fd in consumer */
@@ -248,6 +249,25 @@ struct lttng_consumer_stream {
 	int shm_fd_is_copy;
 	int data_read;
 	int hangup_flush_done;
+
+	/*
+	 * Whether the stream is in a "complete" state (e.g. it does not have a
+	 * partially written sub-buffer.
+	 *
+	 * Initialized to "false" on stream creation (first packet is empty).
+	 *
+	 * The various transitions of the quiescent state are:
+	 *     - On "start" tracing: set to false, since the stream is not
+	 *       "complete".
+	 *     - On "stop" tracing: if !quiescent -> flush FINAL (update
+	 *       timestamp_end), and set to true; the stream has entered a
+	 *       complete/quiescent state.
+	 *     - On "destroy" or stream/application hang-up: if !quiescent ->
+	 *       flush FINAL, and set to true.
+	 *
+	 * NOTE: Update and read are protected by the stream lock.
+	 */
+	bool quiescent;
 
 	/*
 	 * metadata_timer_lock protects flags waiting_on_metadata and
@@ -605,12 +625,6 @@ void lttng_consumer_should_exit(struct lttng_consumer_local_data *ctx);
  * Cleanup the daemon's socket on exit.
  */
 void lttng_consumer_cleanup(void);
-
-/*
- * Flush pending writes to trace output disk file.
- */
-void lttng_consumer_sync_trace_file(struct lttng_consumer_stream *stream,
-		off_t orig_offset);
 
 /*
  * Poll on the should_quit pipe and the command socket return -1 on error and

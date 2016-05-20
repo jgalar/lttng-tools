@@ -1,5 +1,5 @@
-EXTRA_DIST = test_event_basic test_all_events test_syscall \
-		test_clock_override test_rotation_destroy_flush
+noinst_SCRIPTS = test_rotation_destroy_flush
+EXTRA_DIST = test_rotation_destroy_flush
 
 all-local:
 	@if [ x"$(srcdir)" != x"$(builddir)" ]; then \

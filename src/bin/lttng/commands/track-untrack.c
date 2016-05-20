@@ -87,7 +87,7 @@ int parse_pid_string(const char *_pid_string,
 		goto error;
 	}
 	if (all) {
-		pid_list = zmalloc(sizeof(*_pid_list));
+		pid_list = zmalloc(sizeof(*pid_list));
 		if (!pid_list) {
 			ERR("Out of memory");
 			retval = CMD_ERROR;
@@ -149,7 +149,7 @@ int parse_pid_string(const char *_pid_string,
 		goto error;
 	}
 
-	/* Copy */
+	/* Reparse string and populate the pid list. */
 	count = 0;
 	one_pid_str = strtok_r(pid_string, ",", &iter);
 	while (one_pid_str != NULL) {
