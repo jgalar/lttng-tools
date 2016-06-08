@@ -281,7 +281,7 @@ elementFormDefault="qualified" version="3.0">
 </xs:complexType>
 
 <xs:complexType name="destination_type">
-	<xs:choice>
+	<xs:choice minOccurs="0">
 		<xs:element name="path" type="xs:string"/>
 		<xs:element name="net_output" type="net_output_type"/>
 	</xs:choice>
@@ -317,7 +317,7 @@ elementFormDefault="qualified" version="3.0">
 
 <xs:complexType name="session_type">
 	<xs:all>
-		<xs:element name="name" type="name_type"/>
+		<xs:element name="name" type="name_type" minOccurs="0"/>
 		<xs:element name="shared_memory_path" type="xs:string" minOccurs="0"/>
 		<xs:element name="domains" type="domain_list_type" minOccurs="0"/>
 		<xs:element name="started" type="xs:boolean" default="0" minOccurs="0"/>
