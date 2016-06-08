@@ -57,6 +57,20 @@ enum {
 	OPT_LIVE_TIMER,
 };
 
+enum {
+	OUTPUT_UNKNOWN = 1,
+	OUTPUT_NONE,
+	OUTPUT_LOCAL,
+	OUTPUT_NET,
+};
+enum {
+	SESSION_UNKNOWN = 1,
+	SESSION_NORMAL,
+	SESSION_LIVE,
+	SESSION_SNAPSHOT,
+};
+
+
 static struct mi_writer *writer;
 
 static struct poptOption long_options[] = {
@@ -160,14 +174,6 @@ static int set_consumer_url(const char *session_name, const char *ctrl_url,
 		goto error;
 	}
 
-	if (ctrl_url) {
-		MSG("Control URL %s set for session %s", ctrl_url, session_name);
-	}
-
-	if (data_url) {
-		MSG("Data URL %s set for session %s", data_url, session_name);
-	}
-
 error:
 	lttng_destroy_handle(handle);
 	return ret;
@@ -214,65 +220,18 @@ error_create:
 }
 
 /*
- *  Create a tracing session.
- *  If no name is specified, a default name is generated.
+ * Validate the combinations of passed options
  *
- *  Returns one of the CMD_* result constants.
+ * CMD_ERROR on error
+ * CMD_SUCCESS on success
  */
-static int create_session(void)
+static int validate_command_options(void)
 {
-	int ret;
-	char *session_name = NULL, *traces_path = NULL, *alloc_path = NULL;
-	char *alloc_url = NULL, *url = NULL, datetime[16];
-	char session_name_date[NAME_MAX + 17], *print_str_url = NULL;
-	time_t rawtime;
-	struct tm *timeinfo;
-	char shm_path[PATH_MAX] = "";
-
-	/* Get date and time for automatic session name/path */
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
-	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
-
-	/* Auto session name creation */
-	if (opt_session_name == NULL) {
-		ret = snprintf(session_name_date, sizeof(session_name_date),
-				DEFAULT_SESSION_NAME "-%s", datetime);
-		if (ret < 0) {
-			PERROR("snprintf session name");
-			goto error;
-		}
-		session_name = session_name_date;
-		DBG("Auto session name set to %s", session_name_date);
-	} else {
-		if (strlen(opt_session_name) > NAME_MAX) {
-			ERR("Session name too long. Length must be lower or equal to %d",
-					NAME_MAX);
-			ret = LTTNG_ERR_SESSION_FAIL;
-			goto error;
-		}
-		/*
-		 * Check if the session name begins with "auto-" or is exactly "auto".
-		 * Both are reserved for the default session name. See bug #449 to
-		 * understand why we need to check both here.
-		 */
-		if ((strncmp(opt_session_name, DEFAULT_SESSION_NAME "-",
-					strlen(DEFAULT_SESSION_NAME) + 1) == 0) ||
-				(strncmp(opt_session_name, DEFAULT_SESSION_NAME,
-					strlen(DEFAULT_SESSION_NAME)) == 0 &&
-				strlen(opt_session_name) == strlen(DEFAULT_SESSION_NAME))) {
-			ERR("%s is a reserved keyword for default session(s)",
-					DEFAULT_SESSION_NAME);
-			ret = CMD_ERROR;
-			goto error;
-		}
-		session_name = opt_session_name;
-		ret = snprintf(session_name_date, sizeof(session_name_date),
-				"%s-%s", session_name, datetime);
-		if (ret < 0) {
-			PERROR("snprintf session name");
-			goto error;
-		}
+	int ret = CMD_SUCCESS;
+	if (opt_snapshot && opt_live_timer) {
+		ERR("Snapshot and live modes are mutually exclusive.");
+		ret = CMD_ERROR;
+		goto error;
 	}
 
 	if ((!opt_ctrl_url && opt_data_url) || (opt_ctrl_url && !opt_data_url)) {
@@ -281,110 +240,75 @@ static int create_session(void)
 		goto error;
 	}
 
-	if (opt_output_path != NULL) {
-		traces_path = utils_expand_path(opt_output_path);
-		if (traces_path == NULL) {
-			ret = CMD_ERROR;
-			goto error;
-		}
+error:
+	return ret;
+}
 
-		/* Create URL string from the local file system path */
-		ret = asprintf(&alloc_url, "file://%s", traces_path);
-		if (ret < 0) {
-			PERROR("asprintf url path");
-			ret = CMD_FATAL;
-			goto error;
-		}
-		/* URL to use in the lttng_create_session() call */
-		url = alloc_url;
-		print_str_url = traces_path;
-	} else if (opt_url) { /* Handling URL (-U opt) */
-		url = opt_url;
-		print_str_url = url;
-	} else if (opt_data_url && opt_ctrl_url) {
-		/*
-		 * With both control and data, we'll be setting the consumer URL after
-		 * session creation thus use no URL.
-		 */
-		url = NULL;
-	} else if (!opt_no_output) {
-		char *tmp_path;
+/*
+ * Create a session via direct calls to liblttng-ctl.
+ *
+ * Return CMD_SUCCESS on success, negative value on internal lttng errors and positive
+ * value on command errors.
+ */
+static int create_session_basic (const char *session_name,
+		int session_type,
+		int live_timer,
+		int output_type,
+		const char* url,
+		const char* ctrl_url,
+		const char* data_url,
+		const char* shm_path,
+		const char* datetime)
+{
+	/* Create session based on session creation */
+	int ret = CMD_SUCCESS;
+	const char *pathname;
 
-		/* Auto output path */
-		tmp_path = utils_get_home_dir();
-		if (tmp_path == NULL) {
-			ERR("HOME path not found.\n \
-					Please specify an output path using -o, --output PATH");
-			ret = CMD_FATAL;
-			goto error;
-		}
-		alloc_path = strdup(tmp_path);
-		if (!alloc_path) {
-			PERROR("allocating alloc_path");
-			ret = CMD_FATAL;
-			goto error;
-		}
-		ret = asprintf(&alloc_url,
-				"file://%s/" DEFAULT_TRACE_DIR_NAME "/%s",
-				alloc_path, session_name_date);
-		if (ret < 0) {
-			PERROR("asprintf trace dir name");
-			ret = CMD_FATAL;
-			goto error;
-		}
+	assert(datetime);
 
-		url = alloc_url;
-		print_str_url = alloc_url + strlen("file://");
+	if (opt_relayd_path) {
+		pathname = opt_relayd_path;
 	} else {
-		/* No output means --no-output or --snapshot mode. */
-		url = NULL;
+		pathname = INSTALL_BIN_PATH "/lttng-relayd";
 	}
 
-	/* Use default live URL if NO url is/are found. */
-	if ((opt_live_timer && !opt_url) && (opt_live_timer && !opt_data_url)) {
-		ret = asprintf(&alloc_url, "net://127.0.0.1");
-		if (ret < 0) {
-			PERROR("asprintf default live URL");
+	switch (session_type) {
+	case SESSION_NORMAL:
+		ret = _lttng_create_session_ext(session_name, url, datetime);
+		break;
+	case SESSION_SNAPSHOT:
+		if (output_type == OUTPUT_NONE) {
+			ERR("--no-output on a snapshot session is invalid");
+			ret = CMD_UNSUPPORTED;
+			goto error;
+		}
+		ret = lttng_create_session_snapshot(session_name, url);
+		break;
+	case SESSION_LIVE:
+		if (output_type == OUTPUT_NONE) {
+			ERR("--no-output on a live session is invalid");
+			ret = CMD_UNSUPPORTED;
+			goto error;
+		}
+
+		if (output_type == OUTPUT_LOCAL) {
+			ERR("Local file output on a live session is invalid");
+			ret = CMD_UNSUPPORTED;
+			goto error;
+		}
+		if (output_type != OUTPUT_NET && !check_relayd() &&
+				spawn_relayd(pathname, 0) < 0) {
 			ret = CMD_FATAL;
 			goto error;
 		}
-		url = alloc_url;
-		print_str_url = url;
-	}
-
-	if (opt_snapshot && opt_live_timer) {
-		ERR("Snapshot and live modes are mutually exclusive.");
-		ret = CMD_ERROR;
+		ret = lttng_create_session_live(session_name, url, live_timer);
+		break;
+	default:
+		ERR("Unknown session type");
+		ret = CMD_UNDEFINED;
 		goto error;
 	}
 
-	if (opt_snapshot) {
-		/* No output by default. */
-		const char *snapshot_url = NULL;
-
-		if (opt_url) {
-			snapshot_url = url;
-		} else if (!opt_data_url && !opt_ctrl_url) {
-			/* This is the session path that we need to use as output. */
-			snapshot_url = url;
-		}
-		ret = lttng_create_session_snapshot(session_name, snapshot_url);
-	} else if (opt_live_timer) {
-		const char *pathname;
-
-		if (opt_relayd_path) {
-			pathname = opt_relayd_path;
-		} else {
-			pathname = INSTALL_BIN_PATH "/lttng-relayd";
-		}
-		if (!opt_url && !opt_data_url && !check_relayd() &&
-				spawn_relayd(pathname, 0) < 0) {
-			goto error;
-		}
-		ret = lttng_create_session_live(session_name, url, opt_live_timer);
-	} else {
-		ret = _lttng_create_session_ext(session_name, url, datetime);
-	}
 	if (ret < 0) {
 		/* Don't set ret so lttng can interpret the sessiond error. */
 		switch (-ret) {
@@ -397,53 +321,99 @@ static int create_session(void)
 		goto error;
 	}
 
-	if (opt_ctrl_url && opt_data_url) {
-		if (opt_snapshot) {
-			ret = add_snapshot_output(session_name, opt_ctrl_url,
-					opt_data_url);
-		} else {
-			/* Setting up control URI (-C or/and -D opt) */
-			ret = set_consumer_url(session_name, opt_ctrl_url, opt_data_url);
+	/* Configure the session based on the output type */
+	switch (output_type) {
+	case OUTPUT_LOCAL:
+		break;
+	case OUTPUT_NET:
+		if (session_type == SESSION_SNAPSHOT) {
+			ret = add_snapshot_output(session_name, ctrl_url,
+					data_url);
+		} else if (ctrl_url && data_url) {
+			/*
+			 * Normal sessions and live sessions behave the same way
+			 * regarding consumer url.
+			 */
+			ret = set_consumer_url(session_name, ctrl_url, data_url);
 		}
 		if (ret < 0) {
-			/* Destroy created session because the URL are not valid. */
+			/* Destroy created session on errors */
 			lttng_destroy_session(session_name);
 			goto error;
 		}
+		break;
+	case OUTPUT_NONE:
+		break;
+	default:
+		ERR("Unknown output type");
+		ret = CMD_UNDEFINED;
+		goto error;
 	}
 
-	if (opt_shm_path) {
-		ret = snprintf(shm_path, sizeof(shm_path),
-				"%s/%s", opt_shm_path, session_name_date);
-		if (ret < 0) {
-			PERROR("snprintf shm_path");
-			goto error;
-		}
-
+	/*
+	 * Set the session shared memory path
+	 */
+	if (shm_path) {
 		ret = lttng_set_session_shm_path(session_name, shm_path);
 		if (ret < 0) {
 			lttng_destroy_session(session_name);
 			goto error;
 		}
 	}
+error:
+	return ret;
+}
+
+static int generate_output(const char *session_name,
+		int session_type,
+		int live_timer,
+		int output_type,
+		const char* url,
+		const char* ctrl_url,
+		const char* data_url,
+		const char* shm_path)
+{
+	int ret = CMD_SUCCESS;
+
+	/*
+	 * TODO move this to after session name
+	 * for now we only emulate previous behaviour.
+	 */
+	if (session_type != SESSION_SNAPSHOT) {
+		if (ctrl_url) {
+			MSG("Control URL %s set for session %s", ctrl_url, session_name);
+		}
+
+		if (data_url) {
+			MSG("Data URL %s set for session %s", data_url, session_name);
+		}
+	}
+
+	if (url && output_type == OUTPUT_LOCAL) {
+		/* Remove the file:// */
+		if (strlen(url) > strlen("file://")){
+			url = url + strlen("file://");
+		}
+	}
 
 	MSG("Session %s created.", session_name);
-	if (print_str_url && !opt_snapshot) {
-		MSG("Traces will be written in %s", print_str_url);
+	if (url && session_type != SESSION_SNAPSHOT) {
+		MSG("Traces will be written in %s", url);
 
-		if (opt_live_timer) {
-			MSG("Live timer set to %u usec", opt_live_timer);
+		if (live_timer) {
+			MSG("Live timer set to %u usec", live_timer);
 		}
-	} else if (opt_snapshot) {
-		if (print_str_url) {
-			MSG("Default snapshot output set to: %s", print_str_url);
+	} else if (session_type == SESSION_SNAPSHOT) {
+		if (url) {
+			MSG("Default snapshot output set to: %s", url);
 		}
 		MSG("Snapshot mode set. Every channel enabled for that session will "
 				"be set in overwrite mode and mmap output.");
 	}
-	if (opt_shm_path) {
+
+	if (shm_path) {
 		MSG("Session %s set to shm_path: %s.", session_name,
-			shm_path);
+				shm_path);
 	}
 
 	/* Mi output */
@@ -454,9 +424,294 @@ static int create_session(void)
 			goto error;
 		}
 	}
+error:
+	return ret;
+}
+
+/*
+ *  Create a tracing session.
+ *  If no name is specified, a default name is generated.
+ *
+ *  Returns one of the CMD_* result constants.
+ */
+static int create_session(void)
+{
+	int ret;
+
+	/* Base data */
+	int base_session_type = SESSION_UNKNOWN;
+	int base_output_type = OUTPUT_UNKNOWN;
+	char *base_session_name = NULL;
+	char *base_url = NULL;
+	char *base_ctrl_url = NULL;
+	char *base_data_url = NULL;
+	char *base_shm_path = NULL;
+	int base_live_timer = 0;
+
+	/* Time data */
+	char datetime[16];
+	time_t rawtime;
+	struct tm *timeinfo = NULL;
+
+	/* Temporary variables */
+	char *traces_path = NULL;
+	char *temp_url = NULL;
+	char *session_name_date = NULL;
+	char *tmp_url = NULL;
+	char *tmp_home_path = NULL;
+	struct lttng_uri *uris = NULL;
+	ssize_t uri_array_size = 0;
+
+	/* Option validation */
+	if (validate_command_options() != CMD_SUCCESS) {
+		ret = CMD_ERROR;
+		goto error;
+	}
+
+	/* Get date and time for automatic session name/path */
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+
+	/* Find the session type based on options */
+	if(base_session_type == SESSION_UNKNOWN) {
+		if (opt_snapshot) {
+			base_session_type = SESSION_SNAPSHOT;
+		} else if (opt_live_timer) {
+			base_session_type = SESSION_LIVE;
+		} else {
+			base_session_type = SESSION_NORMAL;
+		}
+	}
+
+	/*
+	 * Session name handling
+	 */
+	if (opt_session_name) {
+		/* Override the session name */
+		if (strlen(opt_session_name) > NAME_MAX) {
+			ERR("Session name too long. Length must be lower or equal to %d",
+					NAME_MAX);
+			ret = LTTNG_ERR_SESSION_FAIL;
+			free(session_name_date);
+			goto error;
+		}
+		/*
+		 * Check if the session name begins with "auto-" or is exactly "auto".
+		 * Both are reserved for the default session name. See bug #449 to
+		 * understand why we need to check both here.
+		 */
+		if ((strncmp(opt_session_name, DEFAULT_SESSION_NAME "-",
+				strlen(DEFAULT_SESSION_NAME) + 1) == 0) ||
+			(strncmp(opt_session_name, DEFAULT_SESSION_NAME,
+				strlen(DEFAULT_SESSION_NAME)) == 0 &&
+			 strlen(opt_session_name) == strlen(DEFAULT_SESSION_NAME))) {
+			ERR("%s is a reserved keyword for default session(s)",
+					DEFAULT_SESSION_NAME);
+
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		base_session_name = strndup(opt_session_name, NAME_MAX);
+		if (!base_session_name) {
+			PERROR("Strdup session name");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		ret = asprintf(&session_name_date, "%s-%s", base_session_name, datetime);
+		if (ret < 0) {
+			PERROR("Asprintf session name");
+			goto error;
+		}
+		DBG("Session name from command option set to %s", base_session_name);
+	} else if (base_session_name) {
+		ret = asprintf(&session_name_date, "%s-%s", base_session_name, datetime);
+		if (ret < 0) {
+			PERROR("Asprintf session name");
+			goto error;
+		}
+	} else {
+		/* Generate a name */
+		/* TODO: use asprint */
+		ret = asprintf(&base_session_name, DEFAULT_SESSION_NAME "-%s", datetime);
+		if (ret < 0) {
+			PERROR("Asprintf generated session name");
+			goto error;
+		}
+		session_name_date = strdup(base_session_name);
+		DBG("Auto session name set to %s", base_session_name);
+	}
+
+
+	/*
+	 * Output handling
+	 */
+
+	/*
+	 * If any of those options are present clear all output related data.
+	 */
+	if (opt_output_path || opt_url || (opt_ctrl_url && opt_data_url) || opt_no_output) {
+		/* Overwrite output */
+		free(base_url);
+		free(base_ctrl_url);
+		free(base_data_url);
+		base_url = NULL;
+		base_ctrl_url = NULL;
+		base_data_url = NULL;
+	}
+
+	if (opt_output_path) {
+
+		traces_path = utils_expand_path(opt_output_path);
+		if (!traces_path) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		/* Create URL string from the local file system path */
+		ret = asprintf(&temp_url, "file://%s", traces_path);
+		if (ret < 0) {
+			PERROR("asprintf url path");
+			ret = CMD_FATAL;
+			goto error;
+		}
+
+		base_url = temp_url;
+	} else if (opt_url) { /* Handling URL (-U opt) */
+		base_url = strdup(opt_url);
+	} else if (opt_data_url && opt_ctrl_url) {
+		/*
+		 * With both control and data, we'll be setting the consumer URL
+		 * after session creation thus use no URL.
+		 */
+		base_ctrl_url = strdup(opt_ctrl_url);
+		base_data_url = strdup(opt_data_url);
+	} else if (!(opt_no_output || base_output_type == OUTPUT_NONE ||
+				base_url || base_ctrl_url || base_data_url)) {
+		/* Generate default output depending on the session type */
+		switch (base_session_type) {
+		case SESSION_NORMAL:
+			/* fallthrough */
+		case SESSION_SNAPSHOT:
+			/* Default to a local path */
+			tmp_home_path = utils_get_home_dir();
+			if (tmp_home_path == NULL) {
+				ERR("HOME path not found.\n \
+						Please specify an output path using -o, --output PATH");
+				ret = CMD_FATAL;
+				goto error;
+			}
+
+			ret = asprintf(&tmp_url,
+					"file://%s/" DEFAULT_TRACE_DIR_NAME "/%s",
+					tmp_home_path, session_name_date);
+
+			if (ret < 0) {
+				PERROR("asprintf trace dir name");
+				ret = CMD_FATAL;
+				goto error;
+			}
+
+			base_url = tmp_url ;
+			break;
+		case SESSION_LIVE:
+			/* Default to a net output */
+			ret = asprintf(&tmp_url, "net://127.0.0.1");
+			if (ret < 0) {
+				PERROR("asprintf default live URL");
+				ret = CMD_FATAL;
+				goto error;
+			}
+			base_url = tmp_url ;
+			break;
+		default:
+			ERR("Unknown session type");
+			ret = CMD_FATAL;
+			goto error;
+		}
+	}
+
+	 /*
+	  * Shared memory path handling
+	  */
+	if (opt_shm_path) {
+		ret = asprintf(&base_shm_path, "%s/%s", opt_shm_path, session_name_date);
+		if (ret < 0) {
+			PERROR("asprintf shm_path");
+			goto error;
+		}
+	}
+
+	 /*
+	  * Live timer handling
+	  */
+	if (opt_live_timer) {
+		base_live_timer = opt_live_timer;
+	}
+
+	/* Get output type from urls */
+	if (base_url) {
+		/* Get lttng uris from single url */
+		uri_array_size = uri_parse_str_urls(base_url, NULL, &uris);
+		if (uri_array_size < 0) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+	} else if (base_ctrl_url && base_data_url) {
+		uri_array_size = uri_parse_str_urls(base_ctrl_url, base_data_url, &uris);
+		if (uri_array_size < 0) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+	} else {
+		/* --no-output */
+		uri_array_size = 0;
+	}
+
+	switch (uri_array_size) {
+	case 0:
+		base_output_type = OUTPUT_NONE;
+		break;
+	case 1:
+		base_output_type = OUTPUT_LOCAL;
+		break;
+	case 2:
+		base_output_type = OUTPUT_NET;
+		break;
+	default:
+		ret = CMD_ERROR;
+		goto error;
+	}
+
+	ret = create_session_basic (base_session_name,
+			base_session_type,
+			base_live_timer,
+			base_output_type,
+			base_url,
+			base_ctrl_url,
+			base_data_url,
+			base_shm_path,
+			datetime);
+	if (ret) {
+		goto error;
+	}
+
+	ret = generate_output (base_session_name,
+			base_session_type,
+			base_live_timer,
+			base_output_type,
+			base_url,
+			base_ctrl_url,
+			base_data_url,
+			base_shm_path);
+	if (ret) {
+		goto error;
+	}
 
 	/* Init lttng session config */
-	ret = config_init(session_name);
+	ret = config_init(base_session_name);
 	if (ret < 0) {
 		ret = CMD_ERROR;
 		goto error;
@@ -465,13 +720,20 @@ static int create_session(void)
 	ret = CMD_SUCCESS;
 
 error:
-	free(alloc_url);
-	free(traces_path);
-	free(alloc_path);
+
+	/* Session temp stuff */
+	free(session_name_date);
+
+	free(uris);
 
 	if (ret < 0) {
 		ERR("%s", lttng_strerror(ret));
 	}
+	free(base_session_name);
+	free(base_url);
+	free(base_ctrl_url);
+	free(base_data_url);
+	free(base_shm_path);
 	return ret;
 }
 
@@ -710,6 +972,7 @@ int cmd_create(int argc, const char **argv)
 	opt_session_name = (char*) poptGetArg(pc);
 
 	command_ret = create_session();
+
 	if (command_ret) {
 		success = 0;
 	}
