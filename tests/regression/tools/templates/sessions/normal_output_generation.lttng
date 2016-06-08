@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sessions>
+	<session>
+		<name>normal_output_generation</name>
+		<started>false</started>
+		<output>
+			<consumer_output>
+				<enabled>true</enabled>
+				<destination>
+				</destination>
+			</consumer_output>
+		</output>
+	</session>
+</sessions>

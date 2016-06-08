@@ -22,7 +22,8 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/mi/test_mi \
 	tools/wildcard/test_event_wildcard \
 	tools/crash/test_crash \
-	tools/metadata-regen/test_ust
+	tools/metadata-regen/test_ust \
+	tools/templates/test_create
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust

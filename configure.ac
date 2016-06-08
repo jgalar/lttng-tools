@@ -981,6 +981,8 @@ AC_CONFIG_FILES([
 	tests/regression/tools/wildcard/Makefile
 	tests/regression/tools/crash/Makefile
 	tests/regression/tools/metadata-regen/Makefile
+	tests/regression/tools/templates/Makefile
+	tests/regression/tools/templates/sessions/Makefile
 	tests/regression/ust/Makefile
 	tests/regression/ust/nprocesses/Makefile
 	tests/regression/ust/high-throughput/Makefile

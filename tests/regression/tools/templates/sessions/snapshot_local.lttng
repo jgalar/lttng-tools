@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sessions>
+	<session>
+		<name>snapshot_local</name>
+		<started>false</started>
+		<attributes>
+			<snapshot_mode>true</snapshot_mode>
+		</attributes>
+		<output>
+			<snapshot_outputs>
+				<output>
+					<name>snapshot-1</name>
+					<max_size>0</max_size>
+					<consumer_output>
+						<enabled>true</enabled>
+						<destination>
+							<path>/home/jonathan/lttng-traces/snapshot_local-20160606-132651</path>
+						</destination>
+					</consumer_output>
+				</output>
+			</snapshot_outputs>
+		</output>
+	</session>
+</sessions>

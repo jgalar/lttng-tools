@@ -689,6 +689,29 @@ function create_lttng_session_fail ()
 	create_lttng_session 1 "$@"
 }
 
+function create_lttng_session_template ()
+{
+	local expected_to_fail=$1
+	local template_path=$2
+	local opt=$3
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create --template-path="$template_path" $opt > $OUTPUT_DEST
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Create session from template $template_path failed as expected"
+	else
+		ok $ret "Create session from template $template_path"
+	fi
+}
+
+function create_lttng_session_template_ok () {
+	create_lttng_session_template 0 "$@"
+}
+
+function create_lttng_session_template_fail () {
+	create_lttng_session_template 1 "$@"
+}
 
 function enable_ust_lttng_channel ()
 {

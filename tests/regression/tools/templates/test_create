@@ -1,0 +1,718 @@
+#!/bin/bash
+#
+# Copyright (C) - 2016 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+#
+# This library is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; version 2.1 of the License.
+#
+# This library is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+TEST_DESC="Session creation based on template"
+
+CURDIR=$(dirname $0)/
+TESTDIR=$CURDIR/../../../
+SESSIOND_BIN="lttng-sessiond"
+RELAYD_BIN="lttng-relayd"
+
+export LTTNG_SESSION_CONFIG_XSD_PATH=$(readlink -m ${TESTDIR}../src/common/config/)
+
+SESSION_NAME="load-42"
+
+DIR=$(readlink -f $TESTDIR)
+
+NUM_TESTS=89
+
+source $TESTDIR/utils/utils.sh
+
+LTTNG_BIN="lttng --mi xml"
+
+# MUST set TESTDIR before calling those functions
+plan_tests $NUM_TESTS
+
+print_test_banner "$TEST_DESC"
+
+#Test related data
+
+XPATH_SESSION_NAME="//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:name/text()"
+XPATH_SESSION_PATH="//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:path/text()"
+XPATH_SESSION_SNAPSHOT_MODE="//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:snapshot_mode/text()"
+XPATH_SESSION_SNAPSHOT_CTRL_URL="//lttng:command/lttng:output/lttng:snapshot_action/lttng:output/lttng:session/lttng:snapshots/lttng:snapshot/lttng:ctrl_url/text()"
+XPATH_SESSION_SNAPSHOT_DATA_URL="//lttng:command/lttng:output/lttng:snapshot_action/lttng:output/lttng:session/lttng:snapshots/lttng:snapshot/lttng:data_url/text()"
+XPATH_SESSION_LIVE_TIMER_INTERVAL="//lttng:command/lttng:output/lttng:sessions/lttng:session/lttng:live_timer_interval/text()"
+XPATH_SAVE_SESSION_SHM_PATH="//sessions/session/shared_memory_path/text()"
+
+TEMPLATE_DIR="$CURDIR/sessions"
+
+# TODO: note: most of these fuctions could have been tested via lttng save and
+# diffing the original and the saved one. Might want to go this way...
+
+function test_normal_local()
+{
+	diag "Load from template a normal session with local consumer output"
+	local template_name="normal_local.lttng"
+	local session_name="normal_local"
+	local output_path="/home/jonathan/lttng-traces/normal_local-20160606-132532"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate name
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_NAME}")
+	if [[ $mi_result = "$session_name" ]]; then
+	    ok 0 "Session names are the same"
+	else
+	    fail "Session names should be $session_name but value is $mi_result"
+	fi
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be $output_path but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_normal_no_output()
+{
+	diag "Load from template a normal session with no output (--no-output)"
+	local template_name="normal_no_output.lttng"
+	local session_name="normal_no_output"
+	local output_path=""
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate name
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_NAME}")
+	if [[ $mi_result = "$session_name" ]]; then
+	    ok 0 "Session names are the same"
+	else
+	    fail "Session names should be $session_name but value is $mi_result"
+	fi
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_normal_net()
+{
+	diag "Load from template a normal session with net output"
+	local template_name="normal_net.lttng"
+	local session_name="normal_net"
+	local output_path="tcp4://127.0.0.1:5342/normal_net-20160606-132620 [data: 5343]"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate name
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_NAME}")
+	if [[ $mi_result = "$session_name" ]]; then
+	    ok 0 "Session names are the same"
+	else
+	    fail "Session names should be $session_name but value is $mi_result"
+	fi
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_snapshot_local()
+{
+	diag "Load from template a snapshot session with local output"
+	local template_name="snapshot_local.lttng"
+	local session_name="snapshot_local"
+	local output_path=""
+	local snapshot_ctrl_url="/home/jonathan/lttng-traces/snapshot_local-20160606-132651"
+	local snapshot_data_url=""
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate name
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_MODE}")
+	if [[ $mi_result = "1" ]]; then
+	    ok 0 "Session snapshot mode is enabled"
+	else
+	    fail "Session snapshot mode is invalid value is $mi_result"
+	fi
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	OUTPUT_DEST="$mi_output_file" lttng_snapshot_list $session_name
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_CTRL_URL}")
+	if [[ $mi_result = "$snapshot_ctrl_url" ]]; then
+	    ok 0 "Ctrl urls for snapshot are the same"
+	else
+	    fail "Ctrl urls should be $snapshot_ctrl_url but value is $mi_result"
+	fi
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_DATA_URL}")
+	if [[ $mi_result = "$snapshot_data_url" ]]; then
+		ok 0 "Data urls for snapshot are the same"
+	else
+		fail "Data urls should be $snapshot_data_url but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_snapshot_net()
+{
+	diag "Load from template a snapshot session with net output"
+	local template_name="snapshot_net.lttng"
+	local session_name="snapshot_net"
+	local output_path=""
+	local snapshot_ctrl_url="tcp4://127.0.0.1:5342/"
+	local snapshot_data_url="tcp4://127.0.0.1:5343/"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate name
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_MODE}")
+	if [[ $mi_result = "1" ]]; then
+	    ok 0 "Session snapshot mode is enabled"
+	else
+	    fail "Session snapshot mode is invalid value is $mi_result"
+	fi
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	OUTPUT_DEST="$mi_output_file" lttng_snapshot_list $session_name
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_CTRL_URL}")
+	if [[ $mi_result = "$snapshot_ctrl_url" ]]; then
+	    ok 0 "Ctrl urls for snapshot are the same"
+	else
+	    fail "Ctrl urls should be $snapshot_ctrl_url but value is $mi_result"
+	fi
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_DATA_URL}")
+	if [[ $mi_result = "$snapshot_data_url" ]]; then
+		ok 0 "Data urls for snapshot are the same"
+	else
+		fail "Data urls should be $snapshot_data_url but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_live()
+{
+	diag "Load from template a live session"
+	local template_name="live.lttng"
+	local session_name="live"
+	local output_path="tcp4://127.0.0.1:5342/ [data: 5343]"
+	local live_timer_interval="1000000"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate name
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_NAME}")
+	if [[ $mi_result = "$session_name" ]]; then
+	    ok 0 "Session names are the same"
+	else
+	    fail "Session names should be $session_name but value is $mi_result"
+	fi
+
+	# Validate live timer
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_LIVE_TIMER_INTERVAL}")
+	if [[ $mi_result = "$live_timer_interval" ]]; then
+		ok 0 "Session live timer intervals are the same"
+	else
+		fail "Session live timer should be $live_timer_interval but value is $mi_result"
+	fi
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_shm_path()
+{
+	# Since lttng list do not expose the shm path save the session and check
+	# for the shm path.
+	diag "Load from template a session with a shared memory path"
+	local template_name="shm_path.lttng"
+	local session_name="shm_path"
+	local shared_memory_path="/tmp/shm_path-20160606-161801"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local save_output_path=$(mktemp -d)
+	local save_output_file="${save_output_path}/$session_name.lttng"
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path"
+
+	lttng_save $session_name "-o ${save_output_path}"
+
+	# Validate name
+	save_result=$($CURDIR/../mi/extract_xml $save_output_file "${XPATH_SAVE_SESSION_SHM_PATH}")
+	if [[ $save_result = "$shared_memory_path" ]]; then
+	    ok 0 "Session shared memory paths are the same"
+	else
+	    fail "Session shared memory path should be $shared_memory_path but value is $save_result"
+	fi
+
+	rm $save_output_file
+	rmdir $save_output_path
+	destroy_lttng_session_ok $session_name
+}
+
+# Default data generation
+function test_name_generation()
+{
+	diag "Load from template a session with no name"
+	local template_name="name_generation.lttng"
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	# On session creation success a name must have been generated.
+	create_lttng_session_template_ok "$template_path"
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_normal_output_generation()
+{
+	diag "Load from template a normal session with no consumer output defined"
+	local template_name="normal_output_generation.lttng"
+	local session_name="normal_output_generation"
+	local output_path="/home/jonathan/lttng-traces/normal_local-20160606-132532"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [ ! -z "$mi_result" ]; then
+	    ok 0 "Output path was generated"
+	else
+	    fail "Output path should not be empty $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_snapshot_output_generation()
+{
+	diag "Load from template a snapshot session with no local output defined"
+	local template_name="snapshot_output_generation.lttng"
+	local session_name="snapshot_output_generation"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" lttng_snapshot_list $session_name
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_CTRL_URL}")
+	if [ ! -z "${mi_result}" ]; then
+	    ok 0 "Local snapshot output was generated"
+	else
+	    fail "Local snapshot output is null"
+	fi
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_DATA_URL}")
+	if [ -z "${mi_result}" ]; then
+		ok 0 "Data url is empty as planned"
+	else
+		fail "Data url should be null but value is : $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_live_output_generation()
+{
+	diag "Load from template a live session with no consumer output defined"
+	local template_name="live_output_generation.lttng"
+	local session_name="live_output_generation"
+	local output_path="tcp4://127.0.0.1:5342/ [data: 5343]"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output path was generated and value is good: $mi_result"
+	else
+	    fail "Output path default is invalid: $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+# Override
+function test_overwrite_live_timer()
+{
+	diag "Load from template a live session - Overwrite live timer"
+	local template_name="live.lttng"
+	local session_name="live"
+	local output_path="tcp4://127.0.0.1:5342/ [data: 5343]"
+	local live_timer_interval="123456"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path" "--live=${live_timer_interval}"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate live timer
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_LIVE_TIMER_INTERVAL}")
+	if [[ $mi_result = "$live_timer_interval" ]]; then
+		ok 0 "Session live timer intervals are the same: $mi_result == $live_timer_interval"
+	else
+		fail "Session live timer should be $live_timer_interval but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_overwrite_shm_path()
+{
+	# Since lttng list do not expose the shm path save the session and check
+	# for the shm path.
+	diag "Load from template a session with a shared memory path - Overwrite shm path"
+	local template_name="shm_path.lttng"
+	local session_name="shm_path"
+	local shared_memory_path="/tmp/beer-run"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local save_output_path=$(mktemp -d)
+	local save_output_file="${save_output_path}/$session_name.lttng"
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path" "--shm-path=${shared_memory_path}"
+
+	lttng_save $session_name "-o ${save_output_path}"
+
+	# Validate name
+	save_result=$($CURDIR/../mi/extract_xml $save_output_file "${XPATH_SAVE_SESSION_SHM_PATH}")
+	if [[ $(dirname $save_result) = "$shared_memory_path" ]]; then
+	    ok 0 "Session shared memory paths are the same"
+	else
+	    fail "Session shared memory path should be $shared_memory_path but value is $save_result"
+	fi
+
+	rm $save_output_file
+	rmdir $save_output_path
+	destroy_lttng_session_ok $session_name
+}
+
+function test_overwrite_normal_net_to_local()
+{
+	diag "Load from template a normal session with net output - Overwrite to local output"
+	local template_name="normal_net.lttng"
+	local session_name="normal_net"
+	local output_path="/tmp/beer-run"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path" "--set-url=file://${output_path}"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+
+	create_lttng_session_template_ok "$template_path" "--output=${output_path}"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+
+}
+
+function test_overwrite_snapshot_local_to_net()
+{
+	diag "Load from template a snapshot session with local output"
+	local template_name="snapshot_local.lttng"
+	local session_name="snapshot_local"
+	local output_path=""
+	local snapshot_ctrl_url="tcp4://127.0.0.1:5342/"
+	local snapshot_data_url="tcp4://127.0.0.1:5343/"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path" "--ctrl-url=${snapshot_ctrl_url} --data-url=${snapshot_data_url}"
+
+	OUTPUT_DEST="$mi_output_file" lttng_snapshot_list $session_name
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_CTRL_URL}")
+	if [[ $mi_result = "$snapshot_ctrl_url" ]]; then
+	    ok 0 "Ctrl urls for snapshot are the same"
+	else
+	    fail "Ctrl urls should be $snapshot_ctrl_url but value is $mi_result"
+	fi
+
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_SNAPSHOT_DATA_URL}")
+	if [[ $mi_result = "$snapshot_data_url" ]]; then
+		ok 0 "Data urls for snapshot are the same"
+	else
+		fail "Data urls should be $snapshot_data_url but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+function test_overwrite_live_net()
+{
+	diag "Load from template a live session - Overwrite net output"
+	local template_name="live.lttng"
+	local session_name="live"
+	local ctrl_url="tcp4://127.0.0.1:1000/"
+	local data_url="tcp4://127.0.0.1:1001/"
+	local output_path="tcp4://127.0.0.1:1000/ [data: 1001]"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local mi_output_file=$(mktemp)
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path" "--ctrl-url=${ctrl_url} --data-url=${data_url}"
+
+	OUTPUT_DEST="$mi_output_file" list_lttng_with_opts $session_name
+
+	# Validate output
+	mi_result=$($CURDIR/../mi/extract_xml $mi_output_file "${XPATH_SESSION_PATH}")
+	if [[ $mi_result = "$output_path" ]]; then
+	    ok 0 "Output paths are the same"
+	else
+	    fail "Output paths should be empty but value is $mi_result"
+	fi
+
+	destroy_lttng_session_ok $session_name
+}
+
+# With subchild data
+function test_full_load()
+{
+	# Since lttng list do not expose the shm path save the session and check
+	# for the shm path.
+	diag "Load from template a complex session with henabled channel and events"
+	local template_name="full_load.lttng"
+	local session_name="full_load"
+
+	local template_path="$TEMPLATE_DIR/$template_name"
+
+	local save_output_path=$(mktemp -d)
+	local save_output_file="${save_output_path}/$session_name.lttng"
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	create_lttng_session_template_ok "$template_path"
+
+	lttng_save $session_name "-o ${save_output_path}"
+
+	# Validate name
+	save_result=$($CURDIR/../mi/extract_xml $save_output_file "${XPATH_SAVE_SESSION_SHM_PATH}")
+	if diff $template_path $save_output_path ; then
+	    ok 0 "Session complex load"
+	else
+	    fail "Sessions results are different"
+	fi
+
+	rm $save_output_file
+	rmdir $save_output_path
+	destroy_lttng_session_ok $session_name
+}
+
+TESTS=(
+	test_normal_local
+	test_normal_no_output
+	test_normal_net
+	test_snapshot_local
+	test_snapshot_net
+	test_live
+	test_shm_path
+	# Default data generation
+	test_name_generation
+	test_normal_output_generation
+	test_snapshot_output_generation
+	test_live_output_generation
+	# Override
+	test_overwrite_live_timer
+	test_overwrite_shm_path
+	test_overwrite_normal_net_to_local
+	test_overwrite_snapshot_local_to_net
+	test_overwrite_live_net
+	# With subchild data
+	test_full_load
+)
+
+start_lttng_relayd
+start_lttng_sessiond
+
+for fct_test in ${TESTS[@]};
+do
+	${fct_test}
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+	# Only delete if successful
+done
+
+stop_lttng_sessiond
+stop_lttng_relayd
+
+

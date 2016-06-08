@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sessions>
+	<session>
+		<name>normal_local</name>
+		<started>false</started>
+		<output>
+			<consumer_output>
+				<enabled>true</enabled>
+				<destination>
+					<path>/home/jonathan/lttng-traces/normal_local-20160606-132532</path>
+				</destination>
+			</consumer_output>
+		</output>
+	</session>
+</sessions>

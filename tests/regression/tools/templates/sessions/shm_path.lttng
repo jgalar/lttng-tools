@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sessions>
+	<session>
+		<name>shm_path</name>
+		<shared_memory_path>/tmp/shm_path-20160606-161801</shared_memory_path>
+		<started>false</started>
+		<output>
+			<consumer_output>
+				<enabled>true</enabled>
+				<destination>
+					<path>/home/jonathan/lttng-traces/shm_path-20160606-161801</path>
+				</destination>
+			</consumer_output>
+		</output>
+	</session>
+</sessions>
