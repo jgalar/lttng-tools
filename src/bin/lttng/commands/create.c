@@ -30,6 +30,7 @@
 #include <sys/wait.h>
 
 #include <common/mi-lttng.h>
+#include <common/config/session-config.h>
 
 #include "../command.h"
 #include "../utils.h"
@@ -46,6 +47,7 @@ static char *opt_url;
 static char *opt_ctrl_url;
 static char *opt_data_url;
 static char *opt_shm_path;
+static char *opt_template_path;
 static int opt_no_consumer;
 static int opt_no_output;
 static int opt_snapshot;
@@ -86,6 +88,7 @@ static struct poptOption long_options[] = {
 	{"snapshot",        0, POPT_ARG_VAL, &opt_snapshot, 1, 0, 0},
 	{"live",            0, POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL, 0, OPT_LIVE_TIMER, 0, 0},
 	{"shm-path",        0, POPT_ARG_STRING, &opt_shm_path, 0, 0, 0},
+	{"template-path",        0, POPT_ARG_STRING, &opt_template_path, 0, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -225,7 +228,7 @@ error_create:
  * CMD_ERROR on error
  * CMD_SUCCESS on success
  */
-static int validate_command_options(void)
+static int validate_command_options(int session_type)
 {
 	int ret = CMD_SUCCESS;
 	if (opt_snapshot && opt_live_timer) {
@@ -238,6 +241,18 @@ static int validate_command_options(void)
 		ERR("You need both control and data URL.");
 		ret = CMD_ERROR;
 		goto error;
+	}
+
+	if (opt_template_path) {
+		/* Restriction on flags exist when using template */
+		/* Session type flags are not permitted */
+		/* --live & --snapshot */
+		if ((opt_live_timer && session_type != SESSION_LIVE) ||
+				(opt_snapshot && session_type != SESSION_SNAPSHOT)) {
+			ERR("It is not possible to change the session type of a template");
+			ret = CMD_ERROR;
+			goto error;
+		}
 	}
 
 error:
@@ -428,6 +443,364 @@ error:
 	return ret;
 }
 
+static int parse_template (struct config_document *template,
+		char **session_name,
+		int *session_type,
+		int *live_timer,
+		int *output_type,
+		char **url,
+		char **ctrl_url,
+		char **data_url,
+		char **shm_path)
+{
+	int ret = 0;
+	char *raw_value = NULL;
+
+	assert(template);
+
+	/* Session name */
+	*session_name = config_document_get_element_value(template,"/sessions/session/name");
+
+	/* Check the type of session we have in the template */
+	if(config_document_element_exist(template, "/sessions/session/attributes/snapshot_mode")) {
+		*session_type = SESSION_SNAPSHOT;
+	} else if (config_document_element_exist(template, "/sessions/session/attributes/live_timer_interval")) {
+		*session_type = SESSION_LIVE;
+		raw_value = config_document_get_element_value(template,"/sessions/session/attributes/live_timer_interval");
+		*live_timer = config_parse_value(raw_value);
+		free(raw_value);
+		raw_value = NULL;
+	} else {
+		*session_type = SESSION_NORMAL;
+	}
+
+	/* Output */
+	switch (*session_type) {
+	case SESSION_NORMAL:
+	case SESSION_LIVE:
+		if (!config_document_element_exist(template, "/sessions/session/output/consumer_output/destination")){
+			break;
+		}
+		if (config_document_element_exist(template, "/sessions/session/output/consumer_output/destination/path")){
+			raw_value = config_document_get_element_value(template, "/sessions/session/output/consumer_output/destination/path");
+			if (!raw_value) {
+				ret = -1;
+				goto error;
+			}
+
+			if (strlen(raw_value) > 0) {
+				*output_type = OUTPUT_LOCAL;
+				ret = asprintf(url, "file://%s", raw_value);
+				if (ret < 0) {
+					ret = -1;
+					goto error;
+				}
+			} else {
+				*output_type = OUTPUT_NONE;
+			}
+
+			free(raw_value);
+			raw_value = NULL;
+			break;
+		} else if(config_document_element_exist(template, "/sessions/session/output/consumer_output/destination/net_output")) {
+			*ctrl_url = config_document_get_element_value(template, "/sessions/session/output/consumer_output/destination/net_output/control_uri");
+			*data_url = config_document_get_element_value(template, "/sessions/session/output/consumer_output/destination/net_output/data_uri");
+			if (!*ctrl_url || ! *data_url) {
+				ret = -1;
+				goto error;
+			}
+			*output_type = OUTPUT_NET;
+		} else {
+			/* There is no output definition */
+		}
+		break;
+	case SESSION_SNAPSHOT:
+		if (!config_document_element_exist(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination")){
+			break;
+		}
+		if (config_document_element_exist(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination/path")){
+			raw_value = config_document_get_element_value(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination/path");
+			if (!raw_value) {
+				ret = -1;
+				goto error;
+			}
+
+			if (strlen(raw_value) > 0) {
+				*output_type = OUTPUT_LOCAL;
+				ret = asprintf(url, "file://%s", raw_value);
+				if (ret < 0) {
+					ret = -1;
+					goto error;
+				}
+			} else {
+				*output_type = OUTPUT_NONE;
+			}
+
+			free(raw_value);
+			raw_value = NULL;
+			break;
+		} else if(config_document_element_exist(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination/net_output")) {
+			*ctrl_url = config_document_get_element_value(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination/net_output/control_uri");
+			*data_url = config_document_get_element_value(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination/net_output/data_uri");
+			if (!*ctrl_url || ! *data_url) {
+				ret = -1;
+				goto error;
+			}
+			*output_type = OUTPUT_NET;
+		} else {
+			/* There is no output definition */
+		}
+		break;
+	}
+
+
+	/* shared memory path */
+	*shm_path = config_document_get_element_value(template,"/sessions/session/shared_memory_path");
+
+error:
+	free(raw_value);
+	return ret;
+
+}
+static int create_session_from_template(struct config_document *template,
+		const char *session_name,
+		int session_type,
+		int live_timer,
+		int output_type,
+		const char *url,
+		const char *ctrl_url,
+		const char *data_url,
+		const char *shm_path,
+		const char *datetime)
+{
+	int ret = CMD_SUCCESS;
+	struct config_element *temp_element = NULL;
+	struct config_element *temp_element_child = NULL;
+	char tmp_ctrl_uri[PATH_MAX];
+	char tmp_data_uri[PATH_MAX];
+	struct lttng_uri *uris = NULL;
+	ssize_t uri_array_size = 0;
+	char *tmp_string = NULL;
+
+	assert(template);
+	assert(session_name);
+
+	memset(tmp_ctrl_uri, 0, sizeof(tmp_ctrl_uri));
+	memset(tmp_data_uri, 0, sizeof(tmp_data_uri));
+
+	/* Session name */
+	if (config_document_element_exist(template, "/sessions/session/name")) {
+		/* Replace the node value */
+		config_document_replace_element_value(template, "/sessions/session/name", session_name);
+	} else {
+		/* insert the node */
+		temp_element = config_element_create("name", session_name);
+		if (!temp_element) {
+			ERR("Could not create session name node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		ret = config_document_insert_element(template, "/sessions/session", temp_element);
+		if (ret) {
+			ERR("Could not insert session name node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		config_element_free(temp_element);
+	}
+
+	/*
+	 * Live timer
+	 */
+	if (session_type == SESSION_LIVE) {
+		if (config_document_element_exist(template, "/sessions/session/attributes/live_timer_interval")) {
+			asprintf(&tmp_string, "%d", live_timer);
+			config_document_replace_element_value(template, "/sessions/session/attributes/live_timer_interval", tmp_string);
+			free(tmp_string);
+			tmp_string = NULL;
+		} else {
+			ERR("Invalid live timer template. Missing live timer node");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+	}
+
+	/*
+	 * Generate the output node
+	 */
+
+	/* Get output from urls */
+	if (url) {
+		/* Get lttng uris from single url */
+		uri_array_size = uri_parse_str_urls(url, NULL, &uris);
+		if (uri_array_size < 0) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+	} else if (ctrl_url && data_url) {
+		uri_array_size = uri_parse_str_urls(ctrl_url, data_url, &uris);
+		if (uri_array_size < 0) {
+			ret = CMD_ERROR;
+			goto error;
+		}
+	} else {
+		/* --no-output */
+		uri_array_size = 0;
+	}
+
+	/* Validate if the session output type still match the passed data */
+	if ( (uri_array_size == 0 && output_type != OUTPUT_NONE) ||
+			(uri_array_size == 1 && output_type != OUTPUT_LOCAL) ||
+			(uri_array_size == 2 && output_type != OUTPUT_NET)) {
+		ERR("Overwriting value for output do not match the base output type");
+		ret = CMD_ERROR;
+		goto error;
+	}
+
+	switch (output_type) {
+	case OUTPUT_NONE:
+		temp_element_child = config_element_create("path", "");
+		if (!temp_element_child) {
+			ERR("Could not create empty path node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		break;
+	case OUTPUT_LOCAL:
+		temp_element_child = config_element_create("path", uris[0].dst.path);
+		if (!temp_element_child) {
+			ERR("Could not create local path node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		break;
+	case OUTPUT_NET:
+		uri_to_str_url(&uris[0], tmp_ctrl_uri, sizeof(tmp_ctrl_uri));
+		uri_to_str_url(&uris[1], tmp_data_uri, sizeof(tmp_data_uri));
+
+		temp_element_child = config_element_create("net_output", NULL);
+		if (!temp_element_child) {
+			ERR("Could not create net_output node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		temp_element = config_element_create("control_uri", tmp_ctrl_uri);
+		if (!temp_element_child) {
+			ERR("Could not create ctrl uri node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		ret = config_element_add_child(temp_element_child, temp_element);
+		if (ret) {
+			ERR("Could not append control uri to the net_output node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		config_element_free(temp_element);
+
+		temp_element = config_element_create("data_uri", tmp_data_uri);
+
+		if (!temp_element_child) {
+			ERR("Could not create data_uri configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		ret = config_element_add_child(temp_element_child, temp_element);
+		if (ret) {
+			ERR("Could not append data uri to the net_output node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		config_element_free(temp_element);
+		break;
+	default:
+		ret = CMD_ERROR;
+		goto error;
+	}
+
+	temp_element = config_element_create("destination", NULL);
+	if (!temp_element) {
+		ERR("Could not create destination node configuration");
+		ret = CMD_ERROR;
+		goto error;
+	}
+
+	ret = config_element_add_child(temp_element, temp_element_child);
+	if (ret) {
+		ERR("Could not append output data to the destination node configuration");
+		ret = CMD_ERROR;
+		goto error;
+	}
+
+	/*
+	 * validate and replace the destination node for each session type
+	 * TODO: export string as const and simply assign a base path for the
+	 * destination node based on the session type
+	 **/
+	switch (session_type) {
+	case SESSION_NORMAL:
+	case SESSION_LIVE:
+		if (!config_document_element_exist(template, "/sessions/session/output/consumer_output/destination")) {
+			ERR("Invalid template no destination node configuration present");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		ret = config_document_replace_element(template, "/sessions/session/output/consumer_output/destination", temp_element);
+		break;
+	case SESSION_SNAPSHOT:
+		if (!config_document_element_exist(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination")) {
+			ERR("Invalid template no destination node configuration present");
+			ret = CMD_ERROR;
+			goto error;
+		}
+
+		ret = config_document_replace_element(template, "/sessions/session/output/snapshot_outputs/output/consumer_output/destination", temp_element);
+		break;
+	default:
+		ERR("Invalid session type");
+		ret = CMD_UNDEFINED;
+		goto error;
+	}
+
+
+
+	/* Shm path */
+	if (shm_path && config_document_element_exist(template, "/sessions/session/shared_memory_path")) {
+		/* Replace the node value */
+		config_document_replace_element_value(template, "/sessions/session/shared_memory_path", shm_path);
+	} else if (shm_path) {
+		/* insert the node */
+		temp_element = config_element_create("shared_memory_path", shm_path);
+		if (!temp_element) {
+			ERR("Could not create shared_memory_path node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		ret = config_document_insert_element(template, "/sessions/session", temp_element);
+		if (ret) {
+			ERR("Could not insert shared_memory_path node configuration");
+			ret = CMD_ERROR;
+			goto error;
+		}
+	}
+
+	ret = config_load_configuration_sessions(template, session_name, 0);
+
+
+error:
+	config_element_free(temp_element);
+	config_element_free(temp_element_child);
+	free(tmp_string);
+	free(uris);
+	return ret;
+
+}
+
 /*
  *  Create a tracing session.
  *  If no name is specified, a default name is generated.
@@ -437,6 +810,10 @@ error:
 static int create_session(void)
 {
 	int ret;
+
+
+	/* Template */
+	struct config_document *template = NULL;
 
 	/* Base data */
 	int base_session_type = SESSION_UNKNOWN;
@@ -462,16 +839,39 @@ static int create_session(void)
 	struct lttng_uri *uris = NULL;
 	ssize_t uri_array_size = 0;
 
-	/* Option validation */
-	if (validate_command_options() != CMD_SUCCESS) {
-		ret = CMD_ERROR;
-		goto error;
-	}
 
 	/* Get date and time for automatic session name/path */
 	time(&rawtime);
 	timeinfo = localtime(&rawtime);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+
+	if (opt_template_path) {
+		/* Restriction on flags exist when using template */
+		/* Session type flags are not permitted */
+		/* --live & --snapshot */
+		template = config_document_get(opt_template_path);
+		if (!template) {
+			ERR("Template could not be parsed");
+			ret = CMD_ERROR;
+			goto error;
+		}
+		/* Load info from template if any */
+		/* TODO: might want to use a struct in the end for the session... */
+		ret = parse_template(template, &base_session_name,
+				&base_session_type,
+				&base_live_timer,
+				&base_output_type,
+				&base_url,
+				&base_ctrl_url,
+				&base_data_url,
+				&base_shm_path);
+	}
+
+	/* Option validation */
+	if (validate_command_options(base_session_type) != CMD_SUCCESS) {
+		ret = CMD_ERROR;
+		goto error;
+	}
 
 	/* Find the session type based on options */
 	if(base_session_type == SESSION_UNKNOWN) {
@@ -685,15 +1085,28 @@ static int create_session(void)
 		goto error;
 	}
 
-	ret = create_session_basic (base_session_name,
-			base_session_type,
-			base_live_timer,
-			base_output_type,
-			base_url,
-			base_ctrl_url,
-			base_data_url,
-			base_shm_path,
-			datetime);
+	if (template) {
+		ret = create_session_from_template(template,
+				base_session_name,
+				base_session_type,
+				base_live_timer,
+				base_output_type,
+				base_url,
+				base_ctrl_url,
+				base_data_url,
+				base_shm_path,
+				datetime);
+	} else {
+		ret = create_session_basic (base_session_name,
+				base_session_type,
+				base_live_timer,
+				base_output_type,
+				base_url,
+				base_ctrl_url,
+				base_data_url,
+				base_shm_path,
+				datetime);
+	}
 	if (ret) {
 		goto error;
 	}

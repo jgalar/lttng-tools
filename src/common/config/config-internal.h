@@ -16,8 +16,20 @@
  */
 
 #include <libxml/xmlwriter.h>
+#include <libxml/tree.h>
 #include <stdio.h>
 
 struct config_writer {
 	xmlTextWriterPtr writer;
 };
+
+struct config_document {
+	xmlDocPtr document;
+};
+
+struct config_element {
+	xmlNodePtr element;
+};
+
+
+

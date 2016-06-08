@@ -33,6 +33,11 @@ struct config_entry {
 /* Instance of a configuration writer. */
 struct config_writer;
 
+/* Instance of a configuration element */
+struct config_document;
+
+struct config_element;
+
 /*
  * A config_entry_handler_cb receives config_entry structures belonging to the
  * sections the handler has been registered to.
@@ -224,5 +229,62 @@ int config_writer_write_element_string(struct config_writer *writer,
 LTTNG_HIDDEN
 int config_load_session(const char *path, const char *session_name,
 		int override, unsigned int autoload);
+
+/*
+ * TODO: doc decide
+ * Load configuration based on a config_document
+ */
+LTTNG_HIDDEN
+int config_load_configuration_sessions(struct config_document *document,
+		const char *session_name, int override);
+
+/* TODO: DOC
+ *
+ */
+LTTNG_HIDDEN
+struct config_document *config_document_get(const char *path);
+
+LTTNG_HIDDEN
+void config_document_free(struct config_document *document);
+
+/* TODO: DOC
+ *
+ */
+LTTNG_HIDDEN
+int config_document_replace_element_value(struct config_document *document, const char *xpath, const char *value);
+
+/* TODO: DOC
+ * Swap a node by the new element (copy child etc)
+ */
+LTTNG_HIDDEN
+int config_document_replace_element(struct config_document *document, const char *xpath, const struct config_element *element);
+
+/* TODO: DOC
+ *
+ */
+LTTNG_HIDDEN
+char *config_document_get_element_value(struct config_document *document, const char *xpath);
+
+/* TODO: DOC
+ * return 1 if true 0 otherwise;
+ */
+LTTNG_HIDDEN
+int config_document_element_exist(struct config_document *document, const char *xpath);
+
+/* TODO: DOC
+ *
+ */
+LTTNG_HIDDEN
+void config_element_free(struct config_element *element);
+
+LTTNG_HIDDEN
+struct config_element *config_element_create(const char *name, const char *value);
+
+LTTNG_HIDDEN
+int config_element_add_child(struct config_element *parent, const struct config_element *child);
+
+LTTNG_HIDDEN
+int config_document_insert_element(struct config_document *document, const char *xpath, const struct config_element *element);
+
 
 #endif /* _CONFIG_H */

@@ -38,6 +38,7 @@
 #include <libxml/valid.h>
 #include <libxml/xmlschemas.h>
 #include <libxml/tree.h>
+#include <libxml/xpath.h>
 #include <lttng/lttng.h>
 #include <lttng/snapshot.h>
 
@@ -2724,6 +2725,47 @@ end:
 	return ret;
 }
 
+/* TODO: DOC*/
+static
+int load_session_from_document(struct config_document *document, const char *session_name,
+		struct session_config_validation_ctx *validation_ctx, int override)
+{
+	int ret, session_found = !session_name;
+	xmlNodePtr sessions_node;
+	xmlNodePtr session_node;
+
+	assert(validation_ctx);
+
+	ret = xmlSchemaValidateDoc(validation_ctx->schema_validation_ctx, document->document);
+	if (ret) {
+		ERR("Session configuration file validation failed");
+		ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+		goto end;
+	}
+
+	sessions_node = xmlDocGetRootElement(document->document);
+	if (!sessions_node) {
+		goto end;
+	}
+
+	for (session_node = xmlFirstElementChild(sessions_node);
+		session_node; session_node =
+			xmlNextElementSibling(session_node)) {
+		ret = process_session_node(session_node,
+			session_name, override);
+		if (session_name && ret == 0) {
+			/* Target session found and loaded */
+			session_found = 1;
+			break;
+		}
+	}
+end:
+	if (!ret) {
+		ret = session_found ? 0 : -LTTNG_ERR_LOAD_SESSION_NOENT;
+	}
+	return ret;
+}
+
 /* Allocate dirent as recommended by READDIR(3), NOTES on readdir_r */
 static
 struct dirent *alloc_dirent(const char *path)
@@ -3019,4 +3061,604 @@ static
 void __attribute__((destructor)) session_config_exit(void)
 {
 	xmlCleanupParser();
+}
+
+LTTNG_HIDDEN
+struct config_document *config_document_get(const char *path)
+{
+	int ret;
+	struct config_document *document = NULL;
+	struct session_config_validation_ctx validation_ctx = { 0 };
+
+	assert(path);
+
+	ret = access(path, F_OK);
+	if (ret < 0) {
+		PERROR("access");
+		switch (errno) {
+		case ENOENT:
+			ret = -LTTNG_ERR_INVALID;
+			WARN("Session configuration path does not exist.");
+			break;
+		case EACCES:
+			ret = -LTTNG_ERR_EPERM;
+			break;
+		default:
+			ret = -LTTNG_ERR_UNK;
+			break;
+		}
+		goto end;
+	}
+
+	ret = init_session_config_validation_ctx(&validation_ctx);
+	if (ret) {
+		goto end;
+	}
+
+	ret = validate_file_read_creds(path);
+	if (ret != 1) {
+		if (ret == -1) {
+			ret = -LTTNG_ERR_EPERM;
+		} else {
+			ret = -LTTNG_ERR_LOAD_SESSION_NOENT;
+		}
+		goto end;
+	}
+
+	document = zmalloc(sizeof(struct config_document));
+	if (!document) {
+		PERROR("zmalloc");
+		ret = -errno;
+		goto end;
+	}
+
+	document->document = xmlParseFile(path);
+	if (!document->document) {
+		ret = -LTTNG_ERR_LOAD_IO_FAIL;
+		goto error;
+	}
+
+	ret = xmlSchemaValidateDoc(validation_ctx.schema_validation_ctx,
+			document->document);
+	if (ret) {
+		ERR("Session configuration file validation failed");
+		ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+		goto error;
+	}
+
+end:
+	return document;
+error:
+	xmlFreeDoc(document->document);
+	free(document);
+	return NULL;
+}
+
+LTTNG_HIDDEN
+void config_document_free(struct config_document *document)
+{
+	if (document) {
+		xmlFreeDoc(document->document);
+		document->document = NULL;
+	}
+}
+
+LTTNG_HIDDEN
+int config_document_replace_element_value(struct config_document *document,
+		const char *xpath, const char *value)
+{
+	int ret;
+	int xpath_result_size;
+
+	xmlXPathContextPtr xpath_context = NULL;
+	xmlXPathObjectPtr xpath_object = NULL;
+	xmlNodeSetPtr xpath_result_set = NULL;
+	xmlChar *internal_xpath = NULL;
+	xmlChar *internal_value = NULL;
+
+	assert(document);
+	assert(xpath);
+	assert(value);
+
+	internal_xpath = encode_string(xpath);
+	if (!internal_xpath) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to encode xpath string");
+		goto end;
+	}
+
+	internal_value = encode_string(value);
+	if (!internal_value) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to encode xpath replace value string");
+		goto end;
+	}
+
+	/* Initialize xpath context */
+	xpath_context = xmlXPathNewContext(document->document);
+	if (!xpath_context) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to create xpath context");
+		goto end;
+	}
+
+	/* Evaluate de xpath expression */
+	xpath_object = xmlXPathEvalExpression(internal_xpath, xpath_context);
+	if (!xpath_object) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to evaluate xpath query (invalid query format)");
+		goto end;
+	}
+
+	/* TODO: from here could be extracted and previopus could be a step in
+	 * subsequent operation, modify/substitute/delete node.
+	 */
+	xpath_result_set = xpath_object->nodesetval;
+	if (!xpath_result_set) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unset xpath result set or empty set ?");
+		goto end;
+	}
+
+	xpath_result_size = xpath_result_set->nodeNr;
+
+	/*
+	 * Reverse traversal since last element could be nested under parent
+	 * element present in the result set.
+	 */
+	for (int i = xpath_result_size - 1; i >=0; i--) {
+		assert(xpath_result_set->nodeTab[i]);
+		xmlNodeSetContent(xpath_result_set->nodeTab[i], internal_value);
+
+		/*
+		 * Libxml2 quirk regarding the freing and namesplace node see
+		 * libxml2 example and documentation for more details.
+		 */
+		if (xpath_result_set->nodeTab[i]->type != XML_NAMESPACE_DECL) {
+			xpath_result_set->nodeTab[i] = NULL;
+		}
+	}
+
+	xmlDocDump(stdout, document->document);
+end:
+	xmlXPathFreeContext(xpath_context);
+	xmlXPathFreeObject(xpath_object);
+	xmlFree(internal_xpath);
+	xmlFree(internal_value);
+	return ret;
+}
+
+LTTNG_HIDDEN
+int config_load_configuration_sessions(struct config_document *document,
+		const char *session_name, int override)
+{
+	int ret;
+	struct session_config_validation_ctx validation_ctx = { 0 };
+
+	ret = init_session_config_validation_ctx(&validation_ctx);
+	if (ret) {
+		goto end;
+	}
+	ret = load_session_from_document(document, session_name,
+			&validation_ctx, override);
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+int config_document_replace_element(struct config_document *document,
+		const char *xpath, const struct config_element *element)
+{
+	int ret = 0;
+	int xpath_result_size;
+
+	xmlXPathContextPtr xpath_context = NULL;
+	xmlXPathObjectPtr xpath_object = NULL;
+	xmlNodeSetPtr xpath_result_set = NULL;
+	xmlChar *internal_xpath = NULL;
+	xmlNodePtr old_node = NULL;
+	xmlNodePtr copy = NULL;
+
+	assert(document);
+	assert(xpath);
+	assert(element);
+	assert(element->element);
+
+	internal_xpath = encode_string(xpath);
+	if (!internal_xpath) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to encode xpath string");
+		goto end;
+	}
+
+	/* Initialize xpath context */
+	xpath_context = xmlXPathNewContext(document->document);
+	if (!xpath_context) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to create xpath context");
+		goto end;
+	}
+
+	/* Evaluate the xpath expression */
+	xpath_object = xmlXPathEvalExpression(internal_xpath, xpath_context);
+	if (!xpath_object) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to evaluate xpath query (invalid query format)");
+		goto end;
+	}
+
+	xpath_result_set = xpath_object->nodesetval;
+	if (!xpath_result_set) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unset xpath result set or empty set ?");
+		goto end;
+	}
+
+	xpath_result_size = xpath_result_set->nodeNr;
+
+	if (xpath_result_size > 1) {
+		/*TODO set valid error */
+		ERR("To many result while fetching config element value");
+		ret = -1;
+		goto end;
+	}
+
+	if (xpath_result_size == 0) {
+		ret = -1;
+		goto end;
+	}
+
+	assert(xpath_result_set->nodeTab[0]);
+
+	/* Do a copy of the element to ease caller memory management */
+	copy = xmlCopyNode(element->element, 1);
+	if (!copy) {
+		ret = -1;
+		ERR("Copy failed for node replacement");
+		goto end;
+	}
+
+
+	old_node = xmlReplaceNode(xpath_result_set->nodeTab[0], copy);
+	if (!old_node) {
+		ret = -1;
+		xmlFreeNode(copy);
+		ERR("Node replacement failed");
+		goto end;
+	}
+	xmlFree(old_node);
+end:
+	xmlXPathFreeContext(xpath_context);
+	xmlXPathFreeObject(xpath_object);
+	xmlFree(internal_xpath);
+	return ret;
+}
+
+/* TODO: DOC
+ *
+ */
+LTTNG_HIDDEN
+char *config_document_get_element_value(struct config_document *document,
+		const char *xpath)
+{
+	char *value = NULL;
+	int xpath_result_size;
+	int value_result_size;
+
+	xmlXPathContextPtr xpath_context = NULL;
+	xmlXPathObjectPtr xpath_object = NULL;
+	xmlNodeSetPtr xpath_result_set = NULL;
+	xmlChar *internal_xpath = NULL;
+	xmlChar *internal_value = NULL;
+
+	assert(document);
+	assert(xpath);
+
+	internal_xpath = encode_string(xpath);
+	if (!internal_xpath) {
+		/*TODO set valid error */
+		value = NULL;
+		ERR("Unable to encode xpath string");
+		goto end;
+	}
+
+	/* Initialize xpath context */
+	xpath_context = xmlXPathNewContext(document->document);
+	if (!xpath_context) {
+		/*TODO set valid error */
+		value = NULL;
+		ERR("Unable to create xpath context");
+		goto end;
+	}
+
+	/* Evaluate the xpath expression */
+	xpath_object = xmlXPathEvalExpression(internal_xpath, xpath_context);
+	if (!xpath_object) {
+		/*TODO set valid error */
+		value = NULL;
+		ERR("Unable to evaluate xpath query (invalid query format)");
+		goto end;
+	}
+
+	xpath_result_set = xpath_object->nodesetval;
+	if (!xpath_result_set) {
+		/*TODO set valid error */
+		value = NULL;
+		goto end;
+	}
+
+	xpath_result_size = xpath_result_set->nodeNr;
+
+	if (xpath_result_size > 1) {
+		/*TODO set valid error */
+		ERR("To many result while fetching config element value");
+		value = NULL;
+		goto end;
+	}
+
+	if (xpath_result_size == 0) {
+		value = NULL;
+		goto end;
+	}
+
+	/*
+	 * Reverse traversal since last element could be nested under parent
+	 * element present in the result set.
+	 */
+	assert(xpath_result_set->nodeTab[0]);
+	internal_value = xmlNodeGetContent(xpath_result_set->nodeTab[0]);
+	if (!internal_value) {
+		value = NULL;
+		goto end;
+	}
+
+	value_result_size  = xmlStrlen(internal_value);
+	value = calloc(value_result_size + 1, sizeof(char));
+	strncpy(value, (char *) internal_value, value_result_size);
+
+end:
+	xmlXPathFreeContext(xpath_context);
+	xmlXPathFreeObject(xpath_object);
+	xmlFree(internal_xpath);
+	xmlFree(internal_value);
+	return value;
+}
+
+LTTNG_HIDDEN
+int config_document_element_exist(struct config_document *document,
+		const char *xpath)
+{
+	int exist = 0;
+	int xpath_result_size;
+
+	xmlXPathContextPtr xpath_context = NULL;
+	xmlXPathObjectPtr xpath_object = NULL;
+	xmlNodeSetPtr xpath_result_set = NULL;
+	xmlChar *internal_xpath = NULL;
+
+	assert(document);
+	assert(document->document);
+	assert(xpath);
+
+	internal_xpath = encode_string(xpath);
+	if (!internal_xpath) {
+		/*TODO set valid error */
+		ERR("Unable to encode xpath string");
+		goto end;
+	}
+
+	/* Initialize xpath context */
+	xpath_context = xmlXPathNewContext(document->document);
+	if (!xpath_context) {
+		/*TODO set valid error */
+		ERR("Unable to create xpath context");
+		goto end;
+	}
+
+	/* Evaluate the xpath expression */
+	xpath_object = xmlXPathEvalExpression(internal_xpath, xpath_context);
+	if (!xpath_object) {
+		/*TODO set valid error */
+		ERR("Unable to evaluate xpath query (invalid query format)");
+		goto end;
+	}
+
+	xpath_result_set = xpath_object->nodesetval;
+	if (!xpath_result_set) {
+		goto end;
+	}
+
+	xpath_result_size = xpath_result_set->nodeNr;
+
+	if (xpath_result_size > 0) {
+		exist = 1;
+	}
+end:
+	xmlXPathFreeContext(xpath_context);
+	xmlXPathFreeObject(xpath_object);
+	xmlFree(internal_xpath);
+	return exist;
+
+}
+
+LTTNG_HIDDEN
+struct config_element *config_element_create(const char *name,
+		const char* value)
+{
+	struct config_element *element;
+
+	assert(name);
+
+	xmlChar *internal_name = NULL;
+	xmlChar *internal_value = NULL;
+
+	internal_name = encode_string(name);
+
+	/* TODO check error*/
+
+	if (value) {
+		internal_value = encode_string(value);
+	}
+
+	element = zmalloc(sizeof(struct config_element));
+	if (!element) {
+		goto end;
+	}
+
+	element->element = xmlNewNode(NULL, internal_name);
+	if (!element->element) {
+		free(element);
+		element = NULL;
+	}
+
+	if (internal_value) {
+		xmlNodeAddContent(element->element, internal_value);
+	}
+end:
+	xmlFree(internal_name);
+	xmlFree(internal_value);
+	return element;
+}
+
+LTTNG_HIDDEN
+int config_element_add_child(struct config_element *parent,
+		const struct config_element *child)
+{
+	assert(parent);
+	assert(child);
+	assert(parent->element);
+	assert(child->element);
+
+	int ret = 0;
+	xmlNodePtr node = NULL;
+	xmlNodePtr copy = NULL;
+
+	/* Do a copy to ease the memory management for caller */
+	copy = xmlCopyNode(child->element, 1);
+	if (!copy) {
+		ERR("Duplication of child to be added failed");
+		/* TODO: return valid error */
+		ret = -1;
+		goto error;
+	}
+	node = xmlAddChild(parent->element, copy);
+	if (!node) {
+		ERR("Add child failed");
+		/* TODO: return valid error */
+		xmlFreeNode(copy);
+		ret = -1;
+		goto error;
+	}
+error:
+	return ret;
+}
+
+
+LTTNG_HIDDEN
+int config_document_insert_element(struct config_document *document,
+		const char *xpath, const struct config_element *element)
+{
+	/* TODO: real ret default value */
+	int ret = 0;
+	int xpath_result_size;
+
+	xmlXPathContextPtr xpath_context = NULL;
+	xmlXPathObjectPtr xpath_object = NULL;
+	xmlNodeSetPtr xpath_result_set = NULL;
+	xmlChar *internal_xpath = NULL;
+	xmlNodePtr child_node = NULL;
+	xmlNodePtr local_copy = NULL;
+
+	assert(document);
+	assert(xpath);
+	assert(element);
+	assert(element->element);
+
+	internal_xpath = encode_string(xpath);
+	if (!internal_xpath) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to encode xpath string");
+		goto end;
+	}
+
+	/* Initialize xpath context */
+	xpath_context = xmlXPathNewContext(document->document);
+	if (!xpath_context) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to create xpath context");
+		goto end;
+	}
+
+	/* Evaluate the xpath expression */
+	xpath_object = xmlXPathEvalExpression(internal_xpath, xpath_context);
+	if (!xpath_object) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unable to evaluate xpath query (invalid query format)");
+		goto end;
+	}
+
+	xpath_result_set = xpath_object->nodesetval;
+	if (!xpath_result_set) {
+		/*TODO set valid error */
+		ret = -1;
+		ERR("Unset xpath result set or empty set ?");
+		goto end;
+	}
+
+	xpath_result_size = xpath_result_set->nodeNr;
+
+	if (xpath_result_size > 1) {
+		/*TODO set valid error */
+		ERR("To many result while fetching config element value");
+		ret = -1;
+		goto end;
+	}
+
+	if (xpath_result_size == 0) {
+		ret = -1;
+		goto end;
+	}
+
+	assert(xpath_result_set->nodeTab[0]);
+	/* Do a copy to simply memory management */
+	local_copy = xmlCopyNode(element->element, 1);
+	if (!local_copy) {
+		ret = -1;
+		ERR("Duplication of node to be insert failed");
+		goto end;
+	}
+
+	child_node = xmlAddChild(xpath_result_set->nodeTab[0], local_copy);
+	if (!child_node) {
+		ret = -1;
+		xmlFreeNode(local_copy);
+		ERR("Insertion failed on add child");
+		goto end;
+	}
+end:
+	xmlXPathFreeContext(xpath_context);
+	xmlXPathFreeObject(xpath_object);
+	xmlFree(internal_xpath);
+	return ret;
+}
+
+LTTNG_HIDDEN
+void config_element_free(struct config_element *element) {
+	if (element->element) {
+		xmlFree(element->element);
+	}
+
+	free(element);
 }
