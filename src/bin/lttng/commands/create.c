@@ -454,6 +454,7 @@ static int parse_template (struct config_document *template,
 		char **shm_path)
 {
 	int ret = 0;
+	int printed_byte;
 	char *raw_value = NULL;
 
 	assert(template);
@@ -490,8 +491,8 @@ static int parse_template (struct config_document *template,
 
 			if (strlen(raw_value) > 0) {
 				*output_type = OUTPUT_LOCAL;
-				ret = asprintf(url, "file://%s", raw_value);
-				if (ret < 0) {
+				printed_byte = asprintf(url, "file://%s", raw_value);
+				if (printed_byte < 0) {
 					ret = -1;
 					goto error;
 				}
@@ -527,8 +528,8 @@ static int parse_template (struct config_document *template,
 
 			if (strlen(raw_value) > 0) {
 				*output_type = OUTPUT_LOCAL;
-				ret = asprintf(url, "file://%s", raw_value);
-				if (ret < 0) {
+				printed_byte = asprintf(url, "file://%s", raw_value);
+				if (printed_byte < 0) {
 					ret = -1;
 					goto error;
 				}
@@ -574,6 +575,7 @@ static int create_session_from_template(struct config_document *template,
 		const char *datetime)
 {
 	int ret = CMD_SUCCESS;
+	int printed_byte;
 	struct config_element *temp_element = NULL;
 	struct config_element *temp_element_child = NULL;
 	char tmp_ctrl_uri[PATH_MAX];
@@ -614,8 +616,21 @@ static int create_session_from_template(struct config_document *template,
 	 */
 	if (session_type == SESSION_LIVE) {
 		if (config_document_element_exist(template, "/sessions/session/attributes/live_timer_interval")) {
-			asprintf(&tmp_string, "%d", live_timer);
-			config_document_replace_element_value(template, "/sessions/session/attributes/live_timer_interval", tmp_string);
+			printed_byte = asprintf(&tmp_string, "%d", live_timer);
+			if (printed_byte < 0) {
+				ERR("Asprintf failed for live timer");
+				ret = CMD_ERROR;
+				goto error;
+			}
+			ret = config_document_replace_element_value(template, "/sessions/session/attributes/live_timer_interval", tmp_string);
+
+			if (ret) {
+				printf("error: %d\n", ret);
+				ERR("Replacement of live_timer_interval failed");
+				ret = CMD_ERROR;
+				goto error;
+			}
+
 			free(tmp_string);
 			tmp_string = NULL;
 		} else {
@@ -810,6 +825,7 @@ error:
 static int create_session(void)
 {
 	int ret;
+	int printed_byte;
 
 
 	/* Template */
@@ -920,24 +936,26 @@ static int create_session(void)
 			goto error;
 		}
 
-		ret = asprintf(&session_name_date, "%s-%s", base_session_name, datetime);
-		if (ret < 0) {
+		printed_byte = asprintf(&session_name_date, "%s-%s", base_session_name, datetime);
+		if (printed_byte < 0) {
 			PERROR("Asprintf session name");
+			ret = CMD_ERROR;
 			goto error;
 		}
 		DBG("Session name from command option set to %s", base_session_name);
 	} else if (base_session_name) {
-		ret = asprintf(&session_name_date, "%s-%s", base_session_name, datetime);
-		if (ret < 0) {
+		printed_byte = asprintf(&session_name_date, "%s-%s", base_session_name, datetime);
+		if (printed_byte < 0) {
 			PERROR("Asprintf session name");
+			ret = CMD_ERROR;
 			goto error;
 		}
 	} else {
 		/* Generate a name */
-		/* TODO: use asprint */
-		ret = asprintf(&base_session_name, DEFAULT_SESSION_NAME "-%s", datetime);
-		if (ret < 0) {
+		printed_byte = asprintf(&base_session_name, DEFAULT_SESSION_NAME "-%s", datetime);
+		if (printed_byte < 0) {
 			PERROR("Asprintf generated session name");
+			ret = CMD_ERROR;
 			goto error;
 		}
 		session_name_date = strdup(base_session_name);
@@ -971,8 +989,8 @@ static int create_session(void)
 		}
 
 		/* Create URL string from the local file system path */
-		ret = asprintf(&temp_url, "file://%s", traces_path);
-		if (ret < 0) {
+		printed_byte = asprintf(&temp_url, "file://%s", traces_path);
+		if (printed_byte < 0) {
 			PERROR("asprintf url path");
 			ret = CMD_FATAL;
 			goto error;
@@ -1004,11 +1022,11 @@ static int create_session(void)
 				goto error;
 			}
 
-			ret = asprintf(&tmp_url,
+			printed_byte = asprintf(&tmp_url,
 					"file://%s/" DEFAULT_TRACE_DIR_NAME "/%s",
 					tmp_home_path, session_name_date);
 
-			if (ret < 0) {
+			if (printed_byte < 0) {
 				PERROR("asprintf trace dir name");
 				ret = CMD_FATAL;
 				goto error;
@@ -1018,8 +1036,8 @@ static int create_session(void)
 			break;
 		case SESSION_LIVE:
 			/* Default to a net output */
-			ret = asprintf(&tmp_url, "net://127.0.0.1");
-			if (ret < 0) {
+			printed_byte = asprintf(&tmp_url, "net://127.0.0.1");
+			if (printed_byte < 0) {
 				PERROR("asprintf default live URL");
 				ret = CMD_FATAL;
 				goto error;
@@ -1037,9 +1055,12 @@ static int create_session(void)
 	  * Shared memory path handling
 	  */
 	if (opt_shm_path) {
-		ret = asprintf(&base_shm_path, "%s/%s", opt_shm_path, session_name_date);
-		if (ret < 0) {
+		/* Overwrite shm_path so clear any previously defined one */
+		free(base_shm_path);
+		printed_byte = asprintf(&base_shm_path, "%s/%s", opt_shm_path, session_name_date);
+		if (printed_byte < 0) {
 			PERROR("asprintf shm_path");
+			ret = CMD_FATAL;
 			goto error;
 		}
 	}
