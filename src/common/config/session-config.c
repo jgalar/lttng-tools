@@ -3127,6 +3127,7 @@ struct config_document *config_document_get(const char *path)
 	}
 
 end:
+	fini_session_config_validation_ctx(&validation_ctx);
 	return document;
 error:
 	xmlFreeDoc(document->document);
@@ -3141,13 +3142,15 @@ void config_document_free(struct config_document *document)
 		xmlFreeDoc(document->document);
 		document->document = NULL;
 	}
+
+	free(document);
 }
 
 LTTNG_HIDDEN
 int config_document_replace_element_value(struct config_document *document,
 		const char *xpath, const char *value)
 {
-	int ret;
+	int ret = 0;
 	int xpath_result_size;
 
 	xmlXPathContextPtr xpath_context = NULL;
@@ -3247,6 +3250,7 @@ int config_load_configuration_sessions(struct config_document *document,
 	ret = load_session_from_document(document, session_name,
 			&validation_ctx, override);
 end:
+	fini_session_config_validation_ctx(&validation_ctx);
 	return ret;
 }
 
@@ -3327,15 +3331,17 @@ int config_document_replace_element(struct config_document *document,
 		goto end;
 	}
 
-
 	old_node = xmlReplaceNode(xpath_result_set->nodeTab[0], copy);
+	if (xpath_result_set->nodeTab[0]->type != XML_NAMESPACE_DECL)
+		   xpath_result_set->nodeTab[0] = NULL;
 	if (!old_node) {
 		ret = -1;
 		xmlFreeNode(copy);
 		ERR("Node replacement failed");
 		goto end;
 	}
-	xmlFree(old_node);
+	xmlUnlinkNode(old_node);
+	xmlFreeNode(old_node);
 end:
 	xmlXPathFreeContext(xpath_context);
 	xmlXPathFreeObject(xpath_object);
@@ -3656,8 +3662,8 @@ end:
 
 LTTNG_HIDDEN
 void config_element_free(struct config_element *element) {
-	if (element->element) {
-		xmlFree(element->element);
+	if (element && element->element) {
+		xmlFreeNode(element->element);
 	}
 
 	free(element);
