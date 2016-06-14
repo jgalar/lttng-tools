@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-elementFormDefault="qualified" version="2.8">
+elementFormDefault="qualified" version="3.0">
 
 <xs:simpleType name="name_type">
 	<xs:restriction base="xs:string">
@@ -317,7 +317,7 @@ elementFormDefault="qualified" version="2.8">
 
 <xs:complexType name="session_type">
 	<xs:all>
-		<xs:element name="name" type="name_type"/>
+		<xs:element name="name" type="name_type" minOccurs="0"/>
 		<xs:element name="shared_memory_path" type="xs:string" minOccurs="0"/>
 		<xs:element name="domains" type="domain_list_type" minOccurs="0"/>
 		<xs:element name="started" type="xs:boolean" default="0" minOccurs="0"/>
