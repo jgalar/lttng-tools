@@ -54,6 +54,11 @@ option:-f, option:--force::
 option:-o, option:--output-path='PATH'::
     Set output directory path to 'PATH'.
 
+option:--omit-name::
+    Omit session name(s) from saved session configuration(s).
+
+option:--omit-output::
+    Omit session output(s) from saved session configuration(s).
 
 include::common-cmd-help-options.txt[]
 
