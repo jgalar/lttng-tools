@@ -1856,6 +1856,7 @@ int save_session(struct ltt_session *session,
 	struct config_writer *writer = NULL;
 	size_t session_name_len;
 	const char *provided_path;
+	bool omit_name, omit_output;
 
 	assert(session);
 	assert(attr);
@@ -1870,6 +1871,18 @@ int save_session(struct ltt_session *session,
 		ret = LTTNG_ERR_EPERM;
 		goto end;
 	}
+
+	ret = lttng_save_session_attr_get_omit_name(attr);
+	if (ret < 0) {
+		goto end;
+	}
+	omit_name = !!ret;
+
+	ret = lttng_save_session_attr_get_omit_output(attr);
+	if (ret < 0) {
+		goto end;
+	}
+	omit_output = !!ret;
 
 	provided_path = lttng_save_session_attr_get_output_url(attr);
 	if (provided_path) {
@@ -1963,11 +1976,13 @@ int save_session(struct ltt_session *session,
 		goto end;
 	}
 
-	ret = config_writer_write_element_string(writer, config_element_name,
-			session->name);
-	if (ret) {
-		ret = LTTNG_ERR_SAVE_IO_FAIL;
-		goto end;
+	if (!omit_name) {
+		ret = config_writer_write_element_string(writer,
+				config_element_name, session->name);
+		if (ret) {
+			ret = LTTNG_ERR_SAVE_IO_FAIL;
+			goto end;
+		}
 	}
 
 	if(session->shm_path[0] != '\0') {
@@ -2023,9 +2038,11 @@ int save_session(struct ltt_session *session,
 		}
 	}
 
-	ret = save_session_output(writer, session);
-	if (ret) {
-		goto end;
+	if (!omit_output) {
+		ret = save_session_output(writer, session);
+		if (ret) {
+			goto end;
+		}
 	}
 
 	/* /session */
