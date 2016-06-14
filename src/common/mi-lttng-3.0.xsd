@@ -417,6 +417,8 @@ THE SOFTWARE.
 		<xs:all>
 			<xs:element name="session" type="tns:session_type" />
 			<xs:element name="path" type="xs:string" />
+			<xs:element name="omit_name" type="xs:boolean" minOccurs="0" />
+			<xs:element name="omit_output" type="xs:boolean" minOccurs="0" />
 		</xs:all>
 	</xs:complexType>
 

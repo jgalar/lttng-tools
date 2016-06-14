@@ -128,6 +128,8 @@ const char * const config_element_pid_tracker = "pid_tracker";
 const char * const config_element_trackers = "trackers";
 const char * const config_element_targets = "targets";
 const char * const config_element_target_pid = "pid_target";
+const char * const config_element_omit_name = "omit_name";
+const char * const config_element_omit_output = "omit_output";
 
 const char * const config_domain_type_kernel = "KERNEL";
 const char * const config_domain_type_ust = "UST";

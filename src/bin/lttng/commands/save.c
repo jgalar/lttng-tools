@@ -31,6 +31,8 @@
 static char *opt_output_path;
 static bool opt_force;
 static bool opt_save_all;
+static bool opt_omit_name;
+static bool opt_omit_output;
 static struct mi_writer *writer;
 
 enum {
@@ -38,6 +40,8 @@ enum {
 	OPT_ALL,
 	OPT_FORCE,
 	OPT_LIST_OPTIONS,
+	OPT_OMIT_NAME,
+	OPT_OMIT_OUTPUT,
 };
 
 static struct poptOption save_opts[] = {
@@ -47,6 +51,8 @@ static struct poptOption save_opts[] = {
 	{"output-path", 'o', POPT_ARG_STRING, &opt_output_path, 0, NULL, NULL},
 	{"force",       'f', POPT_ARG_NONE, NULL, OPT_FORCE, NULL, NULL},
 	{"list-options",  0, POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
+	{"omit-name",     0, POPT_ARG_NONE, NULL, OPT_OMIT_NAME, NULL, NULL},
+	{"omit-output",   0, POPT_ARG_NONE, NULL, OPT_OMIT_OUTPUT, NULL, NULL},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -108,6 +114,26 @@ static int mi_save_print(const char *session_name)
 		}
 	}
 
+	/* Omit session name. */
+	if (opt_omit_name) {
+		/* Only print if true; assume default value otherwise. */
+		ret = mi_lttng_writer_write_element_bool(writer,
+				config_element_omit_name, opt_omit_name);
+		if (ret) {
+			goto end;
+		}
+	}
+
+	/* Omit session output. */
+	if (opt_omit_output) {
+		/* Only print if true; assume default value otherwise. */
+		ret = mi_lttng_writer_write_element_bool(writer,
+				config_element_omit_output, opt_omit_output);
+		if (ret) {
+			goto end;
+		}
+	}
+
 	/* Close save element */
 	ret = mi_lttng_writer_close_element(writer);
 end:
@@ -142,6 +168,12 @@ int cmd_save(int argc, const char **argv)
 		case OPT_LIST_OPTIONS:
 			list_cmd_options(stdout, save_opts);
 			goto end;
+		case OPT_OMIT_NAME:
+			opt_omit_name = true;
+			break;
+		case OPT_OMIT_OUTPUT:
+			opt_omit_output = true;
+			break;
 		default:
 			ret = CMD_UNDEFINED;
 			goto end;
@@ -177,6 +209,20 @@ int cmd_save(int argc, const char **argv)
 	if (lttng_save_session_attr_set_output_url(attr, opt_output_path)) {
 		ret = CMD_ERROR;
 		goto end_destroy;
+	}
+
+	if (opt_omit_name) {
+		if (lttng_save_session_attr_set_omit_name(attr, true)) {
+			ret = CMD_ERROR;
+			goto end_destroy;
+		}
+	}
+
+	if (opt_omit_output) {
+		if (lttng_save_session_attr_set_omit_output(attr, true)) {
+			ret = CMD_ERROR;
+			goto end_destroy;
+		}
 	}
 
 	/* Mi check */
