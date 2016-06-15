@@ -224,6 +224,11 @@ In <<local-mode,local>> mode, 'URL' must start with `file://` followed
 by the destination path on the local file system.
 
 
+Name
+~~~~
+option:--default-name::
+    Generate a session name of the form `auto-YYYYmmdd-HHMMSS`.
+
 include::common-cmd-help-options.txt[]
 
 
