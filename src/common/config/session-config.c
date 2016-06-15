@@ -1028,6 +1028,7 @@ int init_domain(xmlNodePtr domain_node, struct lttng_domain *domain)
 {
 	int ret;
 	xmlNodePtr node;
+	bool buffer_type_set = false;
 
 	for (node = xmlFirstElementChild(domain_node); node;
 		node = xmlNextElementSibling(node)) {
@@ -1047,6 +1048,7 @@ int init_domain(xmlNodePtr domain_node, struct lttng_domain *domain)
 			}
 
 			domain->type = ret;
+			buffer_type_set = true;
 		} else if (!strcmp((const char *) node->name,
 			config_element_buffer_type)) {
 			/* buffer type */
@@ -1065,6 +1067,11 @@ int init_domain(xmlNodePtr domain_node, struct lttng_domain *domain)
 
 			domain->buf_type = ret;
 		}
+	}
+	if (!buffer_type_set) {
+		/* Set the default buffer type of the domain. */
+		domain->buf_type = domain->type == LTTNG_DOMAIN_KERNEL ?
+				LTTNG_BUFFER_GLOBAL : LTTNG_BUFFER_PER_UID;
 	}
 	ret = 0;
 end:

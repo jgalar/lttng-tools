@@ -254,7 +254,7 @@ elementFormDefault="qualified" version="3.0">
 <xs:complexType name="domain_type">
 	<xs:all>
 		<xs:element name="type" type="domain_type_type"/>
-		<xs:element name="buffer_type" type="domain_buffer_type"/>
+		<xs:element name="buffer_type" type="domain_buffer_type" minOccurs="0"/>
 		<xs:element name="channels" type="channel_list_type" minOccurs="0"/>
 		<xs:element name="trackers" type="trackers_type" minOccurs="0"/>
 	</xs:all>
