@@ -200,6 +200,9 @@ option:-o, option:--output='PATH'::
 option:--shm-path='PATH'::
     Create shared memory holding buffers at 'PATH'.
 
+option:--default-output::
+    Use the default output associated to the session's mode.
+
 
 URL
 ~~~
