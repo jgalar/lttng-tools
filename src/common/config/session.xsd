@@ -185,7 +185,7 @@ elementFormDefault="qualified" version="3.0">
 		<xs:element name="subbuffer_size" type="uint64_type" minOccurs="0"/> <!-- bytes -->
 		<xs:element name="subbuffer_count" type="uint64_type" default="4" minOccurs="0"/>
 		<xs:element name="switch_timer_interval" type="uint32_type" default="0" minOccurs="0"/>  <!-- usec -->
-		<xs:element name="read_timer_interval" type="uint32_type"/>  <!-- usec -->
+		<xs:element name="read_timer_interval" type="uint32_type" minOccurs="0"/>  <!-- usec -->
 		<xs:element name="output_type" type="event_output_type" minOccurs="0"/>
 		<xs:element name="tracefile_size" type="uint64_type" default="0" minOccurs="0"/> <!-- bytes -->
 		<xs:element name="tracefile_count" type="uint64_type" default="0" minOccurs="0"/>
