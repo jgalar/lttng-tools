@@ -1798,6 +1798,7 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 		xmlNodePtr *events_node)
 {
 	int ret;
+	bool name_set = false;
 
 	assert(attr_node);
 	assert(channel);
@@ -1825,6 +1826,7 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 
 		strncpy(channel->name, (const char *) content, name_len);
 		free(content);
+		name_set = true;
 	} else if (!strcmp((const char *) attr_node->name,
 			config_element_enabled)) {
 		xmlChar *content;
@@ -2039,6 +2041,12 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 	} else {
 		/* contexts */
 		*contexts_node = attr_node;
+	}
+
+	if (!name_set) {
+		ERR("Encountered a channel with no name attribute.");
+		ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+		goto end;
 	}
 	ret = 0;
 end:

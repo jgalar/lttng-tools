@@ -179,7 +179,7 @@ elementFormDefault="qualified" version="3.0">
 <!-- Maps to struct lttng_channel -->
 <xs:complexType name="channel_type">
 	<xs:all>
-		<xs:element name="name" type="name_type"/>
+		<xs:element name="name" type="name_type" minOccurs="0"/>
 		<xs:element name="enabled" type="xs:boolean" default="true" minOccurs="0"/>
 		<xs:element name="overwrite_mode" type="channel_overwrite_mode_type" default="DISCARD" minOccurs="0"/>
 		<xs:element name="subbuffer_size" type="uint64_type" minOccurs="0"/> <!-- bytes -->
