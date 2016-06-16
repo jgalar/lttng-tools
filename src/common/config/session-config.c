@@ -1793,12 +1793,13 @@ end:
 }
 
 static
-int process_channel_attr_node(xmlNodePtr attr_node,
-		struct lttng_channel *channel, xmlNodePtr *contexts_node,
-		xmlNodePtr *events_node)
+int process_channel_attr_node(xmlNodePtr attr_node, bool snapshot_mode,
+		enum lttng_domain_type domain, struct lttng_channel *channel,
+		xmlNodePtr *contexts_node, xmlNodePtr *events_node)
 {
 	int ret;
 	bool name_set = false;
+	bool output_type_set = false;
 
 	assert(attr_node);
 	assert(channel);
@@ -1973,6 +1974,7 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 		}
 
 		channel->attr.output = ret;
+		output_type_set = true;
 	} else if (!strcmp((const char *) attr_node->name,
 			config_element_tracefile_size)) {
 		xmlChar *content;
@@ -2047,6 +2049,13 @@ int process_channel_attr_node(xmlNodePtr attr_node,
 		ERR("Encountered a channel with no name attribute.");
 		ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
 		goto end;
+	}
+
+	if (!output_type_set) {
+		/* Set default output type associated with the domain. */
+		channel->attr.output =
+				(domain == LTTNG_DOMAIN_KERNEL && !snapshot_mode) ?
+				LTTNG_EVENT_SPLICE : LTTNG_EVENT_MMAP;
 	}
 	ret = 0;
 end:
@@ -2302,7 +2311,8 @@ end:
 
 
 static
-int process_domain_node(xmlNodePtr domain_node, const char *session_name)
+int process_domain_node(xmlNodePtr domain_node, const char *session_name,
+	        bool snapshot_mode)
 {
 	int ret;
 	struct lttng_domain domain = { 0 };
@@ -2354,7 +2364,8 @@ int process_domain_node(xmlNodePtr domain_node, const char *session_name)
 			channel_attr_node; channel_attr_node =
 			xmlNextElementSibling(channel_attr_node)) {
 			ret = process_channel_attr_node(channel_attr_node,
-				&channel, &contexts_node, &events_node);
+				snapshot_mode, domain.type, &channel,
+			        &contexts_node, &events_node);
 			if (ret) {
 				goto end;
 			}
@@ -2625,7 +2636,8 @@ domain_init_error:
 
 	for (node = xmlFirstElementChild(domains_node); node;
 		node = xmlNextElementSibling(node)) {
-		ret = process_domain_node(node, (const char *) name);
+		ret = process_domain_node(node, (const char *) name,
+			        snapshot_mode == 1);
 		if (ret) {
 			goto end;
 		}
