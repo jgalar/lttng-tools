@@ -2371,7 +2371,12 @@ static int spawn_consumer_thread(struct consumer_data *consumer_data)
 	int ret, clock_ret;
 	struct timespec timeout;
 
-	/* Make sure we set the readiness flag to 0 because we are NOT ready */
+	/*
+	 * Make sure we set the readiness flag to 0 because we are NOT ready.
+	 * This access to consumer_thread_is_ready does not need to be
+	 * protected by consumer_data.cond_mutex (yet) since the consumer
+	 * management thread has not been started at this point.
+	 */
 	consumer_data->consumer_thread_is_ready = 0;
 
 	/* Setup pthread condition */
@@ -3081,6 +3086,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_LIST_EVENTS:
 	case LTTNG_LIST_SYSCALLS:
 	case LTTNG_LIST_TRACKER_PIDS:
+	case LTTNG_DATA_PENDING:
 		break;
 	default:
 		/* Setup lttng message with no payload */
@@ -4202,7 +4208,6 @@ static void *thread_manage_health(void *data)
 	sock = lttcomm_create_unix_sock(health_unix_sock_path);
 	if (sock < 0) {
 		ERR("Unable to create health check Unix socket");
-		ret = -1;
 		goto error;
 	}
 
@@ -4213,7 +4218,6 @@ static void *thread_manage_health(void *data)
 		if (ret < 0) {
 			ERR("Unable to set group on %s", health_unix_sock_path);
 			PERROR("chown");
-			ret = -1;
 			goto error;
 		}
 
@@ -4222,7 +4226,6 @@ static void *thread_manage_health(void *data)
 		if (ret < 0) {
 			ERR("Unable to set permissions on %s", health_unix_sock_path);
 			PERROR("chmod");
-			ret = -1;
 			goto error;
 		}
 	}
@@ -4924,10 +4927,6 @@ static int set_option(int opt, const char *arg, const char *optname)
 		} else {
 			unsigned long v;
 
-			if (!arg) {
-				ret = -EINVAL;
-				goto end;
-			}
 			errno = 0;
 			v = strtoul(arg, NULL, 0);
 			if (errno != 0 || !isdigit(arg[0])) {
@@ -5476,14 +5475,14 @@ static int set_signal_handler(void)
 
 /*
  * Set open files limit to unlimited. This daemon can open a large number of
- * file descriptors in order to consumer multiple kernel traces.
+ * file descriptors in order to consume multiple kernel traces.
  */
 static void set_ulimit(void)
 {
 	int ret;
 	struct rlimit lim;
 
-	/* The kernel does not allowed an infinite limit for open files */
+	/* The kernel does not allow an infinite limit for open files */
 	lim.rlim_cur = 65535;
 	lim.rlim_max = 65535;
 
@@ -6227,6 +6226,13 @@ exit_init_data:
 	rcu_thread_offline();
 	rcu_unregister_thread();
 
+	/*
+	 * Ensure all prior call_rcu are done. call_rcu callbacks may push
+	 * hash tables to the ht_cleanup thread. Therefore, we ensure that
+	 * the queue is empty before shutting down the clean-up thread.
+	 */
+	rcu_barrier();
+
 	ret = notify_thread_pipe(ht_cleanup_quit_pipe[1]);
 	if (ret < 0) {
 		ERR("write error on ht_cleanup quit pipe");
@@ -6256,9 +6262,6 @@ exit_health_sessiond_cleanup:
 exit_create_run_as_worker_cleanup:
 
 exit_options:
-	/* Ensure all prior call_rcu are done. */
-	rcu_barrier();
-
 	sessiond_cleanup_options();
 
 exit_set_signal_handler:
