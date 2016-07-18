@@ -3397,7 +3397,7 @@ error:
  * Return 0 if the metadata can be generated, a LTTNG_ERR code otherwise.
  */
 static
-int check_metadata_regenerate_support(struct ltt_session *session)
+int check_regenerate_metadata_support(struct ltt_session *session)
 {
 	int ret;
 
@@ -3436,7 +3436,7 @@ end:
 }
 
 static
-int ust_metadata_regenerate(struct ltt_ust_session *usess)
+int ust_regenerate_metadata(struct ltt_ust_session *usess)
 {
 	int ret = 0;
 	struct buffer_reg_uid *uid_reg = NULL;
@@ -3497,7 +3497,7 @@ end:
 }
 
 /*
- * Command LTTNG_METADATA_REGENERATE from the lttng-ctl library.
+ * Command LTTNG_REGENERATE_METADATA from the lttng-ctl library.
  *
  * Ask the consumer to truncate the existing metadata file(s) and
  * then regenerate the metadata. Live and per-pid sessions are not
@@ -3505,19 +3505,19 @@ end:
  *
  * Return 0 on success or else a LTTNG_ERR code.
  */
-int cmd_metadata_regenerate(struct ltt_session *session)
+int cmd_regenerate_metadata(struct ltt_session *session)
 {
 	int ret;
 
 	assert(session);
 
-	ret = check_metadata_regenerate_support(session);
+	ret = check_regenerate_metadata_support(session);
 	if (ret) {
 		goto end;
 	}
 
 	if (session->kernel_session) {
-		ret = kernctl_session_metadata_regenerate(
+		ret = kernctl_session_regenerate_metadata(
 				session->kernel_session->fd);
 		if (ret < 0) {
 			ERR("Failed to regenerate the kernel metadata");
@@ -3526,7 +3526,7 @@ int cmd_metadata_regenerate(struct ltt_session *session)
 	}
 
 	if (session->ust_session) {
-		ret = ust_metadata_regenerate(session->ust_session);
+		ret = ust_regenerate_metadata(session->ust_session);
 		if (ret < 0) {
 			ERR("Failed to regenerate the UST metadata");
 			goto end;
@@ -3539,6 +3539,60 @@ end:
 	return ret;
 }
 
+/*
+ * Command LTTNG_REGENERATE_STATEDUMP from the lttng-ctl library.
+ *
+ * Ask the tracer to regenerate a new statedump.
+ *
+ * Return 0 on success or else a LTTNG_ERR code.
+ */
+int cmd_regenerate_statedump(struct ltt_session *session)
+{
+	int ret;
+
+	assert(session);
+
+	if (!session->active) {
+		ret = LTTNG_ERR_SESSION_NOT_STARTED;
+		goto end;
+	}
+	ret = 0;
+
+	if (session->kernel_session) {
+		ret = kernctl_session_regenerate_statedump(
+				session->kernel_session->fd);
+		/*
+		 * Currently, the statedump in kernel can only fail if out
+		 * of memory.
+		 */
+		if (ret < 0) {
+			if (ret == -ENOMEM) {
+				ret = LTTNG_ERR_REGEN_STATEDUMP_NOMEM;
+			} else {
+				ret = LTTNG_ERR_REGEN_STATEDUMP_FAIL;
+			}
+			ERR("Failed to regenerate the kernel statedump");
+			goto end;
+		}
+	}
+
+	if (session->ust_session) {
+		ret = ust_app_regenerate_statedump_all(session->ust_session);
+		/*
+		 * Currently, the statedump in UST always returns 0.
+		 */
+		if (ret < 0) {
+			ret = LTTNG_ERR_REGEN_STATEDUMP_FAIL;
+			ERR("Failed to regenerate the UST statedump");
+			goto end;
+		}
+	}
+	DBG("Cmd regenerate statedump for session %s", session->name);
+	ret = LTTNG_OK;
+
+end:
+	return ret;
+}
 
 /*
  * Send relayd sockets from snapshot output to consumer. Ignore request if the

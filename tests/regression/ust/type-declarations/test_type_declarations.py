@@ -29,7 +29,7 @@ test_utils_path = test_utils_path + "/utils"
 sys.path.append(test_utils_path)
 from test_utils import *
 
-NR_TESTS = 9
+NR_TESTS = 10
 current_test = 1
 print("1..{0}".format(NR_TESTS))
 
@@ -45,15 +45,7 @@ test_env = os.environ.copy()
 test_env["LTTNG_UST_REGISTER_TIMEOUT"] = "-1"
 
 td_process = subprocess.Popen(test_path + "type-declarations", stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=test_env)
-
-if sys.version_info >= (3, 3):
-    try:
-        td_process.wait(5)
-    except TimeoutExpired:
-        td_process.kill()
-        bail("Failed to run type-declarations test application.")
-else:
-    td_process.wait()
+td_process.wait()
 
 print_test_result(td_process.returncode == 0, current_test, "Test application exited normally")
 current_test += 1
@@ -78,10 +70,10 @@ current_test += 1
 if babeltrace_process.returncode != 0:
     bail("Unreadable trace; can't proceed with analysis.")
 
-print_test_result(len(event_lines) == 4, current_test, "Correct number of events found in resulting trace")
+print_test_result(len(event_lines) == 5, current_test, "Correct number of events found in resulting trace")
 current_test += 1
 
-if len(event_lines) != 4:
+if len(event_lines) != 5:
     bail("Unexpected number of events found in resulting trace (" + session_info.trace_path + ")." )
 
 match = re.search(r".*ust_tests_td:(.*):.*enumfield = \( \"(.*)\" :.*enumfield_bis = \( \"(.*)\" :.*enumfield_third = .*:.*", event_lines[0])
@@ -110,5 +102,9 @@ match = re.search(r".*ust_tests_td:(.*):.*enumfield = \( \"(.*)\" :.*enumfield_b
 
 print_test_result(match is not None and match.group(2) == "one", current_test,\
                       "Third tracepoint's enum value maps to one")
+current_test += 1
+
+print_test_result('{ zero = ( "zero" : container = 0 ), two = ( "two" : container = 2 ), three = ( "three" : container = 3 ), fifteen = ( "ten_to_twenty" : container = 15 ), twenty_one = ( "twenty_one" : container = 21 ) }' in event_lines[4],
+                  current_test, 'Auto-incrementing enum values are correct')
 
 shutil.rmtree(session_info.tmp_directory)

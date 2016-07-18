@@ -31,7 +31,8 @@
 static char *opt_session_name;
 static char *session_name = NULL;
 
-static int metadata_regenerate(int argc, const char **argv);
+static int regenerate_metadata(int argc, const char **argv);
+static int regenerate_statedump(int argc, const char **argv);
 
 enum {
 	OPT_HELP = 1,
@@ -51,7 +52,8 @@ static struct poptOption long_options[] = {
 };
 
 static struct cmd_struct actions[] = {
-	{ "regenerate", metadata_regenerate },
+	{ "metadata", regenerate_metadata },
+	{ "statedump", regenerate_statedump },
 	{ NULL, NULL }	/* Array closure */
 };
 
@@ -71,7 +73,7 @@ static int count_arguments(const char **argv)
 	return i;
 }
 
-static int metadata_regenerate(int argc, const char **argv)
+static int regenerate_metadata(int argc, const char **argv)
 {
 	int ret;
 
@@ -82,6 +84,23 @@ static int metadata_regenerate(int argc, const char **argv)
 	ret = lttng_regenerate_metadata(session_name);
 	if (ret == 0) {
 		MSG("Metadata successfully regenerated for session %s", session_name);
+	}
+
+end:
+	return ret;
+}
+
+static int regenerate_statedump(int argc, const char **argv)
+{
+	int ret;
+
+	if (argc > 1) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	ret = lttng_regenerate_statedump(session_name);
+	if (ret == 0) {
+		MSG("State dump successfully regenerated for session %s", session_name);
 	}
 
 end:
@@ -108,7 +127,7 @@ static int handle_command(const char **argv)
 			if (lttng_opt_mi) {
 				/* Action element */
 				ret = mi_lttng_writer_open_element(writer,
-						mi_lttng_element_command_metadata_action);
+						mi_lttng_element_command_regenerate_action);
 				if (ret) {
 					ret = CMD_ERROR;
 					goto end;
@@ -146,9 +165,9 @@ end:
 }
 
 /*
- * Metadata command handling.
+ * regenerate command handling.
  */
-int cmd_metadata(int argc, const char **argv)
+int cmd_regenerate(int argc, const char **argv)
 {
 	int opt, ret = CMD_SUCCESS, command_ret = CMD_SUCCESS, success = 1;
 	static poptContext pc;
@@ -170,7 +189,7 @@ int cmd_metadata(int argc, const char **argv)
 		}
 		/* Open command element */
 		ret = mi_lttng_writer_command_open(writer,
-				mi_lttng_element_command_metadata);
+				mi_lttng_element_command_regenerate);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;

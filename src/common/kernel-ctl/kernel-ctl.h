@@ -65,7 +65,8 @@ int kernctl_track_pid(int fd, int pid);
 int kernctl_untrack_pid(int fd, int pid);
 int kernctl_list_tracker_pids(int fd);
 
-int kernctl_session_metadata_regenerate(int fd);
+int kernctl_session_regenerate_metadata(int fd);
+int kernctl_session_regenerate_statedump(int fd);
 
 /* Buffer operations */
 

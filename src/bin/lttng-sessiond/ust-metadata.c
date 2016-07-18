@@ -300,38 +300,53 @@ int ust_metadata_enum_statedump(struct ust_registry_session *session,
 				goto end;
 			}
 		}
-		ret = lttng_metadata_printf(session,
-				"\" = ");
+		ret = lttng_metadata_printf(session, "\"");
 		if (ret) {
 			goto end;
 		}
 
-		if (entry->start.signedness) {
-			ret = lttng_metadata_printf(session,
-				"%lld", (long long) entry->start.value);
+		if (entry->u.extra.options &
+				USTCTL_UST_ENUM_ENTRY_OPTION_IS_AUTO) {
+			ret = lttng_metadata_printf(session, ",\n");
+			if (ret) {
+				goto end;
+			}
 		} else {
 			ret = lttng_metadata_printf(session,
-				"%llu", entry->start.value);
-		}
-		if (ret) {
-			goto end;
-		}
+					" = ");
+			if (ret) {
+				goto end;
+			}
 
-		if (entry->start.signedness == entry->end.signedness &&
-				entry->start.value == entry->end.value) {
-			ret = lttng_metadata_printf(session,
-				",\n");
-		} else {
-			if (entry->end.signedness) {
+			if (entry->start.signedness) {
 				ret = lttng_metadata_printf(session,
-					" ... %lld,\n", (long long) entry->end.value);
+					"%lld", (long long) entry->start.value);
 			} else {
 				ret = lttng_metadata_printf(session,
-					" ... %llu,\n", entry->end.value);
+					"%llu", entry->start.value);
 			}
-		}
-		if (ret) {
-			goto end;
+			if (ret) {
+				goto end;
+			}
+
+			if (entry->start.signedness == entry->end.signedness &&
+					entry->start.value ==
+						entry->end.value) {
+				ret = lttng_metadata_printf(session, ",\n");
+			} else {
+				if (entry->end.signedness) {
+					ret = lttng_metadata_printf(session,
+						" ... %lld,\n",
+						(long long) entry->end.value);
+				} else {
+					ret = lttng_metadata_printf(session,
+						" ... %llu,\n",
+						entry->end.value);
+				}
+			}
+			if (ret) {
+				goto end;
+			}
 		}
 	}
 	nesting--;

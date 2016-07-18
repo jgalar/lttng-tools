@@ -225,9 +225,14 @@ int kernctl_list_tracker_pids(int fd)
 	return LTTNG_IOCTL_NO_CHECK(fd, LTTNG_KERNEL_SESSION_LIST_TRACKER_PIDS);
 }
 
-int kernctl_session_metadata_regenerate(int fd)
+int kernctl_session_regenerate_metadata(int fd)
 {
 	return LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_SESSION_METADATA_REGEN);
+}
+
+int kernctl_session_regenerate_statedump(int fd)
+{
+	return LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_SESSION_STATEDUMP);
 }
 
 int kernctl_create_stream(int fd)
