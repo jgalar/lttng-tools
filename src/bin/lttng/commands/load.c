@@ -25,6 +25,7 @@
 
 #include <common/mi-lttng.h>
 #include <common/config/session-config.h>
+#include <lttng/load.h>
 
 #include "../command.h"
 
@@ -126,6 +127,8 @@ int cmd_load(int argc, const char **argv)
 	int ret = CMD_SUCCESS, command_ret = CMD_SUCCESS, success;
 	int opt;
 	poptContext pc;
+	struct lttng_load_session_attr *session_attr = NULL;
+	char *input_path = NULL;
 
 	pc = poptGetContext(NULL, argc, argv, load_opts, 0);
 	poptReadDefaultConfig(pc, 0);
@@ -185,7 +188,51 @@ int cmd_load(int argc, const char **argv)
 		}
 	}
 
-	command_ret = config_load_session(opt_input_path, session_name, opt_force, 0);
+	/* Prepare load attributes */
+	session_attr = lttng_load_session_attr_create();
+	if (!session_attr) {
+		ERR("Load session attributes creation failed");
+		ret = -LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	/*
+	 * Set the input url
+	 * lttng_load_session_attr_set_input_url support only absolute path.
+	 * Use realpath to resolve any relative path.
+	 * */
+	if (opt_input_path) {
+		input_path = realpath(opt_input_path, NULL);
+		if (!input_path) {
+			PERROR("Input path is invalid");
+		}
+	} else {
+		input_path = NULL;
+	}
+
+	ret = lttng_load_session_attr_set_input_url(session_attr,
+			input_path);
+	if (ret) {
+		ERR("Input path is invalid");
+		goto end;
+	}
+
+	/* Set the session name. NULL means all sessions should be loaded */
+	ret = lttng_load_session_attr_set_session_name(session_attr,
+			session_name);
+	if (ret) {
+		ERR("Session name is invalid");
+		goto end;
+	}
+
+	/* Set the overwrite attribute */
+	ret = lttng_load_session_attr_set_overwrite(session_attr, opt_force);
+	if (ret) {
+		ERR("Force argument could not be applied");
+		goto end;
+	}
+
+	command_ret = lttng_load_session(session_attr);
 	if (command_ret) {
 		ERR("%s", lttng_strerror(command_ret));
 		success = 0;
@@ -244,6 +291,8 @@ end:
 	/* Overwrite ret if the was an error with the load command */
 	ret = command_ret ? -command_ret : ret;
 
+	lttng_load_session_attr_destroy(session_attr);
+	free(input_path);
 	poptFreeContext(pc);
 	return ret;
 }
