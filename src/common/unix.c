@@ -82,7 +82,7 @@ int lttcomm_accept_unix_sock(int sock)
 {
 	int new_fd;
 	struct sockaddr_un s_un;
-	socklen_t len = 0;
+	socklen_t len = sizeof(s_un);
 
 	/* Blocking call */
 	new_fd = accept(sock, (struct sockaddr *) &s_un, &len);
@@ -525,7 +525,7 @@ ssize_t lttcomm_recv_creds_unix_sock(int sock, void *buf, size_t len,
 	}
 
 	memcpy(creds, CMSG_DATA(cmptr), sizeof_cred);
-#elif (defined(__FreeBSD__) || defined(__CYGWIN__) || defined(__sun__))
+#elif (defined(__FreeBSD__) || defined(__CYGWIN__) || defined(__sun__) || defined(__APPLE__))
 	{
 		int peer_ret;
 
@@ -558,7 +558,7 @@ int lttcomm_setsockopt_creds_unix_sock(int sock)
 	}
 	return ret;
 }
-#elif (defined(__FreeBSD__) || defined(__CYGWIN__) || defined(__sun__))
+#elif (defined(__FreeBSD__) || defined(__CYGWIN__) || defined(__sun__) || defined(__APPLE__))
 LTTNG_HIDDEN
 int lttcomm_setsockopt_creds_unix_sock(int sock)
 {

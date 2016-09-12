@@ -17,7 +17,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sys/mman.h>
-#include <time.h>
+#include <common/compat/time.h>
 
 #define BUF_SIZE 256
 #define NB_FD 1
@@ -442,7 +442,7 @@ void ppoll_fds_ulong_max(void)
  */
 void pselect_fd_too_big(void)
 {
-	fd_set rfds;
+	long rfds[2048 / (sizeof(long) * CHAR_BIT)] = { 0 };
 	int ret;
 	int fd2;
 	char buf[BUF_SIZE];
@@ -456,9 +456,8 @@ void pselect_fd_too_big(void)
 		perror("dup2");
 		return;
 	}
-	FD_ZERO(&rfds);
-	FD_SET(fd2, &rfds);
 
+	FD_SET(fd2, (fd_set *) &rfds);
 	ret = syscall(SYS_pselect6, fd2 + 1, &rfds, NULL, NULL, NULL, NULL);
 
 	if (ret == -1) {
@@ -655,7 +654,11 @@ void stress_ppoll(int *fds, int value)
 		do_ppoll(fds, ufds);
 	}
 	stop_thread = 1;
-	pthread_join(writer, NULL);
+	ret = pthread_join(writer, NULL);
+	if (ret) {
+		fprintf(stderr, "[error] pthread_join\n");
+		goto end;
+	}
 end:
 	return;
 }
@@ -719,9 +722,7 @@ void epoll_pwait_concurrent_munmap(void)
 	int ret, epollfd, i, fds[MAX_FDS];
 	char buf[BUF_SIZE];
 	struct epoll_event *epoll_event;
-	void *addr = NULL;
 	pthread_t writer;
-
 
 	epollfd = epoll_create(MAX_FDS);
 	if (epollfd < 0) {
@@ -729,7 +730,7 @@ void epoll_pwait_concurrent_munmap(void)
 		goto end;
 	}
 
-	epoll_event = mmap(addr, MAX_FDS * sizeof(struct epoll_event),
+	epoll_event = mmap(NULL, MAX_FDS * sizeof(struct epoll_event),
 			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
 			-1, 0);
 	if (epoll_event == MAP_FAILED) {
@@ -751,7 +752,12 @@ void epoll_pwait_concurrent_munmap(void)
 		}
 	}
 	stop_thread = 0;
-	pthread_create(&writer, NULL, &epoll_pwait_writer, (void *) epoll_event);
+	ret = pthread_create(&writer, NULL, &epoll_pwait_writer,
+			(void *) epoll_event);
+	if (ret != 0) {
+		fprintf(stderr, "[error] pthread_create\n");
+		goto end_unmap;
+	}
 
 	ret = epoll_pwait(epollfd, epoll_event, 1, 1, NULL);
 
@@ -768,8 +774,11 @@ void epoll_pwait_concurrent_munmap(void)
 	}
 
 	stop_thread = 1;
-	pthread_join(writer, NULL);
-
+	ret = pthread_join(writer, NULL);
+	if (ret) {
+		fprintf(stderr, "[error] pthread_join\n");
+		goto end_unmap;
+	}
 end_unmap:
 	for (i = 0; i < MAX_FDS; i++) {
 		ret = close(fds[i]);
@@ -778,7 +787,7 @@ end_unmap:
 		}
 	}
 
-	ret = munmap(addr, MAX_FDS * sizeof(struct epoll_event));
+	ret = munmap(epoll_event, MAX_FDS * sizeof(struct epoll_event));
 	if (ret != 0) {
 		perror("munmap");
 	}

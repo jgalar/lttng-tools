@@ -1357,7 +1357,6 @@ restart:
 		consumer_data->metadata_sock.lock = zmalloc(sizeof(pthread_mutex_t));
 		if (consumer_data->metadata_sock.lock == NULL) {
 			PERROR("zmalloc pthread mutex");
-			ret = -1;
 			goto error;
 		}
 		pthread_mutex_init(consumer_data->metadata_sock.lock, NULL);
@@ -2379,7 +2378,7 @@ static int spawn_consumer_thread(struct consumer_data *consumer_data)
 	pthread_mutex_lock(&consumer_data->cond_mutex);
 
 	/* Get time for sem_timedwait absolute timeout */
-	clock_ret = clock_gettime(CLOCK_MONOTONIC, &timeout);
+	clock_ret = lttng_clock_gettime(CLOCK_MONOTONIC, &timeout);
 	/*
 	 * Set the timeout for the condition timed wait even if the clock gettime
 	 * call fails since we might loop on that call and we want to avoid to
@@ -4292,7 +4291,6 @@ restart:
 			if (ret) {
 				PERROR("close");
 			}
-			new_sock = -1;
 			continue;
 		}
 
@@ -4321,7 +4319,6 @@ restart:
 		if (ret) {
 			PERROR("close");
 		}
-		new_sock = -1;
 	}
 
 exit:

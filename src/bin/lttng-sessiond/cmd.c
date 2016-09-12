@@ -3207,11 +3207,10 @@ int cmd_snapshot_add_output(struct ltt_session *session,
 	DBG("Cmd snapshot add output for session %s", session->name);
 
 	/*
-	 * Permission denied to create an output if the session is not
-	 * set in no output mode.
+	 * Can't create an output if the session is not set in no-output mode.
 	 */
 	if (session->output_traces) {
-		ret = LTTNG_ERR_EPERM;
+		ret = LTTNG_ERR_NOT_SNAPSHOT_SESSION;
 		goto error;
 	}
 
@@ -3275,7 +3274,7 @@ int cmd_snapshot_del_output(struct ltt_session *session,
 	 * set in no output mode.
 	 */
 	if (session->output_traces) {
-		ret = LTTNG_ERR_EPERM;
+		ret = LTTNG_ERR_NOT_SNAPSHOT_SESSION;
 		goto error;
 	}
 
@@ -3327,19 +3326,19 @@ ssize_t cmd_snapshot_list_outputs(struct ltt_session *session,
 	 * set in no output mode.
 	 */
 	if (session->output_traces) {
-		ret = -LTTNG_ERR_EPERM;
-		goto error;
+		ret = -LTTNG_ERR_NOT_SNAPSHOT_SESSION;
+		goto end;
 	}
 
 	if (session->snapshot.nb_output == 0) {
 		ret = 0;
-		goto error;
+		goto end;
 	}
 
 	list = zmalloc(session->snapshot.nb_output * sizeof(*list));
 	if (!list) {
 		ret = -LTTNG_ERR_NOMEM;
-		goto error;
+		goto end;
 	}
 
 	/* Copy list from session to the new list object. */
@@ -3385,8 +3384,9 @@ ssize_t cmd_snapshot_list_outputs(struct ltt_session *session,
 	list = NULL;
 	ret = session->snapshot.nb_output;
 error:
-	free(list);
 	rcu_read_unlock();
+	free(list);
+end:
 	return ret;
 }
 
@@ -3860,7 +3860,7 @@ int cmd_snapshot_record(struct ltt_session *session,
 	 * set in no output mode.
 	 */
 	if (session->output_traces) {
-		ret = LTTNG_ERR_EPERM;
+		ret = LTTNG_ERR_NOT_SNAPSHOT_SESSION;
 		goto error;
 	}
 
