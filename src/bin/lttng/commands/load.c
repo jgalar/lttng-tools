@@ -214,9 +214,9 @@ int cmd_load(int argc, const char **argv)
 		input_path = realpath(opt_input_path, NULL);
 		if (!input_path) {
 			PERROR("Invalid input path");
+			ret = CMD_ERROR;
+			goto end;
 		}
-		ret = CMD_ERROR;
-		goto end;
 	} else {
 		input_path = NULL;
 	}
