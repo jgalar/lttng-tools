@@ -51,7 +51,7 @@ static struct poptOption load_opts[] = {
 	{"all",         'a',  POPT_ARG_NONE, 0, OPT_ALL, 0, 0},
 	{"input-path",  'i',  POPT_ARG_STRING, &opt_input_path, 0, 0, 0},
 	{"force",       'f',  POPT_ARG_NONE, 0, OPT_FORCE, 0, 0},
-	{"override-url",     'U',  POPT_ARG_STRING, &opt_override_url, 0, 0, 0},
+	{"override-url",'U',  POPT_ARG_STRING, &opt_override_url, 0, 0, 0},
 	{"list-options",  0,  POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
 	{0, 0, 0, 0, 0, 0, 0}
 };

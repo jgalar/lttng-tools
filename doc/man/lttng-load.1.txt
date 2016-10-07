@@ -59,8 +59,8 @@ Aspects of the loaded configurations can be overridden at load time.
 
 option:--override-url::
     Provides the equivalent of the option:--set-url option
-    of the (1)lttng-create command. The validity of the url override is highly
-    dependant on the type of sessions to be loaded. Refer to (1)lttng-create for
+    of the (1)lttng-create command. The validity of the url override is
+    dependant on the type of session(s) to be loaded. Refer to (1)lttng-create for
     the accepted URL format.
 
 By default, existing tracing sessions are not overwritten when loading:
@@ -83,7 +83,7 @@ option:-i, option:--input-path='PATH'::
 
 option:-U, option:--override-url='URL'::
     Load tracing session configurations and apply an url override
-    while loading. Applies to all sessions loaded if possible.
+    while loading. Applies to all sessions loaded.
 
 include::common-cmd-help-options.txt[]
 
