@@ -96,12 +96,11 @@ const char *lttng_load_session_attr_get_override_data_url(
 
 /*
  * Return the configuration override session name attribute.
- * This attribute indicate a session name override to be applied during
+ * This attribute indicates a session name override to be applied during
  * the loading of the configuration(s).
  *
  * NULL indicates no session name override will be applied on configuration
  * load.
- *
  */
 const char *lttng_load_session_attr_get_override_session_name(
 	struct lttng_load_session_attr *attr);
