@@ -223,7 +223,7 @@ int config_writer_write_element_string(struct config_writer *writer,
  *
  * overwrite Overwrite current session configuration if it exists.
  * autoload Tell to load the auto session(s).
- * overrides The override attribute struct specifying specific override.
+ * overrides The override attribute structure specifying override parameters.
  *
  * Returns zero if the session could be loaded successfully. Returns
  * a negative LTTNG_ERR code on error.

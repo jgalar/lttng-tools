@@ -333,7 +333,7 @@ int lttng_load_session_attr_set_override_data_url(
 	if (attr->override_attr->path_url) {
 		/*
 		 * Setting a data override after a path override makes no sense.
-		 * */
+		 */
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
@@ -411,10 +411,10 @@ int lttng_load_session_attr_set_override_url(
 	}
 
 	if (!attr->override_attr) {
-		attr->override_attr = zmalloc(sizeof(struct config_load_session_override_attr));
+		attr->override_attr = zmalloc(
+			sizeof(struct config_load_session_override_attr));
 		if (!attr->override_attr) {
-			/* FIXME: return valid error */
-			ret = -LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 	}
