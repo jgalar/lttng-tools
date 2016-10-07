@@ -62,11 +62,11 @@ void lttng_load_session_attr_destroy(struct lttng_load_session_attr *attr)
 
 static int validate_attr(const struct lttng_load_session_attr *attr)
 {
-	int ret;
+	int ret = 0;
 
 	if (!attr) {
 		ret = -LTTNG_ERR_INVALID;
-		goto error;
+		goto end;
 	}
 
 	if (!attr->override_attr) {
@@ -80,11 +80,9 @@ static int validate_attr(const struct lttng_load_session_attr *attr)
 	if (attr->override_attr->session_name
 			&& attr->session_name[0] == '\0') {
 		ret = -LTTNG_ERR_INVALID;
-		goto error;
+		goto end;
 	}
 end:
-	ret = 0;
-error:
 	return ret;
 }
 
