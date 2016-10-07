@@ -48,13 +48,13 @@ static struct mi_writer *writer;
 
 static struct poptOption load_opts[] = {
 	/* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
-	{"help",        'h',  POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
-	{"all",         'a',  POPT_ARG_NONE, 0, OPT_ALL, 0, 0},
-	{"input-path",  'i',  POPT_ARG_STRING, &opt_input_path, 0, 0, 0},
-	{"force",       'f',  POPT_ARG_NONE, 0, OPT_FORCE, 0, 0},
-	{"override-url",'U',  POPT_ARG_STRING, &opt_override_url, 0, 0, 0},
-	{"override-name",'S',  POPT_ARG_STRING, &opt_override_session_name, 0, 0, 0},
-	{"list-options",  0,  POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
+	{"help",          'h', POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
+	{"all",           'a', POPT_ARG_NONE, 0, OPT_ALL, 0, 0},
+	{"input-path",    'i', POPT_ARG_STRING, &opt_input_path, 0, 0, 0},
+	{"force",         'f', POPT_ARG_NONE, 0, OPT_FORCE, 0, 0},
+	{"override-url",    0, POPT_ARG_STRING, &opt_override_url, 0, 0, 0},
+	{"override-name",   0, POPT_ARG_STRING, &opt_override_session_name, 0, 0, 0},
+	{"list-options",    0, POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -262,12 +262,15 @@ int cmd_load(int argc, const char **argv)
 
 	if (opt_override_session_name) {
 		if (opt_load_all) {
-			ERR("Options --all and --override-name can not be used simultaneously");
+			ERR("Options --all and --override-name cannot be used simultaneously");
+			ret = CMD_ERROR;
+			goto end;
 		}
 		ret = lttng_load_session_attr_set_override_session_name(session_attr,
 				opt_override_session_name);
 		if (ret) {
-			ERR("Session name override set failed");
+			ERR("Failed to set session name override");
+			ret = CMD_ERROR;
 			goto end;
 		}
 	}
