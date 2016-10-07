@@ -577,8 +577,9 @@ int lttng_load_session_attr_set_override_session_name(
 	struct lttng_load_session_attr *attr, const char *session_name)
 {
 	int ret = 0;
+	size_t len;
 
-	if (!attr) {
+	if (!attr ||!session_name) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
@@ -592,23 +593,16 @@ int lttng_load_session_attr_set_override_session_name(
 		}
 	}
 
-	if (session_name) {
-		size_t len;
-
-		len = strlen(session_name);
-		if (len >= LTTNG_NAME_MAX) {
-			ret = -LTTNG_ERR_INVALID;
-			goto end;
-		}
-
-		attr->override_attr->session_name = lttng_strndup(session_name,
-				len);
-		if (!attr->override_attr->session_name) {
-			ret = -LTTNG_ERR_NOMEM;
-			goto end;
-		}
-	} else {
+	len = strlen(session_name);
+	if (len >= LTTNG_NAME_MAX) {
 		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	attr->override_attr->session_name = lttng_strndup(session_name,
+		len);
+	if (!attr->override_attr->session_name) {
+		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 end:
