@@ -27,6 +27,7 @@
 #include <common/config/session-config.h>
 #include <common/uri.h>
 #include <common/macros.h>
+#include <common/compat/string.h>
 
 #include "lttng-ctl-helper.h"
 
@@ -271,7 +272,7 @@ int lttng_load_session_attr_set_override_ctrl_url(
 	}
 	ret = 0;
 
-	raw_str = strndup(url, PATH_MAX);
+	raw_str = lttng_strndup(url, PATH_MAX);
 	if (!raw_str) {
 		ret = -LTTNG_ERR_NOMEM;
 		goto end;
@@ -343,7 +344,7 @@ int lttng_load_session_attr_set_override_data_url(
 	}
 	ret = 0;
 
-	raw_str = strndup(url, PATH_MAX);
+	raw_str = lttng_strndup(url, PATH_MAX);
 	if (!raw_str) {
 		ret = -LTTNG_ERR_NOMEM;
 		goto end;
@@ -399,7 +400,7 @@ int lttng_load_session_attr_set_override_url(
 		goto end;
 	}
 
-	raw_url_str = strndup(url, PATH_MAX);
+	raw_url_str = lttng_strndup(url, PATH_MAX);
 	if (!raw_url_str) {
 		ret = -LTTNG_ERR_NOMEM;
 		goto end;
@@ -415,13 +416,13 @@ int lttng_load_session_attr_set_override_url(
 
 	switch (uri[0].dtype) {
 	case LTTNG_DST_PATH:
-		raw_path_str = strndup(buffer, PATH_MAX);
+		raw_path_str = lttng_strndup(buffer, PATH_MAX);
 		if (!raw_path_str) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
-		path_str = strndup(raw_path_str, PATH_MAX);
+		path_str = lttng_strndup(raw_path_str, PATH_MAX);
 		if (!path_str) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
@@ -434,13 +435,13 @@ int lttng_load_session_attr_set_override_url(
 			goto end;
 		}
 
-		raw_ctrl_str = strndup(buffer, PATH_MAX);
+		raw_ctrl_str = lttng_strndup(buffer, PATH_MAX);
 		if (!raw_ctrl_str) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
-		ctrl_str = strndup(raw_ctrl_str, PATH_MAX);
+		ctrl_str = lttng_strndup(raw_ctrl_str, PATH_MAX);
 		if (!ctrl_str) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
@@ -454,13 +455,13 @@ int lttng_load_session_attr_set_override_url(
 		}
 		ret = 0;
 
-		raw_data_str = strndup(buffer, PATH_MAX);
+		raw_data_str = lttng_strndup(buffer, PATH_MAX);
 		if (!raw_data_str) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
-		data_str = strndup(raw_data_str, PATH_MAX);
+		data_str = lttng_strndup(raw_data_str, PATH_MAX);
 		if (!data_str) {
 			ret = -LTTNG_ERR_NOMEM;
 			goto end;
