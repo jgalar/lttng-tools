@@ -184,6 +184,9 @@ int lttng_load_session_attr_set_override_data_url(
 
 /*
  * Set the session name override attribute.
+ *
+ * Loading a configuration file defining multiple sessions will fail if a
+ * session name is provided.
  */
 int lttng_load_session_attr_set_override_session_name(
 	struct lttng_load_session_attr *attr, const char *session_name);
