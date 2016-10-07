@@ -35,16 +35,22 @@ struct lttng_load_session_attr *lttng_load_session_attr_create(void)
 	return zmalloc(sizeof(struct lttng_load_session_attr));
 }
 
+static
+void reset_load_session_attr_urls(struct lttng_load_session_attr *attr)
+{
+	free(attr->raw_override_url);
+	free(attr->raw_override_path_url);
+	free(attr->raw_override_ctrl_url);
+	free(attr->raw_override_data_url);
+	free(attr->override_attr.path_url);
+	free(attr->override_attr.ctrl_url);
+	free(attr->override_attr.data_url);
+}
+
 void lttng_load_session_attr_destroy(struct lttng_load_session_attr *attr)
 {
 	if (attr) {
-		free(attr->raw_override_url);
-		free(attr->raw_override_path_url);
-		free(attr->raw_override_ctrl_url);
-		free(attr->raw_override_data_url);
-		free(attr->override_attr.path_url);
-		free(attr->override_attr.ctrl_url);
-		free(attr->override_attr.data_url);
+		reset_load_session_attr_urls(attr);
 		free(attr);
 	}
 }
@@ -212,80 +218,6 @@ end:
 	return ret;
 }
 
-int lttng_load_session_attr_set_override_path_url(
-	struct lttng_load_session_attr *attr, const char *url)
-{
-	int ret = 0;
-	ssize_t ret_size;
-	struct lttng_uri *uri = NULL;
-	char *url_str = NULL;
-	char *raw_str = NULL;
-	int tmp = 0;
-
-	if (!attr) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	if (attr->override_attr.ctrl_url || attr->override_attr.data_url) {
-		/*
-		 * FIXME: return a more meaningful error.
-		 * Setting a path override after a ctrl or data override make no
-		 * sense and show that the user do not know what he is doing.
-		 * */
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	/*
-	 * FIXME: uri_parse should be able to take as parameter the protocol
-	 * type to check validity with or the exclusion. For now only check on
-	 * the parsing validity it will fail later on.
-	 * */
-	ret_size = uri_parse(url, &uri);
-	if (ret_size != 1) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	/* Populate the internal override representation */
-	url_str = zmalloc(PATH_MAX);
-	if (!url_str) {
-		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	tmp = uri_to_str_url(&uri[0], url_str, PATH_MAX);
-	if (tmp < 0) {
-		ret = -LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	raw_str = strndup(url, PATH_MAX);
-	if (!raw_str) {
-		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
-		goto end;
-	}
-
-	/* Squash old value if any */
-	free(attr->override_attr.path_url);
-	free(attr->raw_override_path_url);
-
-	/* Populate the object */
-	attr->override_attr.path_url = url_str;
-	attr->raw_override_path_url = raw_str;
-
-	url_str = NULL;
-	raw_str = NULL;
-end:
-	free(raw_str);
-	free(url_str);
-	free(uri);
-	return ret;
-}
-
 int lttng_load_session_attr_set_override_ctrl_url(
 	struct lttng_load_session_attr *attr, const char *url)
 {
@@ -294,7 +226,6 @@ int lttng_load_session_attr_set_override_ctrl_url(
 	struct lttng_uri *uri = NULL;
 	char *url_str = NULL;
 	char *raw_str = NULL;
-	int tmp = 0;
 
 	if (!attr) {
 		ret = -LTTNG_ERR_INVALID;
@@ -305,7 +236,7 @@ int lttng_load_session_attr_set_override_ctrl_url(
 		/*
 		 * FIXME: return a more meaningful error.
 		 * Setting a ctrl override after a path override make no
-		 * sense and show that the user do not know what he is doing.
+		 * sense.
 		 * */
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
@@ -313,9 +244,9 @@ int lttng_load_session_attr_set_override_ctrl_url(
 
 	/*
 	 * FIXME: uri_parse should be able to take as parameter the protocol
-	 * type to check validity with or the exclusion. For now only check on
-	 * the parsing validity it will fail later on.
-	 * */
+	 * type to validate "url". For now only check the parsing goes through;
+	 * it will fail later on.
+	 */
 	ret_size = uri_parse(url, &uri);
 	if (ret_size < 0) {
 		ret = -LTTNG_ERR_INVALID;
@@ -329,20 +260,20 @@ int lttng_load_session_attr_set_override_ctrl_url(
 	url_str = zmalloc(PATH_MAX);
 	if (!url_str) {
 		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
-	tmp = uri_to_str_url(&uri[0], url_str, PATH_MAX);
-	if (tmp < 0) {
+	ret = uri_to_str_url(&uri[0], url_str, PATH_MAX);
+	if (ret < 0) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
+	ret = 0;
 
 	raw_str = strndup(url, PATH_MAX);
 	if (!raw_str) {
-		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
@@ -354,6 +285,7 @@ int lttng_load_session_attr_set_override_ctrl_url(
 	attr->override_attr.ctrl_url = url_str;
 	attr->raw_override_ctrl_url = raw_str;
 
+	/* Ownership passed to attr. */
 	url_str = NULL;
 	raw_str = NULL;
 
@@ -372,7 +304,6 @@ int lttng_load_session_attr_set_override_data_url(
 	struct lttng_uri *uri = NULL;
 	char *url_str = NULL;
 	char *raw_str = NULL;
-	int tmp = 0;
 
 	if (!attr) {
 		ret = -LTTNG_ERR_INVALID;
@@ -380,20 +311,15 @@ int lttng_load_session_attr_set_override_data_url(
 	}
 
 	if (attr->override_attr.path_url) {
-		/*
-		 * FIXME: return a more meaningful error.
-		 * Setting a data override after a path override make no
-		 * sense and show that the user do not know what he is doing.
-		 * */
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
 
 	/*
 	 * FIXME: uri_parse should be able to take as parameter the protocol
-	 * type to check validity with or the exclusion. For now only check on
-	 * the parsing validity it will fail later on.
-	 * */
+	 * type to validate "url". For now only check the parsing goes through;
+	 * it will fail later on.
+	 */
 	ret_size = uri_parse(url, &uri);
 	if (ret_size < 0) {
 		ret = -LTTNG_ERR_INVALID;
@@ -406,21 +332,20 @@ int lttng_load_session_attr_set_override_data_url(
 
 	url_str = zmalloc(PATH_MAX);
 	if (!url_str) {
-		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
-	tmp = uri_to_str_url(&uri[0], url_str, PATH_MAX);
-	if (tmp < 0) {
+	ret = uri_to_str_url(&uri[0], url_str, PATH_MAX);
+	if (ret < 0) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
+	ret = 0;
 
 	raw_str = strndup(url, PATH_MAX);
 	if (!raw_str) {
-		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
@@ -432,6 +357,7 @@ int lttng_load_session_attr_set_override_data_url(
 	attr->override_attr.data_url = url_str;
 	attr->raw_override_data_url = raw_str;
 
+	/* Ownership passed to attr. */
 	url_str = NULL;
 	raw_str = NULL;
 end:
@@ -455,52 +381,49 @@ int lttng_load_session_attr_set_override_url(
 	char *raw_data_str = NULL;
 	char *data_str = NULL;
 	char buffer[PATH_MAX];
-	int tmp = 0;
 
-	if (!attr) {
+	if (!attr || !url || strlen(url) >= PATH_MAX) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
 
-
 	/*
 	 * FIXME: uri_parse should be able to take as parameter the protocol
-	 * type to check validity with or the exclusion. For now only check on
-	 * the parsing validity it will fail later on.
-	 * */
+	 * type to validate "url". For now only check the parsing goes through;
+	 * it will fail later on.
+	 */
 	ret_size = uri_parse_str_urls(url, NULL, &uri);
 	if (ret_size < 0 || ret_size > 2) {
+		/* Unexpected URL format. */
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
 
 	raw_url_str = strndup(url, PATH_MAX);
 	if (!raw_url_str) {
-		/* FIXME: return valid error */
-		ret = LTTNG_ERR_INVALID;
+		ret = -LTTNG_ERR_NOMEM;
 		goto end;
 	}
 
-	/* Fetch path | ctrl && data string url */
-	tmp = uri_to_str_url(&uri[0], buffer, sizeof(buffer));
-	if (tmp < 0) {
+	/* Get path | ctrl && data string URL. */
+	ret = uri_to_str_url(&uri[0], buffer, sizeof(buffer));
+	if (ret < 0 || ret >= PATH_MAX) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
+	ret = 0;
 
 	switch (uri[0].dtype) {
 	case LTTNG_DST_PATH:
 		raw_path_str = strndup(buffer, PATH_MAX);
 		if (!raw_path_str) {
-			/* FIXME: return valid error */
-			ret = LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
 		path_str = strndup(raw_path_str, PATH_MAX);
 		if (!path_str) {
-			/* FIXME: return valid error */
-			ret = LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 		break;
@@ -513,36 +436,33 @@ int lttng_load_session_attr_set_override_url(
 
 		raw_ctrl_str = strndup(buffer, PATH_MAX);
 		if (!raw_ctrl_str) {
-			/* FIXME: return valid error */
-			ret = LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
 		ctrl_str = strndup(raw_ctrl_str, PATH_MAX);
 		if (!ctrl_str) {
-			/* FIXME: return valid error */
-			ret = LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
-		/* Fetch the data uri */
-		tmp = uri_to_str_url(&uri[1], buffer, sizeof(buffer));
-		if (tmp < 0) {
+		/* Get the data uri. */
+		ret = uri_to_str_url(&uri[1], buffer, sizeof(buffer));
+		if (ret < 0) {
 			ret = -LTTNG_ERR_INVALID;
 			goto end;
 		}
+		ret = 0;
 
 		raw_data_str = strndup(buffer, PATH_MAX);
 		if (!raw_data_str) {
-			/* FIXME: return valid error */
-			ret = LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
 		data_str = strndup(raw_data_str, PATH_MAX);
 		if (!data_str) {
-			/* FIXME: return valid error */
-			ret = LTTNG_ERR_INVALID;
+			ret = -LTTNG_ERR_NOMEM;
 			goto end;
 		}
 
@@ -552,13 +472,7 @@ int lttng_load_session_attr_set_override_url(
 		goto end;
 	}
 
-	free(attr->override_attr.path_url);
-	free(attr->override_attr.ctrl_url);
-	free(attr->override_attr.data_url);
-	free(attr->raw_override_url);
-	free(attr->raw_override_path_url);
-	free(attr->raw_override_ctrl_url);
-	free(attr->raw_override_data_url);
+	reset_load_session_attr_urls(attr);
 
 	attr->override_attr.path_url = path_str;
 	attr->override_attr.ctrl_url = ctrl_str;
@@ -569,7 +483,7 @@ int lttng_load_session_attr_set_override_url(
 	attr->raw_override_ctrl_url = raw_ctrl_str;
 	attr->raw_override_data_url = raw_data_str;
 
-	/* Pass data responsability to the struct */
+	/* Pass data ownership to attr. */
 	raw_url_str = NULL;
 	raw_path_str = NULL;
 	path_str = NULL;
