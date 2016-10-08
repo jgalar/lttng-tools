@@ -1,5 +1,5 @@
 AC_PREREQ([2.64])
-AC_INIT([lttng-tools],[2.9.0-pre],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
+AC_INIT([lttng-tools],[2.10.0-pre],[jeremie.galarneau@efficios.com],[],[https://lttng.org])
 
 AC_CONFIG_HEADERS([include/config.h])
 AC_CONFIG_AUX_DIR([config])
@@ -271,7 +271,6 @@ _AC_DEFINE_QUOTED_AND_SUBST([DEFAULT_NETWORK_VIEWER_BIND_ADDRESS], [localhost])
 
 # Command short descriptions
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ADD_CONTEXT], [Add context fields to a channel])
-_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_CALIBRATE], [Quantify LTTng overhead])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_CREATE], [Create a tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DESTROY], [Tear down tracing sessions])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_DISABLE_CHANNEL], [Disable tracing channels])
@@ -324,7 +323,7 @@ PKG_CHECK_MODULES([POPT], [popt],
 	]
 )
 
-AM_PATH_XML2(2.7.6, true, AC_MSG_ERROR(No supported version of libxml2 found.))
+PKG_CHECK_MODULES([libxml2], [libxml-2.0 >= 2.7.6])
 
 # Check for uuid in system libs
 AC_CHECK_FUNCS([uuid_generate],
@@ -368,6 +367,8 @@ PKG_CHECK_MODULES([UUID], [uuid],
 
 AM_CONDITIONAL([LTTNG_BUILD_WITH_LIBUUID], [test "x$link_with_libuuid" = "xyes"])
 AM_CONDITIONAL([LTTNG_BUILD_WITH_LIBC_UUID], [test "x$link_with_libc_uuid" = "xyes"])
+
+AC_CHECK_FUNC([clock_gettime], [AC_DEFINE_UNQUOTED([LTTNG_HAVE_CLOCK_GETTIME], 1, [Has clock_gettime() support.])])
 
 # URCU library version needed or newer
 m4_define([WRONG_LIBURCU_MSG], [Userspace RCU (liburcu) >= 0.8.0 is needed])
@@ -990,6 +991,7 @@ AC_CONFIG_FILES([
 	tests/regression/tools/live/Makefile
 	tests/regression/tools/exclusion/Makefile
 	tests/regression/tools/save-load/Makefile
+	tests/regression/tools/save-load/configuration/Makefile
 	tests/regression/tools/mi/Makefile
 	tests/regression/tools/wildcard/Makefile
 	tests/regression/tools/crash/Makefile

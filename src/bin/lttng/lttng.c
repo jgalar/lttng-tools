@@ -66,7 +66,6 @@ static struct option long_options[] = {
 /* First level command */
 static struct cmd_struct commands[] =  {
 	{ "add-context", cmd_add_context},
-	{ "calibrate", cmd_calibrate},
 	{ "create", cmd_create},
 	{ "destroy", cmd_destroy},
 	{ "disable-channel", cmd_disable_channels},
@@ -281,7 +280,6 @@ static void show_basic_help(void)
 	puts("  untrack           " CONFIG_CMD_DESCR_UNTRACK);
 	puts("");
 	puts("Miscellaneous:");
-	puts("  calibrate         " CONFIG_CMD_DESCR_CALIBRATE);
 	puts("  help              " CONFIG_CMD_DESCR_HELP);
 	puts("  version           " CONFIG_CMD_DESCR_VERSION);
 	puts("  view              " CONFIG_CMD_DESCR_VIEW);
@@ -300,7 +298,6 @@ static void show_basic_help(void)
 static int parse_args(int argc, char **argv)
 {
 	int opt, ret;
-	char *user;
 
 	if (lttng_is_setuid_setgid()) {
 		ERR("'%s' is not allowed to be executed as a setuid/setgid binary for security reasons. Aborting.", argv[0]);
@@ -388,14 +385,6 @@ static int parse_args(int argc, char **argv)
 		ret = 1;
 		goto error;
 	}
-
-	/* For Mathieu Desnoyers a.k.a. Dr. Tracing */
-	user = getenv("USER");
-	if (user != NULL && ((strncmp(progname, "drtrace", 7) == 0 ||
-					strncmp("compudj", user, 7) == 0))) {
-		MSG("%c[%d;%dmWelcome back Dr Tracing!%c[%dm\n", 27,1,33,27,0);
-	}
-	/* Thanks Mathieu */
 
 	/*
 	 * Handle leftovers which is a first level command with the trailing

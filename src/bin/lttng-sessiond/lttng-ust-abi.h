@@ -47,6 +47,8 @@
 #define LTTNG_UST_ABI_MAJOR_VERSION		7
 #define LTTNG_UST_ABI_MINOR_VERSION		1
 
+struct lttng_ust_calibrate;
+
 enum lttng_ust_instrumentation {
 	LTTNG_UST_TRACEPOINT		= 0,
 	LTTNG_UST_PROBE			= 1,
@@ -217,21 +219,6 @@ struct lttng_ust_object_data {
 			uint32_t stream_nr;
 		} stream;
 		char padding2[LTTNG_UST_OBJECT_DATA_PADDING2];
-	} u;
-} LTTNG_PACKED;
-
-enum lttng_ust_calibrate_type {
-	LTTNG_UST_CALIBRATE_TRACEPOINT,
-};
-
-#define LTTNG_UST_CALIBRATE_PADDING1	16
-#define LTTNG_UST_CALIBRATE_PADDING2	(LTTNG_UST_SYM_NAME_LEN + 32)
-struct lttng_ust_calibrate {
-	enum lttng_ust_calibrate_type type;	/* type (input) */
-	char padding[LTTNG_UST_CALIBRATE_PADDING1];
-
-	union {
-		char padding[LTTNG_UST_CALIBRATE_PADDING2];
 	} u;
 } LTTNG_PACKED;
 

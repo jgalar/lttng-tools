@@ -35,10 +35,12 @@ KERNEL_MAJOR_VERSION=2
 KERNEL_MINOR_VERSION=6
 KERNEL_PATCHLEVEL_VERSION=27
 
-# We set the default UST register timeout to "wait forever", so that
-# basic tests don't have to worry about hitting timeouts on busy
-# systems. Specialized tests should test those corner-cases.
+# We set the default UST register timeout and network and app socket timeout to
+# "wait forever", so that basic tests don't have to worry about hitting
+# timeouts on busy systems. Specialized tests should test those corner-cases.
 export LTTNG_UST_REGISTER_TIMEOUT=-1
+export LTTNG_NETWORK_SOCKET_TIMEOUT=-1
+export LTTNG_APP_SOCKET_TIMEOUT=-1
 
 # We set the default lttng-sessiond path to /bin/true to prevent the spawning
 # of a daemonized sessiond. This is necessary since 'lttng create' will spawn
@@ -1137,10 +1139,27 @@ function lttng_save()
 
 function lttng_load()
 {
-	local opts=$1
+	local expected_to_fail=$1
+	local opts=$2
 
 	$TESTDIR/../src/bin/lttng/$LTTNG_BIN load $opts 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
-	ok $? "Load command with opts: $opts"
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test $ret -ne "0"
+		ok $? "Load command failed as expected with opts: $opts"
+	else
+		ok $ret "Load command with opts: $opts"
+	fi
+}
+
+function lttng_load_ok()
+{
+	lttng_load 0 "$@"
+}
+
+function lttng_load_fail()
+{
+	lttng_load 1 "$@"
 }
 
 function lttng_track()
