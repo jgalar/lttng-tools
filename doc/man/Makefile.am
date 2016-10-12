@@ -61,9 +61,6 @@ XSL_FILES = \
 	manpage-links.xsl
 XSL_SRC_FILES = $(addprefix $(srcdir)/xsl/,$(XSL_FILES))
 
-# common dependencies
-COMMON_DEPS = $(ASCIIDOC_CONF) $(COMMON_TXT) $(ASCIIDOC_ATTRS_CONF)
-
 # man pages destinations
 MAN1 = $(addsuffix .1,$(MAN1_NAMES))
 MAN3 = $(addsuffix .3,$(MAN3_NAMES))
@@ -80,6 +77,11 @@ if HAVE_ASCIIDOC_XMLTO
 ADOC = $(ASCIIDOC) -f $(ASCIIDOC_CONF) -f $(ASCIIDOC_ATTRS_CONF) -d manpage
 ADOC_DOCBOOK = $(ADOC) -b docbook
 XTO = $(XMLTO) -m $(firstword $(XSL_SRC_FILES)) man
+
+EXTRA_DIST = $(ASCIIDOC_ATTRS_CONF).in
+
+# common dependencies
+COMMON_DEPS = $(ASCIIDOC_CONF) $(COMMON_TXT) $(ASCIIDOC_ATTRS_CONF)
 
 # recipes
 %.1.xml: $(srcdir)/%.1.txt $(COMMON_DEPS)
@@ -108,15 +110,15 @@ else # HAVE_ASCIIDOC_XMLTO
 ERR_MSG = "Error: Cannot build target because asciidoc or xmlto tool is missing."
 ERR_MSG += "Make sure both tools are installed and run the configure script again."
 
-%.1: $(srcdir)/%.1.txt $(COMMON_DEPS)
+%.1: $(srcdir)/%.1.txt
 	@echo $(ERR_MSG)
 	@false
 
-%.3: $(srcdir)/%.3.txt $(COMMON_DEPS)
+%.3: $(srcdir)/%.3.txt
 	@echo $(ERR_MSG)
 	@false
 
-%.8: $(srcdir)/%.8.txt $(COMMON_DEPS)
+%.8: $(srcdir)/%.8.txt
 	@echo $(ERR_MSG)
 	@false
 endif # HAVE_ASCIIDOC_XMLTO
@@ -141,5 +143,5 @@ dist-hook:
 endif # !MAN_PAGES_OPT
 
 # always distribute the source files
-EXTRA_DIST = $(MAN_TXT) $(COMMON_TXT) $(XSL_SRC_FILES) \
-	$(ASCIIDOC_CONF) $(ASCIIDOC_ATTRS_CONF).in
+EXTRA_DIST ?= $(MAN_TXT) $(COMMON_TXT) $(XSL_SRC_FILES) \
+	$(ASCIIDOC_CONF)
