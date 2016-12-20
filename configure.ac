@@ -280,7 +280,7 @@ _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_ENABLE_EVENT], [Create or enable event ru
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_HELP], [Display help information about a command])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_LIST], [List tracing sessions, domains, channels, and events])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_LOAD], [Load tracing session configurations])
-_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_METADATA], [Manage an LTTng tracing session's metadata generation])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_REGENERATE], [Manage an LTTng tracing session's data regeneration])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SAVE], [Save tracing session configurations])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SET_SESSION], [Set current tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SNAPSHOT], [Snapshot buffers of current tracing session])
@@ -481,6 +481,13 @@ AC_CHECK_LIB([c], [open_memstream],
 ]
 )
 
+# check for libpfm
+AC_CHECK_LIB([pfm], [pfm_initialize],
+	     [
+	      have_libpfm=yes
+	      ])
+AM_CONDITIONAL([LTTNG_TOOLS_BUILD_WITH_LIBPFM], [test "x$have_libpfm" = "xyes"])
+
 AC_ARG_ENABLE([git-version],
               [AC_HELP_STRING([--disable-git-version],
                               [Do not use the git version for the build])],
@@ -597,6 +604,7 @@ AC_ARG_ENABLE(
 
 # check for asciidoc and xmlto if we enabled building the man pages
 have_asciidoc_xmlto=no
+warn_prebuilt_man_pages=no
 
 AS_IF([test "x$man_pages_opt" = "xyes"], [
 	AC_PATH_PROG([ASCIIDOC], [asciidoc], [no])
@@ -609,7 +617,7 @@ AS_IF([test "x$man_pages_opt" = "xyes"], [
 			# thus asciidoc/xmlto are required because we were asked
 			# to build the man pages
 			AC_MSG_ERROR([
-Both asciidoc and xmlto are needed to build the LTTng man pages. Use
+You need asciidoc and xmlto to build the LTTng-tools man pages. Use
 --disable-man-pages to disable building the man pages, in which case
 they will not be installed.
 			])
@@ -617,13 +625,7 @@ they will not be installed.
 			# only warn here: since we're in the tarball, the man
 			# pages should already be generated at this point, thus
 			# asciidoc/xmlto are not strictly required
-			AC_MSG_WARN([
-Both asciidoc and xmlto are needed to build the LTTng man pages. Note
-that the man pages are already built in this distribution tarball, so
-asciidoc and xmlto are only needed if you intend to modify their
-sources. Use --disable-man-pages to completely disable building
-and installing the man pages.
-			])
+			warn_prebuilt_man_pages=yes
 		])
 	], [
 		have_asciidoc_xmlto=yes
@@ -1021,9 +1023,11 @@ AC_CONFIG_FILES([
 	tests/regression/ust/clock-override/Makefile
 	tests/regression/ust/type-declarations/Makefile
 	tests/regression/ust/rotation-destroy-flush/Makefile
+	tests/regression/ust/blocking/Makefile
 	tests/stress/Makefile
 	tests/unit/Makefile
 	tests/unit/ini_config/Makefile
+	tests/perf/Makefile
 	tests/utils/Makefile
 	tests/utils/tap/Makefile
 	tests/utils/testapp/Makefile
@@ -1034,6 +1038,8 @@ AC_CONFIG_FILES([
 
 # Inject variable into python test script.
 AC_CONFIG_FILES([tests/regression/ust/python-logging/test_python_logging],[chmod +x tests/regression/ust/python-logging/test_python_logging])
+# Inject LTTNG_TOOLS_BUILD_WITH_LIBPFM variable in test script.
+AC_CONFIG_FILES([tests/perf/test_perf_raw],[chmod +x tests/perf/test_perf_raw])
 
 AC_OUTPUT
 
@@ -1203,3 +1209,19 @@ AS_IF([test "$CONSUMERD64_LIBDIR" = ""],[
 	path="$CONSUMERD64_LIBDIR"
 ])
 PPRINT_PROP_STRING([64-bit consumer libraries], [$path])
+PPRINT_SET_INDENT(0)
+
+AS_IF([test "x$warn_prebuilt_man_pages" = "xyes" ], [
+	AS_ECHO
+	PPRINT_WARN([You need asciidoc and xmlto to build the LTTng-tools man pages.
+
+Note that the man pages are already built in this distribution tarball,
+therefore asciidoc and xmlto are only needed if you intend to modify
+their sources.
+
+Also note that the installed man pages will contain the project's
+default command-line option and environment variable values.
+
+Use --disable-man-pages to completely disable building and installing
+the man pages.])
+])
