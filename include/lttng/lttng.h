@@ -35,6 +35,8 @@
 #include <lttng/session.h>
 #include <lttng/snapshot.h>
 
+struct lttng_endpoint;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -54,6 +56,9 @@ struct lttng_calibrate {
 
 	char padding[LTTNG_CALIBRATE_PADDING1];
 };
+
+/* Default LTTng session daemon endpoint. */
+extern struct lttng_endpoint *session_daemon_endpoint;
 
 /*
  * Check if a session daemon is alive.
