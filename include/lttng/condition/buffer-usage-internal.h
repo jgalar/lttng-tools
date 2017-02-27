@@ -20,6 +20,7 @@
 
 #include <lttng/condition/buffer-usage.h>
 #include <lttng/condition/condition-internal.h>
+#include <lttng/condition/evaluation-internal.h>
 #include <lttng/domain.h>
 
 struct lttng_condition_buffer_usage {
@@ -40,5 +41,15 @@ struct lttng_condition_buffer_usage {
 		enum lttng_domain_type type;
 	} domain;
 };
+
+struct lttng_evaluation_buffer_usage {
+	struct lttng_evaluation parent;
+	uint64_t buffer_use;
+	uint64_t buffer_capacity;
+};
+
+LTTNG_HIDDEN
+struct lttng_evaluation *lttng_evaluation_buffer_usage_create(uint64_t use,
+		uint64_t capacity);
 
 #endif /* LTTNG_CONDITION_BUFFER_USAGE_INTERNAL_H */

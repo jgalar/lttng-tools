@@ -30,10 +30,12 @@ bool is_usage_condition(struct lttng_condition *condition)
 }
 
 static
-bool is_usage_condition(struct lttng_condition *condition)
+bool is_usage_evaluation(struct lttng_evaluation *evaluation)
 {
-	return is_low_usage_condition(condition) ||
-			is_high_usage_condition(condition);
+	enum lttng_condition_type type = lttng_evaluation_get_type(evaluation);
+
+	return type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW ||
+			type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH;
 }
 
 static
@@ -331,6 +333,78 @@ lttng_condition_buffer_usage_set_domain_type(
 			parent);
 	usage->domain.set = true;
 	usage->domain.type = type;
+end:
+	return status;
+}
+
+static
+void lttng_evaluation_buffer_usage_destroy(
+		struct lttng_evaluation *evaluation)
+{
+	struct lttng_evaluation_buffer_usage *usage;
+
+	usage = container_of(evaluation, struct lttng_evaluation_buffer_usage,
+			parent);
+	free(usage);
+}
+
+LTTNG_HIDDEN
+struct lttng_evaluation *lttng_evaluation_buffer_usage_create(uint64_t use,
+		uint64_t capacity)
+{
+	struct lttng_evaluation_buffer_usage *usage;
+
+	usage = zmalloc(sizeof(struct lttng_evaluation_buffer_usage));
+	if (!usage) {
+		goto end;
+	}
+
+	usage->buffer_use = use;
+	usage->buffer_capacity = capacity;
+	usage->parent.destroy = lttng_evaluation_buffer_usage_destroy;
+end:
+	return &usage->parent;
+}
+
+/*
+ * Get the sampled buffer usage which caused the associated condition to
+ * evaluate to "true".
+ */
+enum lttng_evaluation_status
+lttng_evaluation_buffer_usage_get_usage_percentage(
+		struct lttng_evaluation *evaluation, double *usage_percent)
+{
+	struct lttng_evaluation_buffer_usage *usage;
+	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;
+
+	if (!evaluation || !is_usage_evaluation(evaluation) || !usage_percent) {
+		status = LTTNG_EVALUATION_STATUS_INVALID;
+		goto end;
+	}
+
+	usage = container_of(evaluation, struct lttng_evaluation_buffer_usage,
+			parent);
+	*usage_percent = (double) usage->buffer_use /
+			(double) usage->buffer_capacity;
+end:
+	return status;
+}
+
+enum lttng_evaluation_status
+lttng_evaluation_buffer_usage_get_usage(struct lttng_evaluation *evaluation,
+	        uint64_t *usage_bytes)
+{
+	struct lttng_evaluation_buffer_usage *usage;
+	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;
+
+	if (!evaluation || !is_usage_evaluation(evaluation) || !usage_bytes) {
+		status = LTTNG_EVALUATION_STATUS_INVALID;
+		goto end;
+	}
+
+	usage = container_of(evaluation, struct lttng_evaluation_buffer_usage,
+			parent);
+	*usage_bytes = usage->buffer_use;
 end:
 	return status;
 }
