@@ -83,4 +83,5 @@ noinst_HEADERS = \
 	lttng/snapshot-internal.h \
 	lttng/health-internal.h \
 	lttng/save-internal.h \
-	lttng/load-internal.h
+	lttng/load-internal.h \
+	lttng/action/action-internal.h
