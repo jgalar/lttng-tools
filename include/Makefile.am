@@ -87,5 +87,6 @@ noinst_HEADERS = \
 	lttng/action/action-internal.h \
 	lttng/action/notify-internal.h \
 	lttng/condition/condition-internal.h \
-	lttng/condition/buffer-usage-internal.h
+	lttng/condition/buffer-usage-internal.h \
+	lttng/condition/evaluation-internal.h
 
