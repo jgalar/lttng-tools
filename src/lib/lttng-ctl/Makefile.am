@@ -7,7 +7,7 @@ lib_LTLIBRARIES = liblttng-ctl.la
 liblttng_ctl_la_SOURCES = lttng-ctl.c snapshot.c lttng-ctl-helper.h \
 		lttng-ctl-health.c save.c load.c deprecated-symbols.c \
 		action.c notify.c condition.c buffer-usage.c evaluation.c \
-		notification.c
+		notification.c trigger.c
 
 liblttng_ctl_la_LDFLAGS = \
 		$(LT_NO_UNDEFINED)
