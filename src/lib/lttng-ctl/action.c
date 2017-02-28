@@ -53,3 +53,31 @@ bool lttng_action_validate(struct lttng_action *action)
 end:
 	return valid;
 }
+
+LTTNG_HIDDEN
+ssize_t lttng_action_serialize(struct lttng_action *action, char *buf)
+{
+	ssize_t ret, action_size;
+	struct lttng_action_comm action_comm;
+
+	if (!action) {
+		ret = -1;
+		goto end;
+	}
+
+	action_comm.action_type = (int8_t) action->type;
+	ret = sizeof(struct lttng_action_comm);
+	if (buf) {
+		memcpy(buf, &action_comm, ret);
+		buf += ret;
+	}
+
+	action_size = action->serialize(action, buf);
+	if (action_size < 0) {
+		ret = action_size;
+		goto end;
+	}
+	ret += action_size;
+end:
+	return ret;
+}

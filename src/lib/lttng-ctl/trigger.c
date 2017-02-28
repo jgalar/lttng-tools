@@ -16,8 +16,8 @@
  */
 
 #include <lttng/trigger/trigger-internal.h>
-#include <lttng/condition/condition.h>
-#include <lttng/action/action.h>
+#include <lttng/condition/condition-internal.h>
+#include <lttng/action/action-internal.h>
 #include <assert.h>
 
 struct lttng_trigger *lttng_trigger_create(
@@ -50,4 +50,29 @@ void lttng_trigger_destroy(struct lttng_trigger *trigger)
 	lttng_condition_destroy(trigger->condition);
 	lttng_action_destroy(trigger->action);
 	free(trigger);
+}
+
+ssize_t lttng_trigger_serialize(struct lttng_trigger *trigger, char *buf)
+{
+	ssize_t action_size, condition_size, ret;
+
+	if (!trigger) {
+		ret = -1;
+		goto end;
+	}
+
+	condition_size = lttng_condition_serialize(trigger->condition, buf);
+	if (condition_size < 0) {
+		ret = -1;
+		goto end;
+	}
+
+	action_size = lttng_action_serialize(trigger->action, buf);
+	if (action_size < 0) {
+		ret = -1;
+		goto end;
+	}
+	ret = action_size + condition_size;
+end:
+	return ret;
 }

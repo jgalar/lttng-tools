@@ -42,6 +42,21 @@ struct lttng_condition_buffer_usage {
 	} domain;
 };
 
+struct lttng_condition_buffer_usage_comm {
+	uint8_t threshold_set_in_bytes;
+	union {
+		double percent;
+		uint64_t bytes;
+	} threshold;
+	/* Both lengths include the trailing \0. */
+	uint32_t session_name_len;
+	uint32_t channel_name_len;
+	/* enum lttng_domain_type */
+	int8_t domain_type;
+	/* session and channel names. */
+	char names[];
+} LTTNG_PACKED;
+
 struct lttng_evaluation_buffer_usage {
 	struct lttng_evaluation parent;
 	uint64_t buffer_use;

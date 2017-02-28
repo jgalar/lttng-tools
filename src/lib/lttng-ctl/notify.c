@@ -26,6 +26,12 @@ void lttng_action_notify_destroy(struct lttng_action *action)
 	free(action);
 }
 
+static
+ssize_t lttng_action_notify_serialize(struct lttng_action *action, char *buf)
+{
+	return 0;
+}
+
 struct lttng_action *lttng_action_notify_create(void)
 {
 	struct lttng_action_notify *notify;
@@ -36,6 +42,7 @@ struct lttng_action *lttng_action_notify_create(void)
 	}
 
 	notify->parent.type = LTTNG_ACTION_TYPE_NOTIFY;
+	notify->parent.serialize = lttng_action_notify_serialize;
 	notify->parent.destroy = lttng_action_notify_destroy;
 end:
 	return &notify->parent;

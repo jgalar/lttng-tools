@@ -79,6 +79,52 @@ end:
 }
 
 static
+ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition,
+		char *buf)
+{
+	struct lttng_condition_buffer_usage *usage;
+	ssize_t size;
+	size_t session_name_len, channel_name_len;
+
+	if (!condition || !is_usage_condition(condition)) {
+		size = -1;
+		goto end;
+	}
+
+	usage = container_of(condition, struct lttng_condition_buffer_usage,
+			parent);
+	size = sizeof(struct lttng_condition_buffer_usage_comm);
+	session_name_len = strlen(usage->session_name) + 1;
+	channel_name_len = strlen(usage->channel_name) + 1;
+	size += session_name_len + channel_name_len;
+	if (buf) {
+		struct lttng_condition_buffer_usage_comm usage_comm = {
+			.threshold_set_in_bytes = usage->threshold_bytes.set ? 1 : 0,
+			.session_name_len = session_name_len,
+			.channel_name_len = channel_name_len,
+			.domain_type = (int8_t) usage->domain.type,
+		};
+
+		if (usage->threshold_bytes.set) {
+			usage_comm.threshold.bytes =
+					usage->threshold_bytes.value;
+		} else {
+			usage_comm.threshold.percent =
+					usage->threshold_percent.value;
+		}
+
+		memcpy(buf, &usage_comm, sizeof(usage_comm));
+		buf += sizeof(usage_comm);
+		memcpy(buf, usage->session_name, session_name_len);
+		buf += session_name_len;
+		memcpy(buf, usage->channel_name, channel_name_len);
+		buf += channel_name_len;
+	}
+end:
+	return size;
+}
+
+static
 struct lttng_condition *lttng_condition_buffer_usage_create(
 		enum lttng_condition_type type)
 {
@@ -91,6 +137,7 @@ struct lttng_condition *lttng_condition_buffer_usage_create(
 
 	condition->parent.type = type;
 	condition->parent.validate = lttng_condition_buffer_usage_validate;
+	condition->parent.serialize = lttng_condition_buffer_usage_serialize;
 	condition->parent.destroy = lttng_condition_buffer_usage_destroy;
 end:
 	return &condition->parent;

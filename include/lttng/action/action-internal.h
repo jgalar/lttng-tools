@@ -24,14 +24,24 @@
 
 typedef bool (*action_validate_cb)(struct lttng_action *action);
 typedef void (*action_destroy_cb)(struct lttng_action *action);
+typedef ssize_t (*action_serialize_cb)(struct lttng_action *action, char *buf);
 
 struct lttng_action {
 	enum lttng_action_type type;
 	action_validate_cb validate;
+	action_serialize_cb serialize;
 	action_destroy_cb destroy;
 };
 
+struct lttng_action_comm {
+	/* enum lttng_action_type */
+	int8_t action_type;
+} LTTNG_PACKED;
+
 LTTNG_HIDDEN
 bool lttng_action_validate(struct lttng_action *action);
+
+LTTNG_HIDDEN
+ssize_t lttng_action_serialize(struct lttng_action *action, char *buf);
 
 #endif /* LTTNG_ACTION_INTERNAL_H */

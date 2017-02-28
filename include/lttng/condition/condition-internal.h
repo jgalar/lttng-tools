@@ -24,14 +24,24 @@
 
 typedef void (*condition_destroy_cb)(struct lttng_condition *condition);
 typedef bool (*condition_validate_cb)(struct lttng_condition *condition);
+typedef ssize_t (*condition_serialize_cb)(struct lttng_condition *condition,
+		char *buf);
 
 struct lttng_condition {
 	enum lttng_condition_type type;
 	condition_validate_cb validate;
+	condition_serialize_cb serialize;
 	condition_destroy_cb destroy;
+};
+
+struct lttng_condition_comm {
+	int8_t condition_type;
 };
 
 LTTNG_HIDDEN
 bool lttng_condition_validate(struct lttng_condition *condition);
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_serialize(struct lttng_condition *action, char *buf);
 
 #endif /* LTTNG_CONDITION_INTERNAL_H */

@@ -56,3 +56,31 @@ bool lttng_condition_validate(struct lttng_condition *condition)
 end:
 	return valid;
 }
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_serialize(struct lttng_condition *condition, char *buf)
+{
+	ssize_t ret, condition_size;
+	struct lttng_condition_comm condition_comm;
+
+	if (!condition) {
+		ret = -1;
+		goto end;
+	}
+
+	condition_comm.condition_type = (int8_t) condition->type;
+	ret = sizeof(struct lttng_condition_comm);
+	if (buf) {
+		memcpy(buf, &condition_comm, ret);
+		buf += ret;
+	}
+
+	condition_size = condition->serialize(condition, buf);
+	if (condition_size < 0) {
+		ret = condition_size;
+		goto end;
+	}
+	ret += condition_size;
+end:
+	return ret;
+}
