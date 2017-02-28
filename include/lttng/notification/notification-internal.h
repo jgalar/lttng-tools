@@ -15,32 +15,20 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef LTTNG_NOTIFICATION_H
-#define LTTNG_NOTIFICATION_H
+#ifndef LTTNG_NOTIFICATION_INTERNAL_H
+#define LTTNG_NOTIFICATION_INTERNAL_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <lttng/notification/notification.h>
+#include <common/macros.h>
 
-struct lttng_condition;
-struct lttng_evaluation;
-struct lttng_notification;
+struct lttng_notification {
+	struct lttng_condition *condition;
+	struct lttng_evaluation *evaluation;
+};
 
-/*
- * The notification retains ownership of both the condition and evaluation.
- * Destroying the notification will also destroy the notification and evaluation
- * objects.
- */
-extern struct lttng_condition *lttng_notification_get_condition(
-		struct lttng_notification *notification);
+LTTNG_HIDDEN
+struct lttng_notification *lttng_notification_create(
+		struct lttng_condition *condition,
+		struct lttng_evaluation *evaluation);
 
-extern struct lttng_evaluation *lttng_notification_get_evaluation(
-		struct lttng_notification *notification);
-
-extern void lttng_notification_destroy(struct lttng_notification *notification);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* LTTNG_NOTIFICATION_H */
+#endif /* LTTNG_NOTIFICATION_INTERNAL_H */
