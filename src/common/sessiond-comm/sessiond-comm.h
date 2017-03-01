@@ -29,6 +29,7 @@
 #include <lttng/lttng.h>
 #include <lttng/snapshot-internal.h>
 #include <lttng/save-internal.h>
+#include <lttng/trigger/trigger-internal.h>
 #include <common/compat/socket.h>
 #include <common/uri.h>
 #include <common/defaults.h>
@@ -96,6 +97,7 @@ enum lttcomm_sessiond_command {
 	LTTNG_SET_SESSION_SHM_PATH          = 40,
 	LTTNG_REGENERATE_METADATA           = 41,
 	LTTNG_REGENERATE_STATEDUMP          = 42,
+	LTTNG_REGISTER_TRIGGER              = 43,
 };
 
 enum lttcomm_relayd_command {
@@ -311,6 +313,9 @@ struct lttcomm_session_msg {
 		struct {
 			uint32_t pid;
 		} LTTNG_PACKED pid_tracker;
+		struct {
+			struct lttng_trigger_comm header;
+		} LTTNG_PACKED trigger;
 	} u;
 } LTTNG_PACKED;
 
