@@ -77,7 +77,24 @@ lttnginclude_HEADERS = \
 	lttng/snapshot.h \
 	lttng/save.h \
 	lttng/load.h \
+	lttng/endpoint.h \
 	version.h.tmpl
+
+lttngactioninclude_HEADERS= \
+	lttng/action/action.h \
+	lttng/action/notify.h
+
+lttngconditioninclude_HEADERS= \
+	lttng/condition/condition.h \
+	lttng/condition/buffer-usage.h \
+	lttng/condition/evaluation.h
+
+lttngnotificationinclude_HEADERS= \
+	lttng/notification/channel.h \
+	lttng/notification/notification.h
+
+lttngtriggerinclude_HEADERS= \
+	lttng/trigger/trigger.h
 
 noinst_HEADERS = \
 	lttng/snapshot-internal.h \
