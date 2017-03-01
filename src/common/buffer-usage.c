@@ -18,6 +18,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
 #include <common/macros.h>
+#include <common/error.h>
 #include <assert.h>
 
 static
@@ -64,12 +65,15 @@ bool lttng_condition_buffer_usage_validate(struct lttng_condition *condition)
 	usage = container_of(condition, struct lttng_condition_buffer_usage,
 			parent);
 	if (!usage->session_name) {
+		ERR("Invalid buffer condition: a target session name must be set.");
 		goto end;
 	}
 	if (!usage->channel_name) {
+		ERR("Invalid buffer condition: a target channel name must be set.");
 		goto end;
 	}
 	if (!usage->threshold_percent.set && !usage->threshold_bytes.set) {
+		ERR("Invalid buffer condition: a threshold must be set.");
 		goto end;
 	}
 
@@ -91,6 +95,7 @@ ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition
 		goto end;
 	}
 
+	DBG("Serializing buffer usage condition");
 	usage = container_of(condition, struct lttng_condition_buffer_usage,
 			parent);
 	size = sizeof(struct lttng_condition_buffer_usage_comm);
@@ -173,6 +178,7 @@ ssize_t init_from_buffer(struct lttng_condition *condition, const char *buf)
 				condition, condition_comm->threshold.percent);
 	}
 	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Failed to initialize buffer usage condition threshold");
 		ret = -1;
 		goto end;
 	}
@@ -180,6 +186,8 @@ ssize_t init_from_buffer(struct lttng_condition *condition, const char *buf)
 	if (condition_comm->domain_type <= LTTNG_DOMAIN_NONE ||
 			condition_comm->domain_type > LTTNG_DOMAIN_PYTHON) {
 		/* Invalid domain value. */
+		ERR("Invalid domain type value (%i) found in condition buffer",
+				(int) condition_comm->domain_type);
 		ret = -1;
 		goto end;
 	}
@@ -188,6 +196,7 @@ ssize_t init_from_buffer(struct lttng_condition *condition, const char *buf)
 	status = lttng_condition_buffer_usage_set_domain_type(condition,
 			domain_type);
 	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Failed to set buffer usage condition domain");
 		ret = -1;
 		goto end;
 	}
@@ -198,6 +207,7 @@ ssize_t init_from_buffer(struct lttng_condition *condition, const char *buf)
 	status = lttng_condition_buffer_usage_set_session_name(condition,
 			session_name);
 	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Failed to set buffer usage session name");
 		ret = -1;
 		goto end;
 	}
@@ -205,6 +215,7 @@ ssize_t init_from_buffer(struct lttng_condition *condition, const char *buf)
 	status = lttng_condition_buffer_usage_set_channel_name(condition,
 			channel_name);
 	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Failed to set buffer usage channel name");
 		ret = -1;
 		goto end;
 	}
@@ -235,6 +246,7 @@ ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
 		goto error;
 	}
 
+	DBG("Initializing low buffer usage condition from buffer");
 	ret = init_from_buffer(condition, buf);
 	if (ret < 0) {
 		goto error;
@@ -260,6 +272,7 @@ ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
 		goto error;
 	}
 
+	DBG("Initializing high buffer usage condition from buffer");
 	ret = init_from_buffer(condition, buf);
 	if (ret < 0) {
 		goto error;

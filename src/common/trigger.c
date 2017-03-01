@@ -18,6 +18,7 @@
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/action/action-internal.h>
+#include <common/error.h>
 #include <assert.h>
 
 LTTNG_HIDDEN
@@ -81,6 +82,7 @@ ssize_t lttng_trigger_create_from_buffer(const char *buf,
 		goto end;
 	}
 
+	DBG("Deserializing trigger from buffer");
 	ret = lttng_condition_create_from_buffer(buf, &condition);
 	if (ret < 0) {
 		goto end;

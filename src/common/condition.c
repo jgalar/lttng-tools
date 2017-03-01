@@ -18,6 +18,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
 #include <common/macros.h>
+#include <common/error.h>
 #include <stdbool.h>
 #include <assert.h>
 
@@ -99,6 +100,7 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 		goto end;
 	}
 
+	DBG("Deserializing condition from buffer");
 	condition_size += sizeof(*condition_comm);
 	buf += condition_size;
 
@@ -120,6 +122,8 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 		condition_size += ret;
 		break;
 	default:
+		ERR("Attempted to create condition of unknown type (%i)",
+				(int) condition_comm->condition_type);
 		ret = -1;
 		goto end;
 	}

@@ -17,6 +17,7 @@
 
 #include <lttng/action/action-internal.h>
 #include <lttng/action/notify-internal.h>
+#include <common/error.h>
 #include <assert.h>
 
 enum lttng_action_type lttng_action_get_type(struct lttng_action *action)
@@ -97,6 +98,7 @@ ssize_t lttng_action_create_from_buffer(const char *buf,
 		goto end;
 	}
 
+	DBG("Deserializing action from buffer");
 	switch (action_comm->action_type) {
 	case LTTNG_ACTION_TYPE_NOTIFY:
 		action = lttng_action_notify_create();
