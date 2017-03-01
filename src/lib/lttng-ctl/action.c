@@ -16,6 +16,7 @@
  */
 
 #include <lttng/action/action-internal.h>
+#include <lttng/action/notify-internal.h>
 #include <assert.h>
 
 enum lttng_action_type lttng_action_get_type(struct lttng_action *action)
@@ -78,6 +79,39 @@ ssize_t lttng_action_serialize(struct lttng_action *action, char *buf)
 		goto end;
 	}
 	ret += action_size;
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+ssize_t lttng_action_create_from_buffer(const char *buf,
+		struct lttng_action **_action)
+{
+	ssize_t ret, action_size = sizeof(struct lttng_action_comm);
+	struct lttng_action *action;
+	struct lttng_action_comm *action_comm =
+			(struct lttng_action_comm *) buf;
+
+	if (!buf || !_action) {
+		ret = -1;
+		goto end;
+	}
+
+	switch (action_comm->action_type) {
+	case LTTNG_ACTION_TYPE_NOTIFY:
+		action = lttng_action_notify_create();
+		break;
+	default:
+		ret = -1;
+		goto end;
+	}
+
+	if (!action) {
+		ret = -1;
+		goto end;
+	}
+	ret = action_size;
+	*_action = action;
 end:
 	return ret;
 }
