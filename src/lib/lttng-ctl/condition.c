@@ -16,6 +16,7 @@
  */
 
 #include <lttng/condition/condition-internal.h>
+#include <lttng/condition/buffer-usage-internal.h>
 #include <common/macros.h>
 #include <stdbool.h>
 #include <assert.h>
@@ -81,6 +82,48 @@ ssize_t lttng_condition_serialize(struct lttng_condition *condition, char *buf)
 		goto end;
 	}
 	ret += condition_size;
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_create_from_buffer(const char *buf,
+		struct lttng_condition **condition)
+{
+	ssize_t ret, condition_size = 0;
+	struct lttng_condition_comm *condition_comm =
+			(struct lttng_condition_comm *) buf;
+
+	if (!buf || !condition) {
+		ret = -1;
+		goto end;
+	}
+
+	condition_size += sizeof(*condition_comm);
+	buf += condition_size;
+
+	switch (condition_comm->condition_type) {
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+		ret = lttng_condition_buffer_usage_low_create_from_buffer(buf,
+				condition);
+		if (ret < 0) {
+			goto end;
+		}
+		condition_size += ret;
+		break;
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+		ret = lttng_condition_buffer_usage_high_create_from_buffer(buf,
+				condition);
+		if (ret < 0) {
+			goto end;
+		}
+		condition_size += ret;
+		break;
+	default:
+		ret = -1;
+		goto end;
+	}
+	ret = condition_size;
 end:
 	return ret;
 }

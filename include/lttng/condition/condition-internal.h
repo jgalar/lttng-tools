@@ -35,11 +35,16 @@ struct lttng_condition {
 };
 
 struct lttng_condition_comm {
+	/* enum lttng_condition_type */
 	int8_t condition_type;
 };
 
 LTTNG_HIDDEN
 bool lttng_condition_validate(struct lttng_condition *condition);
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_create_from_buffer(const char *buf,
+		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
 ssize_t lttng_condition_serialize(struct lttng_condition *action, char *buf);
