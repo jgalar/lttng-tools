@@ -20,6 +20,22 @@
 #include <lttng/action/action-internal.h>
 #include <assert.h>
 
+LTTNG_HIDDEN
+bool lttng_trigger_validate(struct lttng_trigger *trigger)
+{
+	bool valid;
+
+	if (!trigger) {
+		valid = false;
+		goto end;
+	}
+
+	valid = lttng_condition_validate(trigger->condition) &&
+			lttng_action_validate(trigger->action);
+end:
+	return valid;
+}
+
 struct lttng_trigger *lttng_trigger_create(
 		struct lttng_condition *condition,
 		struct lttng_action *action)
@@ -52,6 +68,51 @@ void lttng_trigger_destroy(struct lttng_trigger *trigger)
 	free(trigger);
 }
 
+LTTNG_HIDDEN
+ssize_t lttng_trigger_create_from_buffer(const char *buf,
+		struct lttng_trigger **trigger)
+{
+	ssize_t ret, trigger_size;
+	struct lttng_condition *condition = NULL;
+	struct lttng_action *action = NULL;
+
+	if (!buf || !trigger) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = lttng_condition_create_from_buffer(buf, &condition);
+	if (ret < 0) {
+		goto end;
+	}
+
+	trigger_size = ret;
+	buf += ret;
+	ret = lttng_action_create_from_buffer(buf, &action);
+	if (ret < 0) {
+		goto end;
+	}
+
+	trigger_size += ret;
+	*trigger = lttng_trigger_create(condition, action);
+	if (!*trigger) {
+		goto error;
+	}
+	ret = trigger_size;
+end:
+	return ret;
+error:
+	lttng_condition_destroy(condition);
+	lttng_action_destroy(action);
+	return ret;
+}
+
+/*
+ * Returns the size of a trigger's condition and action.
+ * Both elements are stored contiguously, see their "*_comm" structure
+ * for the detailed format.
+ */
+LTTNG_HIDDEN
 ssize_t lttng_trigger_serialize(struct lttng_trigger *trigger, char *buf)
 {
 	ssize_t action_size, condition_size, ret;
@@ -61,18 +122,35 @@ ssize_t lttng_trigger_serialize(struct lttng_trigger *trigger, char *buf)
 		goto end;
 	}
 
+	condition_size = lttng_condition_serialize(trigger->condition, NULL);
+	if (condition_size < 0) {
+		ret = -1;
+		goto end;
+	}
+
+	action_size = lttng_action_serialize(trigger->action, NULL);
+	if (action_size < 0) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = action_size + condition_size;
+	if (!buf) {
+		goto end;
+	}
+
 	condition_size = lttng_condition_serialize(trigger->condition, buf);
 	if (condition_size < 0) {
 		ret = -1;
 		goto end;
 	}
 
+	buf += condition_size;
 	action_size = lttng_action_serialize(trigger->action, buf);
 	if (action_size < 0) {
 		ret = -1;
 		goto end;
 	}
-	ret = action_size + condition_size;
 end:
 	return ret;
 }

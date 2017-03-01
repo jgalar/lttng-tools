@@ -20,10 +20,27 @@
 
 #include <lttng/trigger/trigger.h>
 #include <common/macros.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 struct lttng_trigger {
 	struct lttng_condition *condition;
 	struct lttng_action *action;
 };
+
+struct lttng_trigger_comm {
+	/* len excludes its own length. */
+	uint32_t len;
+} LTTNG_PACKED;
+
+LTTNG_HIDDEN
+ssize_t lttng_trigger_create_from_buffer(const char *buf,
+		struct lttng_trigger **trigger);
+
+LTTNG_HIDDEN
+ssize_t lttng_trigger_serialize(struct lttng_trigger *trigger, char *buf);
+
+LTTNG_HIDDEN
+bool lttng_trigger_validate(struct lttng_trigger *trigger);
 
 #endif /* LTTNG_TRIGGER_INTERNAL_H */
