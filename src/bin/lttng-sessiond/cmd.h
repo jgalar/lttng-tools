@@ -111,4 +111,6 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 int cmd_regenerate_metadata(struct ltt_session *session);
 int cmd_regenerate_statedump(struct ltt_session *session);
 
+int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock);
+
 #endif /* CMD_H */

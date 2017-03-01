@@ -29,6 +29,7 @@
 #include <common/utils.h>
 #include <common/compat/string.h>
 #include <common/kernel-ctl/kernel-ctl.h>
+#include <lttng/trigger/trigger-internal.h>
 
 #include "channel.h"
 #include "consumer.h"
@@ -3563,6 +3564,42 @@ int cmd_regenerate_statedump(struct ltt_session *session)
 	ret = LTTNG_OK;
 
 end:
+	return ret;
+}
+
+int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock)
+{
+	int ret;
+	size_t trigger_len;
+	ssize_t sock_recv_len;
+	char *trigger_buffer = NULL;
+	struct lttng_trigger *trigger = NULL;
+
+	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.header.len;
+	trigger_buffer = zmalloc(trigger_len);
+	if (!trigger_buffer) {
+		ret = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	sock_recv_len = lttcomm_recv_unix_sock(sock, trigger_buffer,
+			trigger_len);
+	if (sock_recv_len < 0 || sock_recv_len != trigger_len) {
+		ERR("Failed to receive \"register trigger\" command payload");
+		goto end;
+	}
+
+	if (lttng_trigger_create_from_buffer(trigger_buffer, &trigger) !=
+			trigger_len) {
+		ERR("Invalid trigger payload received in \"register trigger\" command");
+		ret = LTTNG_ERR_INVALID_TRIGGER;
+		goto end;
+	}
+	DBG("Command register trigger succeeded");
+	ret = LTTNG_OK;
+end:
+	free(trigger_buffer);
+	lttng_trigger_destroy(trigger);
 	return ret;
 }
 
