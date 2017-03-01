@@ -155,6 +155,123 @@ struct lttng_condition *lttng_condition_buffer_usage_high_create(void)
 			LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH);
 }
 
+static
+ssize_t init_from_buffer(struct lttng_condition *condition, const char *buf)
+{
+	ssize_t ret, condition_size;
+	enum lttng_condition_status status;
+	enum lttng_domain_type domain_type;
+	struct lttng_condition_buffer_usage_comm *condition_comm =
+			(struct lttng_condition_buffer_usage_comm *) buf;
+	const char *session_name, *channel_name;
+
+	if (condition_comm->threshold_set_in_bytes) {
+		status = lttng_condition_buffer_usage_set_threshold(condition,
+				condition_comm->threshold.bytes);
+	} else {
+		status = lttng_condition_buffer_usage_set_threshold_percentage(
+				condition, condition_comm->threshold.percent);
+	}
+	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	if (condition_comm->domain_type <= LTTNG_DOMAIN_NONE ||
+			condition_comm->domain_type > LTTNG_DOMAIN_PYTHON) {
+		/* Invalid domain value. */
+		ret = -1;
+		goto end;
+	}
+
+	domain_type = (enum lttng_domain_type) condition_comm->domain_type;
+	status = lttng_condition_buffer_usage_set_domain_type(condition,
+			domain_type);
+	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	session_name = buf + sizeof(struct lttng_condition_buffer_usage_comm);
+	channel_name = session_name + condition_comm->session_name_len;
+
+	status = lttng_condition_buffer_usage_set_session_name(condition,
+			session_name);
+	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	status = lttng_condition_buffer_usage_set_channel_name(condition,
+			channel_name);
+	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	if (!lttng_condition_validate(condition)) {
+		ret = -1;
+		goto end;
+	}
+
+	condition_size = sizeof(*condition_comm);
+	condition_size += (ssize_t) condition_comm->session_name_len;
+	condition_size += (ssize_t) condition_comm->channel_name_len;
+	ret = condition_size;
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
+		struct lttng_condition **_condition)
+{
+	ssize_t ret;
+	struct lttng_condition *condition =
+			lttng_condition_buffer_usage_low_create();
+
+	if (!_condition || !condition) {
+		ret = -1;
+		goto error;
+	}
+
+	ret = init_from_buffer(condition, buf);
+	if (ret < 0) {
+		goto error;
+	}
+
+	*_condition = condition;
+	return ret;
+error:
+	lttng_condition_destroy(condition);
+	return ret;
+}
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
+		struct lttng_condition **_condition)
+{
+	ssize_t ret;
+	struct lttng_condition *condition =
+			lttng_condition_buffer_usage_high_create();
+
+	if (!_condition || !condition) {
+		ret = -1;
+		goto error;
+	}
+
+	ret = init_from_buffer(condition, buf);
+	if (ret < 0) {
+		goto error;
+	}
+
+	*_condition = condition;
+	return ret;
+error:
+	lttng_condition_destroy(condition);
+	return ret;
+}
+
 enum lttng_condition_status
 lttng_condition_buffer_usage_get_threshold_percentage(
 		struct lttng_condition *condition, double *threshold_percent)

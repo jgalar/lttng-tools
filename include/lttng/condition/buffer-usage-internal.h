@@ -67,4 +67,12 @@ LTTNG_HIDDEN
 struct lttng_evaluation *lttng_evaluation_buffer_usage_create(uint64_t use,
 		uint64_t capacity);
 
+LTTNG_HIDDEN
+ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
+		struct lttng_condition **condition);
+
+LTTNG_HIDDEN
+ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
+		struct lttng_condition **condition);
+
 #endif /* LTTNG_CONDITION_BUFFER_USAGE_INTERNAL_H */
