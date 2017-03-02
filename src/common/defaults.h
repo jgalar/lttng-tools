@@ -106,10 +106,12 @@
 #define DEFAULT_LTTNG_EXTRA_KMOD_PROBES		"LTTNG_EXTRA_KMOD_PROBES"
 
 /* Default unix socket path */
-#define DEFAULT_GLOBAL_CLIENT_UNIX_SOCK         DEFAULT_LTTNG_RUNDIR "/client-lttng-sessiond"
-#define DEFAULT_HOME_CLIENT_UNIX_SOCK           DEFAULT_LTTNG_HOME_RUNDIR "/client-lttng-sessiond"
-#define DEFAULT_GLOBAL_HEALTH_UNIX_SOCK         DEFAULT_LTTNG_RUNDIR "/sessiond-health"
-#define DEFAULT_HOME_HEALTH_UNIX_SOCK		DEFAULT_LTTNG_HOME_RUNDIR "/sessiond-health"
+#define DEFAULT_GLOBAL_CLIENT_UNIX_SOCK         	DEFAULT_LTTNG_RUNDIR "/client-lttng-sessiond"
+#define DEFAULT_HOME_CLIENT_UNIX_SOCK           	DEFAULT_LTTNG_HOME_RUNDIR "/client-lttng-sessiond"
+#define DEFAULT_GLOBAL_HEALTH_UNIX_SOCK         	DEFAULT_LTTNG_RUNDIR "/sessiond-health"
+#define DEFAULT_HOME_HEALTH_UNIX_SOCK			DEFAULT_LTTNG_HOME_RUNDIR "/sessiond-health"
+#define DEFAULT_GLOBAL_NOTIFICATION_CHANNEL_UNIX_SOCK   DEFAULT_LTTNG_RUNDIR "/sessiond-notification"
+#define DEFAULT_HOME_NOTIFICATION_CHANNEL_UNIX_SOCK	DEFAULT_LTTNG_HOME_RUNDIR "/sessiond-notification"
 
 /* Default consumer health unix socket path */
 #define DEFAULT_GLOBAL_USTCONSUMER32_HEALTH_UNIX_SOCK	DEFAULT_LTTNG_RUNDIR "/ustconsumerd32/health"

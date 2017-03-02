@@ -71,6 +71,7 @@
 #include "agent-thread.h"
 #include "save.h"
 #include "load-session-thread.h"
+#include "notification-thread.h"
 #include "syscall.h"
 #include "agent.h"
 #include "ht-cleanup.h"
@@ -211,6 +212,7 @@ static pthread_t health_thread;
 static pthread_t ht_cleanup_thread;
 static pthread_t agent_reg_thread;
 static pthread_t load_session_thread;
+static pthread_t notification_thread;
 
 /*
  * UST registration command queue. This queue is tied with a futex and uses a N
@@ -304,6 +306,9 @@ const char * const config_section_name = "sessiond";
 
 /* Load session thread information to operate. */
 struct load_session_thread_data *load_info;
+
+/* Notification thread command queue. */
+struct notification_thread_data *notification_thread_data;
 
 /* Global hash tables */
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
@@ -695,6 +700,10 @@ static void sessiond_cleanup(void)
 	if (load_info) {
 		load_session_destroy_data(load_info);
 		free(load_info);
+	}
+
+	if (notification_thread_data) {
+		notification_destroy_data(notification_thread_data);
 	}
 
 	/*
@@ -5990,6 +5999,23 @@ int main(int argc, char **argv)
 		goto exit_health;
 	}
 
+	notification_thread_data = notification_init_data();
+	if (!notification_thread_data) {
+		retval = -1;
+		ERR("Failed to initialize notification thread shared data");
+		goto exit_notification;
+	}
+
+	/* Create notification thread. */
+	ret = pthread_create(&notification_thread, default_pthread_attr(),
+			thread_notification, notification_thread_data);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_create notification");
+		retval = -1;
+		goto exit_notification;
+	}
+
 	/* Create thread to manage the client socket */
 	ret = pthread_create(&client_thread, default_pthread_attr(),
 			thread_manage_clients, (void *) NULL);
@@ -6146,16 +6172,24 @@ exit_dispatch:
 		PERROR("pthread_join");
 		retval = -1;
 	}
-exit_client:
 
+exit_client:
+	ret = pthread_join(notification_thread, &status);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_join notification thread");
+		retval = -1;
+	}
+
+exit_notification:
 	ret = pthread_join(health_thread, &status);
 	if (ret) {
 		errno = ret;
 		PERROR("pthread_join health thread");
 		retval = -1;
 	}
-exit_health:
 
+exit_health:
 exit_init_data:
 	/*
 	 * Wait for all pending call_rcu work to complete before tearing
