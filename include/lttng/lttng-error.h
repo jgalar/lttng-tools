@@ -146,6 +146,7 @@ enum lttng_error_code {
 	LTTNG_ERR_REGEN_STATEDUMP_NOMEM  = 123, /* Failed to regenerate the state dump, not enough memory */
 	LTTNG_ERR_NOT_SNAPSHOT_SESSION   = 124, /* Session is not in snapshot mode. */
 	LTTNG_ERR_INVALID_TRIGGER        = 125, /* Invalid trigger provided. */
+	LTTNG_ERR_COMMAND_CANCELLED      = 126, /* Command cancelled. */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

@@ -4130,7 +4130,8 @@ error_add_context:
 	}
 	case LTTNG_REGISTER_TRIGGER:
 	{
-		ret = cmd_register_trigger(cmd_ctx, sock);
+		ret = cmd_register_trigger(cmd_ctx, sock,
+				notification_thread_data);
 		break;
 	}
 	default:

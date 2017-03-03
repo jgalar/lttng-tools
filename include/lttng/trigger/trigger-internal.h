@@ -22,10 +22,13 @@
 #include <common/macros.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <urcu/list.h>
+#include <urcu/wfcqueue.h>
 
 struct lttng_trigger {
 	struct lttng_condition *condition;
 	struct lttng_action *action;
+	struct cds_list_head list_node;
 };
 
 struct lttng_trigger_comm {

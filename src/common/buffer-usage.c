@@ -140,7 +140,7 @@ struct lttng_condition *lttng_condition_buffer_usage_create(
 		goto end;
 	}
 
-	condition->parent.type = type;
+	lttng_condition_init(&condition->parent, type);
 	condition->parent.validate = lttng_condition_buffer_usage_validate;
 	condition->parent.serialize = lttng_condition_buffer_usage_serialize;
 	condition->parent.destroy = lttng_condition_buffer_usage_destroy;

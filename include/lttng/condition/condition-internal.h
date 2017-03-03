@@ -21,6 +21,7 @@
 #include <lttng/condition/condition.h>
 #include <common/macros.h>
 #include <stdbool.h>
+#include <urcu/list.h>
 
 typedef void (*condition_destroy_cb)(struct lttng_condition *condition);
 typedef bool (*condition_validate_cb)(struct lttng_condition *condition);
@@ -32,12 +33,17 @@ struct lttng_condition {
 	condition_validate_cb validate;
 	condition_serialize_cb serialize;
 	condition_destroy_cb destroy;
+	struct cds_list_head list_node;
 };
 
 struct lttng_condition_comm {
 	/* enum lttng_condition_type */
 	int8_t condition_type;
 };
+
+LTTNG_HIDDEN
+void lttng_condition_init(struct lttng_condition *condition,
+		enum lttng_condition_type type);
 
 LTTNG_HIDDEN
 bool lttng_condition_validate(struct lttng_condition *condition);

@@ -24,6 +24,11 @@
 
 typedef void (*evaluation_destroy_cb)(struct lttng_evaluation *evaluation);
 
+struct lttng_evaluation_comm {
+	/* enum lttng_condition_type type */
+	int8_t type;
+} LTTNG_PACKED;
+
 struct lttng_evaluation {
 	enum lttng_condition_type type;
 	evaluation_destroy_cb destroy;

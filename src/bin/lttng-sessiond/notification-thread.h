@@ -20,6 +20,7 @@
 
 #include <urcu/wfcqueue.h>
 #include <lttng/trigger/trigger.h>
+#include <pthread.h>
 
 enum notification_command_type {
 	NOTIFICATION_COMMAND_TYPE_NEW_TRIGGER,
@@ -47,8 +48,8 @@ struct notification_thread_data {
 	 */
 	struct notification_cmd_queue {
 		int event_fd;
-		struct cds_wfcq_head head;
-		struct cds_wfcq_tail tail;
+		struct cds_list_head list;
+		pthread_mutex_t lock;
 	} cmd_queue;
 };
 
@@ -59,7 +60,7 @@ struct notification_command *notification_new_trigger_command_destroy(
 
 void *thread_notification(void *data);
 
-int notification_thread_init_data(struct notification_thread_data **data);
-void notification_thread_destroy_data(struct notification_thread_data *data);
+struct notification_thread_data *notification_init_data(void);
+void notification_destroy_data(struct notification_thread_data *data);
 
 #endif /* NOTIFICATION_THREAD_H */

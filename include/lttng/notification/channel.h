@@ -23,21 +23,22 @@ extern "C" {
 #endif
 
 struct lttng_endpoint;
+struct lttng_condition;
 struct lttng_notification;
 struct lttng_notification_channel;
-struct lttng_notification_channel_endpoint;
 
 /* LTTng Notification channel */
 enum lttng_notification_channel_status {
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_TIMEOUT = 2,
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED = 1,
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_OK = 0,
-	LTTNG_NOTIFICATION_CHANNEL_STATUS_CLOSED = -1,
-	LTTNG_NOTIFICATION_CHANNEL_STATUS_NOT_FOUND = -2,
-	LTTNG_NOTIFICATION_CHANNEL_STATUS_UNSUPPORTED = -3,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR = -1,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_CLOSED = -2,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_NOT_FOUND = -3,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_UNSUPPORTED = -4,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID = -5,
 };
 
-/* TODO Add target parameter (sessiond, relayd, etc.). */
 extern struct lttng_notification_channel *lttng_notification_channel_create(
 		struct lttng_endpoint *endpoint);
 

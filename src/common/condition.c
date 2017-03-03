@@ -131,3 +131,11 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 end:
 	return ret;
 }
+
+LTTNG_HIDDEN
+void lttng_condition_init(struct lttng_condition *condition,
+		enum lttng_condition_type type)
+{
+	condition->type = type;
+	CDS_INIT_LIST_HEAD(&condition->list_node);
+}

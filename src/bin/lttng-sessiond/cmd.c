@@ -42,6 +42,7 @@
 #include "syscall.h"
 #include "agent.h"
 #include "buffer-registry.h"
+#include "notification-thread.h"
 
 #include "cmd.h"
 
@@ -3567,13 +3568,15 @@ end:
 	return ret;
 }
 
-int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock)
+int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
+		struct notification_thread_data *notification_thread)
 {
 	int ret;
 	size_t trigger_len;
 	ssize_t sock_recv_len;
 	char *trigger_buffer = NULL;
 	struct lttng_trigger *trigger = NULL;
+	uint64_t notification_counter = 1;
 
 	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.header.len;
 	trigger_buffer = zmalloc(trigger_len);
@@ -3595,11 +3598,22 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock)
 		ret = LTTNG_ERR_INVALID_TRIGGER;
 		goto end;
 	}
+
+	/* Enqueue and signal. */
+	pthread_mutex_lock(&notification_thread->cmd_queue.lock);
+	cds_list_add(&trigger->list_node, &notification_thread->cmd_queue.list);
+	trigger = NULL;
+	pthread_mutex_unlock(&notification_thread->cmd_queue.lock);
+	ret = write(notification_thread->cmd_queue.event_fd,
+			&notification_counter, sizeof(notification_counter));
+	if (ret < 0) {
+		PERROR("write to notification thread's queue event fd");
+	} else {
+		ret = LTTNG_OK;
+	}
 	DBG("Command register trigger succeeded");
-	ret = LTTNG_OK;
 end:
 	free(trigger_buffer);
-	lttng_trigger_destroy(trigger);
 	return ret;
 }
 
