@@ -16,9 +16,82 @@
  */
 
 #include <lttng/condition/evaluation-internal.h>
+#include <lttng/condition/buffer-usage-internal.h>
 #include <common/macros.h>
+#include <common/error.h>
 #include <stdbool.h>
 #include <assert.h>
+
+LTTNG_HIDDEN
+ssize_t lttng_evaluation_serialize(struct lttng_evaluation *evaluation,
+		char *buf)
+{
+	ssize_t ret, offset = 0;
+	struct lttng_evaluation_comm evaluation_comm;
+
+	evaluation_comm.type = (int8_t) evaluation->type;
+	if (buf) {
+		memcpy(buf, &evaluation_comm, sizeof(evaluation_comm));
+	}
+	offset += sizeof(evaluation_comm);
+
+	if (evaluation->serialize) {
+		ret = evaluation->serialize(evaluation,
+				buf ? (buf + offset) : NULL);
+		if (ret < 0) {
+			goto end;
+		}
+		offset += ret;
+	}
+
+	ret = offset;
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+ssize_t lttng_evaluation_create_from_buffer(const char *buf,
+		struct lttng_evaluation **evaluation)
+{
+	ssize_t ret, evaluation_size = 0;
+	struct lttng_evaluation_comm *evaluation_comm =
+			(struct lttng_evaluation_comm *) buf;
+
+	if (!buf || !evaluation) {
+		ret = -1;
+		goto end;
+	}
+
+	evaluation_size += sizeof(*evaluation_comm);
+	buf += evaluation_size;
+
+	switch ((enum lttng_condition_type) evaluation_comm->type) {
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+		ret = lttng_evaluation_buffer_usage_low_create_from_buffer(buf,
+				evaluation);
+		if (ret < 0) {
+			goto end;
+		}
+		evaluation_size += ret;
+		break;
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+		ret = lttng_evaluation_buffer_usage_high_create_from_buffer(buf,
+				evaluation);
+		if (ret < 0) {
+			goto end;
+		}
+		evaluation_size += ret;
+		break;
+	default:
+		ERR("Attempted to create evaluation of unknown type (%i)",
+				(int) evaluation_comm->type);
+		ret = -1;
+		goto end;
+	}
+	ret = evaluation_size;
+end:
+	return ret;
+}
 
 enum lttng_condition_type lttng_evaluation_get_type(
 		struct lttng_evaluation *evaluation)

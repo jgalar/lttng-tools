@@ -88,6 +88,25 @@ end:
 }
 
 LTTNG_HIDDEN
+bool lttng_condition_is_equal(struct lttng_condition *a,
+		struct lttng_condition *b)
+{
+	bool is_equal = false;
+
+	if (!a || !b) {
+		goto end;
+	}
+
+	if (a->type != b->type) {
+		goto end;
+	}
+
+	is_equal = a->equal ? a->equal(a, b) : true;
+end:
+	return is_equal;
+}
+
+LTTNG_HIDDEN
 ssize_t lttng_condition_create_from_buffer(const char *buf,
 		struct lttng_condition **condition)
 {
@@ -104,7 +123,7 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 	condition_size += sizeof(*condition_comm);
 	buf += condition_size;
 
-	switch (condition_comm->condition_type) {
+	switch ((enum lttng_condition_type) condition_comm->condition_type) {
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
 		ret = lttng_condition_buffer_usage_low_create_from_buffer(buf,
 				condition);

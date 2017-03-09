@@ -20,15 +20,31 @@
 
 #include <lttng/notification/notification.h>
 #include <common/macros.h>
+#include <stdint.h>
 
 struct lttng_notification {
 	struct lttng_condition *condition;
 	struct lttng_evaluation *evaluation;
 };
 
+struct lttng_notification_comm {
+	/* length excludes its own length. */
+	uint32_t length;
+	/* A condition and evaluation object follow. */
+	char payload[];
+} LTTNG_PACKED;
+
 LTTNG_HIDDEN
 struct lttng_notification *lttng_notification_create(
 		struct lttng_condition *condition,
 		struct lttng_evaluation *evaluation);
+
+LTTNG_HIDDEN
+ssize_t lttng_notification_serialize(struct lttng_notification *notification,
+		char *buf);
+
+LTTNG_HIDDEN
+ssize_t lttng_notification_create_from_buffer(const char *buf,
+		struct lttng_notification **notification);
 
 #endif /* LTTNG_NOTIFICATION_INTERNAL_H */

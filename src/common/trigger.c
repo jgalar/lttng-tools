@@ -59,6 +59,18 @@ end:
 	return trigger;
 }
 
+struct lttng_condition *lttng_trigger_get_condition(
+		struct lttng_trigger *trigger)
+{
+	return trigger ? trigger->condition : NULL;
+}
+
+extern struct lttng_action *lttng_trigger_get_action(
+		struct lttng_trigger *trigger)
+{
+	return trigger ? trigger->action : NULL;
+}
+
 void lttng_trigger_destroy(struct lttng_trigger *trigger)
 {
 	if (!trigger) {
@@ -74,34 +86,48 @@ LTTNG_HIDDEN
 ssize_t lttng_trigger_create_from_buffer(const char *buf,
 		struct lttng_trigger **trigger)
 {
-	ssize_t ret, trigger_size;
+	ssize_t ret, offset = 0, condition_size, action_size;
 	struct lttng_condition *condition = NULL;
 	struct lttng_action *action = NULL;
+	struct lttng_trigger_comm *trigger_comm;
 
 	if (!buf || !trigger) {
 		ret = -1;
 		goto end;
 	}
 
-	DBG("Deserializing trigger from buffer");
-	ret = lttng_condition_create_from_buffer(buf, &condition);
-	if (ret < 0) {
+	/* lttng_trigger_comm header */
+	trigger_comm = (struct lttng_trigger_comm *) buf;
+	offset += sizeof(*trigger_comm);
+
+	/* struct lttng_condition */
+	condition_size = lttng_condition_create_from_buffer(buf + offset,
+			&condition);
+	if (condition_size < 0) {
+		ret = condition_size;
 		goto end;
 	}
+	offset += condition_size;
 
-	trigger_size = ret;
-	buf += ret;
-	ret = lttng_action_create_from_buffer(buf, &action);
-	if (ret < 0) {
+	/* struct lttng_action */
+	action_size = lttng_action_create_from_buffer(buf + offset, &action);
+	if (action_size < 0) {
+		ret = action_size;
 		goto end;
 	}
+	offset += action_size;
 
-	trigger_size += ret;
+	/* Unexpected size of inner-elements; the buffer is corrupted. */
+	if ((ssize_t) trigger_comm->length != condition_size + action_size) {
+		ret = -1;
+		goto error;
+	}
+
 	*trigger = lttng_trigger_create(condition, action);
 	if (!*trigger) {
 		goto error;
 	}
-	ret = trigger_size;
+	ret = offset;
 end:
 	return ret;
 error:
@@ -111,49 +137,43 @@ error:
 }
 
 /*
- * Returns the size of a trigger's condition and action.
+ * Returns the size of a trigger (header + condition + action).
  * Both elements are stored contiguously, see their "*_comm" structure
  * for the detailed format.
  */
 LTTNG_HIDDEN
 ssize_t lttng_trigger_serialize(struct lttng_trigger *trigger, char *buf)
 {
-	ssize_t action_size, condition_size, ret;
+	struct lttng_trigger_comm trigger_comm;
+	ssize_t action_size, condition_size, offset = 0, ret;
 
 	if (!trigger) {
 		ret = -1;
 		goto end;
 	}
 
-	condition_size = lttng_condition_serialize(trigger->condition, NULL);
+	offset += sizeof(trigger_comm);
+	condition_size = lttng_condition_serialize(trigger->condition,
+			buf ? (buf + offset) : NULL);
 	if (condition_size < 0) {
 		ret = -1;
 		goto end;
 	}
+	offset += condition_size;
 
-	action_size = lttng_action_serialize(trigger->action, NULL);
+	action_size = lttng_action_serialize(trigger->action,
+			buf ? (buf + offset) : NULL);
 	if (action_size < 0) {
 		ret = -1;
 		goto end;
 	}
+	offset += action_size;
 
-	ret = action_size + condition_size;
-	if (!buf) {
-		goto end;
+	if (buf) {
+		trigger_comm.length = (uint32_t) (condition_size + action_size);
+		memcpy(buf, &trigger_comm, sizeof(trigger_comm));
 	}
-
-	condition_size = lttng_condition_serialize(trigger->condition, buf);
-	if (condition_size < 0) {
-		ret = -1;
-		goto end;
-	}
-
-	buf += condition_size;
-	action_size = lttng_action_serialize(trigger->action, buf);
-	if (action_size < 0) {
-		ret = -1;
-		goto end;
-	}
+	ret = offset;
 end:
 	return ret;
 }

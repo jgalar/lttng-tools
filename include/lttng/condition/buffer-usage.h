@@ -31,17 +31,17 @@ lttng_condition_buffer_usage_low_create(void);
 extern struct lttng_condition *
 lttng_condition_buffer_usage_high_create(void);
 
-/* threshold_percent expressed as [0.0, 1.0]. */
+/* threshold_ratio expressed as [0.0, 1.0]. */
 extern enum lttng_condition_status
-lttng_condition_buffer_usage_get_threshold_percentage(
+lttng_condition_buffer_usage_get_threshold_ration(
 		struct lttng_condition *condition,
-	        double *threshold_percent);
+	        double *threshold_ratio);
 
-/* threshold_percent expressed as [0.0, 1.0]. */
+/* threshold_ratio expressed as [0.0, 1.0]. */
 extern enum lttng_condition_status
-lttng_condition_buffer_usage_set_threshold_percentage(
+lttng_condition_buffer_usage_set_threshold_ratio(
 		struct lttng_condition *condition,
-	        double threshold_percent);
+	        double threshold_ratio);
 
 extern enum lttng_condition_status
 lttng_condition_buffer_usage_get_threshold(
@@ -86,9 +86,9 @@ lttng_condition_buffer_usage_set_domain_type(
 
 /* LTTng Condition Evaluation */
 extern enum lttng_evaluation_status
-lttng_evaluation_buffer_usage_get_usage_percentage(
+lttng_evaluation_buffer_usage_get_usage_ratio(
 		struct lttng_evaluation *evaluation,
-		double *usage_percent);
+		double *usage_ratio);
 
 extern enum lttng_evaluation_status
 lttng_evaluation_buffer_usage_get_usage(

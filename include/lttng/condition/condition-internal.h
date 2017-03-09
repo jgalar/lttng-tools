@@ -27,11 +27,14 @@ typedef void (*condition_destroy_cb)(struct lttng_condition *condition);
 typedef bool (*condition_validate_cb)(struct lttng_condition *condition);
 typedef ssize_t (*condition_serialize_cb)(struct lttng_condition *condition,
 		char *buf);
+typedef bool (*condition_equal_cb)(struct lttng_condition *a,
+		struct lttng_condition *b);
 
 struct lttng_condition {
 	enum lttng_condition_type type;
 	condition_validate_cb validate;
 	condition_serialize_cb serialize;
+	condition_equal_cb equal;
 	condition_destroy_cb destroy;
 	struct cds_list_head list_node;
 };
@@ -39,6 +42,7 @@ struct lttng_condition {
 struct lttng_condition_comm {
 	/* enum lttng_condition_type */
 	int8_t condition_type;
+	char payload[];
 };
 
 LTTNG_HIDDEN
@@ -53,6 +57,10 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_serialize(struct lttng_condition *action, char *buf);
+ssize_t lttng_condition_serialize(struct lttng_condition *condition, char *buf);
+
+LTTNG_HIDDEN
+bool lttng_condition_is_equal(struct lttng_condition *a,
+		struct lttng_condition *b);
 
 #endif /* LTTNG_CONDITION_INTERNAL_H */

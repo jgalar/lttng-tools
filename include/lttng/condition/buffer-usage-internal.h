@@ -25,7 +25,6 @@
 
 struct lttng_condition_buffer_usage {
 	struct lttng_condition parent;
-	bool frozen;
 	struct {
 		bool set;
 		uint64_t value;
@@ -33,7 +32,7 @@ struct lttng_condition_buffer_usage {
 	struct {
 		bool set;
 		double value;
-	} threshold_percent;
+	} threshold_ratio;
 	char *session_name;
 	char *channel_name;
 	struct {
@@ -44,10 +43,13 @@ struct lttng_condition_buffer_usage {
 
 struct lttng_condition_buffer_usage_comm {
 	uint8_t threshold_set_in_bytes;
-	union {
-		double percent;
-		uint64_t bytes;
-	} threshold;
+	/*
+	 * Expressed in bytes if "threshold_set_in_bytes" is not 0.
+	 * Otherwise, it is expressed a ratio in the interval [0.0, 1.0]
+	 * that is mapped to the range on a 64-bit unsigned integer.
+	 * The ratio is obtained by (threshold / UINT64_MAX).
+	 */
+	uint64_t threshold;
 	/* Both lengths include the trailing \0. */
 	uint32_t session_name_len;
 	uint32_t channel_name_len;
@@ -63,8 +65,14 @@ struct lttng_evaluation_buffer_usage {
 	uint64_t buffer_capacity;
 };
 
+struct lttng_evaluation_buffer_usage_comm {
+	uint64_t buffer_use;
+	uint64_t buffer_capacity;
+} LTTNG_PACKED;
+
 LTTNG_HIDDEN
-struct lttng_evaluation *lttng_evaluation_buffer_usage_create(uint64_t use,
+struct lttng_evaluation *lttng_evaluation_buffer_usage_create(
+		enum lttng_condition_type type, uint64_t use,
 		uint64_t capacity);
 
 LTTNG_HIDDEN
@@ -74,5 +82,15 @@ ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
 LTTNG_HIDDEN
 ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
 		struct lttng_condition **condition);
+
+LTTNG_HIDDEN
+ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(const char *buf,
+		struct lttng_evaluation **evaluation);
+
+LTTNG_HIDDEN
+ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(const char *buf,
+		struct lttng_evaluation **evaluation);
+
+
 
 #endif /* LTTNG_CONDITION_BUFFER_USAGE_INTERNAL_H */

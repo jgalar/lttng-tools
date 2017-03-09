@@ -21,7 +21,6 @@
 struct lttng_action;
 struct lttng_condition;
 struct lttng_trigger;
-struct lttng_endpoint;
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +34,12 @@ enum lttng_register_trigger_status {
 /* Trigger assumes ownership of both condition and action after call. */
 extern struct lttng_trigger *lttng_trigger_create(
 		struct lttng_condition *condition, struct lttng_action *action);
+
+extern struct lttng_condition *lttng_trigger_get_condition(
+		struct lttng_trigger *trigger);
+
+extern struct lttng_action *lttng_trigger_get_action(
+		struct lttng_trigger *trigger);
 
 extern void lttng_trigger_destroy(struct lttng_trigger *trigger);
 

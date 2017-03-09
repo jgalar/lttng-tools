@@ -32,8 +32,10 @@ struct lttng_trigger {
 };
 
 struct lttng_trigger_comm {
-	/* len excludes its own length. */
-	uint32_t len;
+	/* length excludes its own length. */
+	uint32_t length;
+	/* A condition and action object follow. */
+	char payload[];
 } LTTNG_PACKED;
 
 LTTNG_HIDDEN
