@@ -3578,7 +3578,7 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 	struct lttng_trigger *trigger = NULL;
 	uint64_t notification_counter = 1;
 
-	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.header.len;
+	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.length;
 	trigger_buffer = zmalloc(trigger_len);
 	if (!trigger_buffer) {
 		ret = LTTNG_ERR_NOMEM;

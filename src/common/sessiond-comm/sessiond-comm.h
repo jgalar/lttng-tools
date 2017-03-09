@@ -314,7 +314,7 @@ struct lttcomm_session_msg {
 			uint32_t pid;
 		} LTTNG_PACKED pid_tracker;
 		struct {
-			struct lttng_trigger_comm header;
+			uint32_t length;
 		} LTTNG_PACKED trigger;
 	} u;
 } LTTNG_PACKED;

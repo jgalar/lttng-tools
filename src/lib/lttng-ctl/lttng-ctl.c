@@ -2468,12 +2468,12 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_REGISTER_TRIGGER;
-	lsm.u.trigger.header.len = (uint32_t) trigger_size;
 	if (lttng_trigger_serialize(trigger, trigger_buf) < 0) {
 		ret = -LTTNG_ERR_UNK;
 		goto end;
 	}
 
+	lsm.u.trigger.length = (uint32_t) trigger_size;
 	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, trigger_buf,
 			trigger_size, NULL);
 end:
