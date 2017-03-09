@@ -226,7 +226,7 @@ ssize_t lttcomm_send_unix_sock(int sock, const void *buf, size_t len)
 {
 	struct msghdr msg;
 	struct iovec iov[1];
-	ssize_t ret = -1;
+	ssize_t ret;
 
 	memset(&msg, 0, sizeof(msg));
 
@@ -235,17 +235,28 @@ ssize_t lttcomm_send_unix_sock(int sock, const void *buf, size_t len)
 	msg.msg_iov = iov;
 	msg.msg_iovlen = 1;
 
-	ret = sendmsg(sock, &msg, 0);
-	if (ret < 0) {
-		/*
-		 * Only warn about EPIPE when quiet mode is deactivated.
-		 * We consider EPIPE as expected.
-		 */
-		if (errno != EPIPE || !lttng_opt_quiet) {
-			PERROR("sendmsg");
+	while (iov[0].iov_len) {
+		ret = sendmsg(sock, &msg, 0);
+		if (ret < 0) {
+			if (errno == EINTR) {
+				continue;
+			} else {
+				/*
+				 * Only warn about EPIPE when quiet mode is
+				 * deactivated.
+				 * We consider EPIPE as expected.
+				 */
+				if (errno != EPIPE || !lttng_opt_quiet) {
+					PERROR("sendmsg");
+				}
+				goto end;
+			}
 		}
+		iov[0].iov_len -= ret;
+		iov[0].iov_base += ret;
 	}
-
+	ret = len;
+end:
 	return ret;
 }
 
