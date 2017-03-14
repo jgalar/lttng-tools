@@ -411,44 +411,95 @@ void consumer_timer_signal_thread_qs(unsigned int signr)
 }
 
 /*
- * Set the timer for periodical metadata flush.
+ * Start a timer channel timer which will fire at a given interval
+ * (timer_interval_us)and fire a given signal (signal).
+ *
+ * Returns a negative value on error, 0 if a timer was created, and
+ * a positive value if no timer was created (not an error).
  */
-void consumer_timer_switch_start(struct lttng_consumer_channel *channel,
-		unsigned int switch_timer_interval)
+static
+int consumer_channel_timer_start(timer_t *timer_id,
+		struct lttng_consumer_channel *channel,
+		unsigned int timer_interval_us, int signal)
 {
-	int ret;
+	int ret = 0, delete_ret;
 	struct sigevent sev;
 	struct itimerspec its;
 
 	assert(channel);
 	assert(channel->key);
 
-	if (switch_timer_interval == 0) {
-		return;
+	if (timer_interval_us == 0) {
+		/* No creation needed; not an error. */
+		ret = 1;
+		goto end;
 	}
 
 	sev.sigev_notify = SIGEV_SIGNAL;
-	sev.sigev_signo = LTTNG_CONSUMER_SIG_SWITCH;
+	sev.sigev_signo = signal;
 	sev.sigev_value.sival_ptr = channel;
-	ret = timer_create(CLOCKID, &sev, &channel->switch_timer);
+	ret = timer_create(CLOCKID, &sev, timer_id);
 	if (ret == -1) {
 		PERROR("timer_create");
+		goto end;
 	}
-	channel->switch_timer_enabled = 1;
 
-	its.it_value.tv_sec = switch_timer_interval / 1000000;
-	its.it_value.tv_nsec = (switch_timer_interval % 1000000) * 1000;
+	its.it_value.tv_sec = timer_interval_us / 1000000;
+	its.it_value.tv_nsec = (timer_interval_us % 1000000) * 1000;
 	its.it_interval.tv_sec = its.it_value.tv_sec;
 	its.it_interval.tv_nsec = its.it_value.tv_nsec;
 
-	ret = timer_settime(channel->switch_timer, 0, &its, NULL);
+	ret = timer_settime(*timer_id, 0, &its, NULL);
 	if (ret == -1) {
 		PERROR("timer_settime");
+		goto error_destroy_timer;
 	}
+end:
+	return ret;
+error_destroy_timer:
+	delete_ret = timer_delete(*timer_id);
+	if (delete_ret == -1) {
+		PERROR("timer_delete");
+	}
+	goto end;
+}
+
+static
+int consumer_channel_timer_stop(timer_t *timer_id, int signal)
+{
+	int ret = 0;
+
+	ret = timer_delete(*timer_id);
+	if (ret == -1) {
+		PERROR("timer_delete");
+		goto end;
+	}
+
+	consumer_timer_signal_thread_qs(signal);
+	*timer_id = 0;
+end:
+	return ret;
 }
 
 /*
- * Stop and delete timer.
+ * Set the timer for periodical metadata flush.
+ */
+void consumer_timer_switch_start(struct lttng_consumer_channel *channel,
+		unsigned int switch_timer_interval_us)
+{
+	int ret;
+
+	assert(channel);
+	assert(channel->key);
+
+	ret = consumer_channel_timer_start(&channel->switch_timer, channel,
+			switch_timer_interval_us, LTTNG_CONSUMER_SIG_SWITCH);
+
+	channel->switch_timer_enabled = !!(ret == 0);
+}
+
+/*
+ * Stop and delete the channel's switch timer.
  */
 void consumer_timer_switch_stop(struct lttng_consumer_channel *channel)
 {
@@ -456,14 +507,12 @@ void consumer_timer_switch_stop(struct lttng_consumer_channel *channel)
 
 	assert(channel);
 
-	ret = timer_delete(channel->switch_timer);
+	ret = consumer_channel_timer_stop(&channel->switch_timer,
+			LTTNG_CONSUMER_SIG_SWITCH);
 	if (ret == -1) {
-		PERROR("timer_delete");
+		ERR("Failed to stop switch timer");
 	}
 
-	consumer_timer_signal_thread_qs(LTTNG_CONSUMER_SIG_SWITCH);
-
-	channel->switch_timer = 0;
 	channel->switch_timer_enabled = 0;
 }
 
@@ -471,41 +520,21 @@ void consumer_timer_switch_stop(struct lttng_consumer_channel *channel)
  * Set the timer for the live mode.
  */
 void consumer_timer_live_start(struct lttng_consumer_channel *channel,
-		int live_timer_interval)
+		unsigned int live_timer_interval_us)
 {
 	int ret;
-	struct sigevent sev;
-	struct itimerspec its;
 
 	assert(channel);
 	assert(channel->key);
 
-	if (live_timer_interval <= 0) {
-		return;
-	}
+	ret = consumer_channel_timer_start(&channel->live_timer, channel,
+			live_timer_interval_us, LTTNG_CONSUMER_SIG_LIVE);
 
-	sev.sigev_notify = SIGEV_SIGNAL;
-	sev.sigev_signo = LTTNG_CONSUMER_SIG_LIVE;
-	sev.sigev_value.sival_ptr = channel;
-	ret = timer_create(CLOCKID, &sev, &channel->live_timer);
-	if (ret == -1) {
-		PERROR("timer_create");
-	}
-	channel->live_timer_enabled = 1;
-
-	its.it_value.tv_sec = live_timer_interval / 1000000;
-	its.it_value.tv_nsec = (live_timer_interval % 1000000) * 1000;
-	its.it_interval.tv_sec = its.it_value.tv_sec;
-	its.it_interval.tv_nsec = its.it_value.tv_nsec;
-
-	ret = timer_settime(channel->live_timer, 0, &its, NULL);
-	if (ret == -1) {
-		PERROR("timer_settime");
-	}
+	channel->live_timer_enabled = !!(ret == 0);
 }
 
 /*
- * Stop and delete timer.
+ * Stop and delete the channel's live timer.
  */
 void consumer_timer_live_stop(struct lttng_consumer_channel *channel)
 {
@@ -513,14 +542,12 @@ void consumer_timer_live_stop(struct lttng_consumer_channel *channel)
 
 	assert(channel);
 
-	ret = timer_delete(channel->live_timer);
+	ret = consumer_channel_timer_stop(&channel->live_timer,
+			LTTNG_CONSUMER_SIG_LIVE);
 	if (ret == -1) {
-		PERROR("timer_delete");
+		ERR("Failed to stop live timer");
 	}
 
-	consumer_timer_signal_thread_qs(LTTNG_CONSUMER_SIG_LIVE);
-
-	channel->live_timer = 0;
 	channel->live_timer_enabled = 0;
 }
 
