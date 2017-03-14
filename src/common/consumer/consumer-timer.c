@@ -602,6 +602,12 @@ void *consumer_timer_thread(void *data)
 		health_poll_entry();
 		signr = sigwaitinfo(&mask, &info);
 		health_poll_exit();
+
+		/*
+		 * NOTE: cascading conditions are used instead of a switch case
+		 * since the use of SIGRTMIN in the definition of the signals'
+		 * values prevents the reduction to an integer constant.
+		 */
 		if (signr == -1) {
 			if (errno != EINTR) {
 				PERROR("sigwaitinfo");
