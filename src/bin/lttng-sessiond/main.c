@@ -6014,6 +6014,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create notification");
 		retval = -1;
+		stop_threads();
 		goto exit_notification;
 	}
 
@@ -6024,6 +6025,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create clients");
 		retval = -1;
+		stop_threads();
 		goto exit_client;
 	}
 
@@ -6034,6 +6036,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create dispatch");
 		retval = -1;
+		stop_threads();
 		goto exit_dispatch;
 	}
 
@@ -6044,6 +6047,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create registration");
 		retval = -1;
+		stop_threads();
 		goto exit_reg_apps;
 	}
 
@@ -6054,6 +6058,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create apps");
 		retval = -1;
+		stop_threads();
 		goto exit_apps;
 	}
 
@@ -6064,6 +6069,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create notify");
 		retval = -1;
+		stop_threads();
 		goto exit_apps_notify;
 	}
 
@@ -6074,6 +6080,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create agent");
 		retval = -1;
+		stop_threads();
 		goto exit_agent_reg;
 	}
 
@@ -6086,6 +6093,7 @@ int main(int argc, char **argv)
 			errno = ret;
 			PERROR("pthread_create kernel");
 			retval = -1;
+			stop_threads();
 			goto exit_kernel;
 		}
 	}
@@ -6097,6 +6105,7 @@ int main(int argc, char **argv)
 		errno = ret;
 		PERROR("pthread_create load_session_thread");
 		retval = -1;
+		stop_threads();
 		goto exit_load_session;
 	}
 
