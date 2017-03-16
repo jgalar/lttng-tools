@@ -125,6 +125,7 @@ ssize_t lttng_trigger_create_from_buffer(const char *buf,
 
 	*trigger = lttng_trigger_create(condition, action);
 	if (!*trigger) {
+		ret = -1;
 		goto error;
 	}
 	ret = offset;

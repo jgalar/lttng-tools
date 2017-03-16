@@ -387,7 +387,7 @@ ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(const char *buf,
 		struct lttng_evaluation **_evaluation)
 {
 	ssize_t ret;
-	struct lttng_evaluation *evaluation;
+	struct lttng_evaluation *evaluation = NULL;
 
 	if (!_evaluation) {
 		ret = -1;
@@ -414,7 +414,7 @@ ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(const char *buf,
 		struct lttng_evaluation **_evaluation)
 {
 	ssize_t ret;
-	struct lttng_evaluation *evaluation;
+	struct lttng_evaluation *evaluation = NULL;
 
 	if (!_evaluation) {
 		ret = -1;
@@ -424,6 +424,7 @@ ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(const char *buf,
 	evaluation = create_evaluation_from_buffer(
 			LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH, buf);
 	if (!evaluation) {
+		ret = -1;
 		goto error;
 	}
 

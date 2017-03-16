@@ -128,6 +128,7 @@ ssize_t lttng_notification_create_from_buffer(const char *buf,
 
 	*notification = lttng_notification_create(condition, evaluation);
 	if (!*notification) {
+		ret = -1;
 		goto error;
 	}
 	ret = offset;
