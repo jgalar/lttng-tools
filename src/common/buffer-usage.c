@@ -397,6 +397,7 @@ ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(const char *buf,
 	evaluation = create_evaluation_from_buffer(
 			LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW, buf);
 	if (!evaluation) {
+		ret = -1;
 		goto error;
 	}
 
