@@ -686,7 +686,7 @@ end:
 }
 
 /*
- * Execute action on a monitor timer
+ * Execute action on a monitor timer.
  */
 static
 void monitor_timer(struct lttng_consumer_local_data *ctx,

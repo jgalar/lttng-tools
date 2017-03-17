@@ -39,33 +39,122 @@
 #include <urcu/list.h>
 
 #define CLIENT_RECEPTION_BUFFER_SIZE	(4 * PAGE_SIZE)
-#define SIMULATION_TIMER_INTERVAL_NS 	2 * NSEC_PER_SEC
-#define SIMULATION_TIMER_SIGNAL		SIGRTMIN + 10
 
-static int simulation_timer_event_fd = -1;
-static timer_t simulation_timer;
+struct channel_id {
+	uint64_t key;
+	enum lttng_domain_type domain;
+};
 
-struct client {
+struct channel_state {
+	uint64_t highest_usage;
+	uint64_t lowest_usage;
+};
+
+struct notification_client {
 	int socket;
-	struct cds_list_head list_node;
 	/*
-	 * Conditions to which the client is registered.
+	 * Conditions to which the client's notification channel is subscribed.
 	 */
 	struct cds_list_head condition_list;
 };
 
-static struct cds_list_head client_list;
+/**
+ * This thread maintains an internal state associating clients and triggers.
+ *
+ * In order to speed-up and simplify queries, hash tables providing the
+ * following associations are maintained:
+ *   - client_socket_ht: associate a client's socket (fd) to its "struct client"
+ *         This hash table owns the "struct client" which must thus be
+ *         disposed-of on removal from the hash table.
+ *
+ *   - channel_triggers_ht:
+ *             associates a struct channel_id to a list of
+ *             struct lttng_trigger_list_nodes. The triggers in this list are
+ *             those that have conditions that apply to this channel.
+ *             This hash table owns the list _and_ triggers.
+ *
+ *   - channel_state_ht:
+ *             associates a struct channel_id to its last sampled state received
+ *             from the consumer daemon (struct channel_state).
+ *             This previous sample is kept to implement edge-triggered
+ *             conditions as we need to detect the state transitions.
+ *             This hash table owns the channel state.
+ *
+ *   - notification_trigger_condition_clients_ht:
+ *             associates lttng_conditions of registered notification-emitting
+ *             triggers to clients (struct notification_client_ht_node)
+ *             subscribed to those conditions.
+ *             This hash table owns the notification_client_ht_node, but not the
+ *             underlying notification_client.
+ *
+ *
+ * The thread reacts to the following internal events:
+ *   1) creation of a tracing channel,
+ *   2) destruction of a tracing channel,
+ *   3) registration of a trigger,
+ *   4) unregistration of a trigger,
+ *   5) reception of a channel monitor sample from the consumer daemon.
+ *
+ * Events specific to notification-emitting triggers:
+ *   6) connection of a notification client,
+ *   7) disconnection of a notification client,
+ *   8) subscription of a client to a conditions' notifications,
+ *   9) unsubscription of a client from a conditions' notifications,
+ *
+ *
+ * 1) Creation of a tracing channel
+ *    - trigger_list is traversed to identify triggers which apply to this new
+ *      channel,
+ *    - triggers identified are added to the channel_triggers_ht.
+ *
+ * 2) Destruction of a tracing channel
+ *    - remove entry from channel_triggers_ht, releasing the list and references
+ *      to the triggers,
+ *    - remove entry from the channel_state_ht.
+ *
+ * 3) Registration of a trigger
+ *    - add trigger to the trigger_list,
+ *    - if the trigger's action is of type "notify",
+ *      - traverse the list of conditions of every client to build a list of
+ *        clients which have to be notified when this trigger's condition is met,
+ *        - add list of clients (even if it is empty) to the
+ *          notification_trigger_condition_clients_ht,
+ *    - add trigger to channel_triggers_ht (if applicable),
+ *
+ * 4) Unregistration of a trigger
+ *    - remove trigger from the trigger_list,
+ *    - if the trigger's action is of type "notify",
+ *      - remove the trigger from the notification_trigger_condition_clients_ht,
+ *    - remove trigger from channel_triggers_ht (if applicable),
+ *
+ * 5) Reception of a channel monitor sample from the consumer daemon
+ *    - evaluate the conditions associated with the triggers found in
+ *      the channel_triggers_ht,
+ *      - if a condition evaluates to "true" and the condition is of type
+ *        "notify", query the notification_trigger_condition_clients_ht and send
+ *        a notification to the clients.
+ *
+ * 6) Connection of a client
+ *    - add client socket to the client_socket_ht.
+ *
+ * 7) Disconnection of a client
+ *    - remove client socket from the client_socket_ht,
+ *    - traverse all conditions to which the client is subscribed and remove
+ *      the client from the notification_trigger_condition_clients_ht.
+ *
+ * 8) Subscription of a client to a condition's notifications
+ *    - Add the condition to the client's list of subscribed conditions,
+ *    - Look-up notification_trigger_condition_clients_ht and add the client to
+ *      list of clients.
+ *
+ * 9) Unsubscription of a client to a condition's notifications
+ *    - Remove the condition from the client's list of subscribed conditions,
+ *    - Look-up notification_trigger_condition_clients_ht and remove the client
+ *      from the list of clients.
+ */
+
 static struct cds_list_head trigger_list;
 static char *client_reception_buffer;
-
-/*
- * The simulation timer will alternate between "buffers" between full and
- * empty values, firing all low/high usage triggers in alternance.
- */
-static pthread_mutex_t simulation_lock = PTHREAD_MUTEX_INITIALIZER;
-static uint64_t simulation_buffer_use_bytes;
-static double simulation_buffer_use_ratio = 0.0;
-static uint64_t simulation_buffer_capacity = UINT32_MAX;
 
 /*
  * Destroy the thread data previously created by the init function.
@@ -175,84 +264,6 @@ end:
 error:
 	notification_destroy_data(data);
 	return NULL;
-}
-
-static
-void simulation_timer_thread(union sigval val)
-{
-	int ret;
-	uint64_t counter = 1;
-
-	pthread_mutex_lock(&simulation_lock);
-	if (simulation_buffer_use_bytes == 0) {
-		simulation_buffer_use_bytes = UINT32_MAX;
-		simulation_buffer_use_ratio = 1.0;
-	} else {
-		simulation_buffer_use_bytes = 0;
-		simulation_buffer_use_ratio = 0.0;
-	}
-	pthread_mutex_unlock(&simulation_lock);
-	ret = write(simulation_timer_event_fd, &counter, sizeof(counter));
-	if (ret < 0) {
-		PERROR("writer simulation timer event fd");
-	}
-}
-
-static
-int simulation_timer_start(void)
-{
-	int ret;
-	struct sigevent sev;
-	struct itimerspec its;
-
-	ret = eventfd(0, EFD_CLOEXEC);
-	if (ret < 0) {
-		PERROR("eventfd simulation timer event fd");
-		goto error;
-	}
-	simulation_timer_event_fd = ret;
-
-	sev.sigev_notify = SIGEV_THREAD;
-	sev.sigev_value.sival_ptr = NULL;
-	sev.sigev_notify_function = simulation_timer_thread;
-	sev.sigev_notify_attributes = NULL;
-
-	/*
-	 * Valgrind indicates a leak when timer_create() is used
-	 * in the "SIGEV_THREAD" mode. This bug has been known to upstream glibc
-	 * since 2009, but no fix has been implemented so far.
-	 */
-	ret = timer_create(CLOCK_MONOTONIC, &sev, &simulation_timer);
-	if (ret < 0) {
-		PERROR("timer_create simulation timer");
-		goto error;
-	}
-
-	its.it_value.tv_sec = SIMULATION_TIMER_INTERVAL_NS / NSEC_PER_SEC;
-	its.it_value.tv_nsec = (SIMULATION_TIMER_INTERVAL_NS % NSEC_PER_SEC);
-	its.it_interval.tv_sec = its.it_value.tv_sec;
-	its.it_interval.tv_nsec = its.it_value.tv_nsec;
-
-	ret = timer_settime(simulation_timer, 0, &its, NULL);
-	if (ret < 0) {
-		PERROR("timer_settime simulation timer");
-		goto error;
-	}
-
-	return 0;
-error:
-	return -1;
-}
-
-static
-void simulation_timer_stop(void)
-{
-	int ret;
-
-	ret = timer_delete(simulation_timer);
-	if (ret == -1) {
-		PERROR("timer_delete simulation timer");
-	}
 }
 
 static
@@ -575,6 +586,7 @@ struct lttng_evaluation *evaluate_buffer_usage_condition(
 		struct lttng_condition *_condition)
 {
 	uint64_t threshold;
+	uint64_t buffer_use = 0, buffer_capacity = 0;
 	struct lttng_evaluation *evaluation = NULL;
 	struct lttng_condition_buffer_usage *condition = container_of(
 			_condition, struct lttng_condition_buffer_usage,
@@ -585,23 +597,23 @@ struct lttng_evaluation *evaluate_buffer_usage_condition(
 	} else {
 		/* Threshold was expressed as a ratio. */
 		threshold = (uint64_t) (condition->threshold_ratio.value *
-				(double) simulation_buffer_capacity);
+				(double) buffer_capacity);
 	}
 
 	if (condition->parent.type ==
 			LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW) {
-		if (simulation_buffer_use_bytes <= threshold) {
+		if (buffer_use <= threshold) {
 			evaluation = lttng_evaluation_buffer_usage_create(
 					condition->parent.type,
-					simulation_buffer_use_bytes,
-					simulation_buffer_capacity);
+					buffer_use,
+					buffer_capacity);
 		}
 	} else {
-		if (simulation_buffer_use_bytes >= threshold) {
+		if (buffer_use >= threshold) {
 			evaluation = lttng_evaluation_buffer_usage_create(
 					condition->parent.type,
-					simulation_buffer_use_bytes,
-					simulation_buffer_capacity);
+					buffer_use,
+					buffer_capacity);
 		}
 	}
 	return evaluation;
@@ -678,6 +690,67 @@ void evaluate_client_conditions(void)
 	DBG("[notification-thread] Client conditions evaluated");
 }
 
+static
+int init_poll_set(struct lttng_poll_event *poll_set,
+		struct notification_thread_data *ctx,
+		int notification_channel_socket)
+{
+	int ret;
+
+	/*
+	 * Create pollset with size 6:
+	 *	- quit pipe,
+	 *	- notification channel socket (listen for new connections),
+	 *	- command queue event fd (internal sessiond commands),
+	 *	- consumerd (32-bit user space) channel monitor pipe,
+	 *	- consumerd (64-but user space) channel monitor pipe,
+	 *	- consumerd (kernel) channel monitor pipe.
+	 */
+	ret = sessiond_set_thread_pollset(poll_set, 6);
+	if (ret < 0) {
+		goto end;
+	}
+
+	ret = lttng_poll_add(poll_set, notification_channel_socket,
+			LPOLLIN | LPOLLERR | LPOLLHUP | LPOLLRDHUP);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add notification channel socket to pollset");
+		goto error;
+	}
+	ret = lttng_poll_add(poll_set, ctx->cmd_queue.event_fd,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add notification command queue event fd to pollset");
+		goto error;
+	}
+	ret = lttng_poll_add(poll_set,
+			ctx->channel_monitoring_pipes.ust32_consumer,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add ust-32 channel monitoring pipe fd to pollset");
+		goto error;
+	}
+	ret = lttng_poll_add(poll_set,
+			ctx->channel_monitoring_pipes.ust64_consumer,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add ust-64 channel monitoring pipe fd to pollset");
+		goto error;
+	}
+	ret = lttng_poll_add(poll_set,
+			ctx->channel_monitoring_pipes.kernel_consumer,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add kernel channel monitoring pipe fd to pollset");
+		goto error;
+	}
+end:
+	return ret;
+error:
+	lttng_poll_clean(poll_set);
+	return ret;
+}
+
 /*
  * This thread services notification channel clients and received notifications
  * from various lttng-sessiond components over a command queue.
@@ -693,8 +766,6 @@ void *thread_notification(void *data)
 
 	CDS_INIT_LIST_HEAD(&client_list);
 	CDS_INIT_LIST_HEAD(&trigger_list);
-
-	simulation_timer_start();
 
 	if (!ctx) {
 		ERR("[notification-thread] Invalid thread context provided");
@@ -719,35 +790,9 @@ void *thread_notification(void *data)
 	}
 	notification_channel_socket = ret;
 
-	/*
-	 * Create pollset with size 2, quit pipe and notification channel
-	 * socket, and the command queue event fd.
-	 */
-	ret = sessiond_set_thread_pollset(&events, 3);
-	if (ret < 0) {
-		goto error_poll_create;
-	}
-
-	/* Add notification channel socket to poll set. */
-	ret = lttng_poll_add(&events, notification_channel_socket,
-			LPOLLIN | LPOLLERR | LPOLLHUP | LPOLLRDHUP);
-	if (ret < 0) {
-		ERR("[notification-thread] Failed to add notification channel socket to pollset");
-		goto error;
-	}
-
-	ret = lttng_poll_add(&events, ctx->cmd_queue.event_fd,
-			LPOLLIN | LPOLLERR);
-	if (ret < 0) {
-		ERR("[notification-thread] Failed to add notification command queue event fd to pollset");
-		goto error;
-	}
-
-	ret = lttng_poll_add(&events, simulation_timer_event_fd,
-			LPOLLIN | LPOLLERR);
-	if (ret < 0) {
-		ERR("[notification-thread] Failed to add timer event fd to pollset");
-		goto error;
+	ret = init_poll_set(&events, ctx, notification_channel_socket);
+	if (ret) {
+		goto end;
 	}
 
 	DBG("[notification-thread] Listening on notification channel socket");
@@ -758,8 +803,8 @@ void *thread_notification(void *data)
 	}
 
 	/* Ready to handle client connections. */
-
 	sessiond_notify_ready();
+
 	while (true) {
 		int fd_count, i;
 
@@ -836,22 +881,6 @@ void *thread_notification(void *data)
 				pthread_mutex_lock(&ctx->cmd_queue.lock);
 				activate_triggers(&ctx->cmd_queue.list);
 				pthread_mutex_unlock(&ctx->cmd_queue.lock);
-			} else if (fd == simulation_timer_event_fd) {
-				/*
-				 * Place-holder timer to simulate activity in
-				 * the system.
-				 */
-				uint64_t counter;
-
-				DBG("[notification-thread] Simulation timer fired");
-				ret = read(fd, &counter, sizeof(counter));
-				if (ret < 0) {
-					ERR("read on simulation timer event fd");
-				}
-
-				pthread_mutex_lock(&simulation_lock);
-				evaluate_client_conditions();
-				pthread_mutex_unlock(&simulation_lock);
 			} else {
 				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 					/*
@@ -876,10 +905,8 @@ void *thread_notification(void *data)
 		}
 	}
 exit:
-
 error:
 	lttng_poll_clean(&events);
-error_poll_create:
 	notification_channel_socket_destroy(notification_channel_socket);
 	health_unregister(health_sessiond);
 	rcu_thread_offline();
@@ -887,6 +914,5 @@ error_poll_create:
 	free(client_reception_buffer);
 	clean_up_triggers();
 end:
-	simulation_timer_stop();
 	return NULL;
 }
