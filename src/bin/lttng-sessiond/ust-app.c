@@ -3075,6 +3075,7 @@ static int create_ust_app_channel(struct ust_app_session *ua_sess,
 
 	/* Only add the channel if successful on the tracer side. */
 	lttng_ht_add_unique_str(ua_sess->channels, &ua_chan->node);
+	/* TODO NOTIFY NOTIFICATION THREAD OF CHANNEL CREATION */
 
 end:
 	if (ua_chanp) {

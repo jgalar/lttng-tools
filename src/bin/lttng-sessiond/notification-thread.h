@@ -20,6 +20,7 @@
 
 #include <urcu/wfcqueue.h>
 #include <lttng/trigger/trigger.h>
+#include <common/pipe.h>
 #include <pthread.h>
 
 enum notification_command_type {
@@ -46,11 +47,20 @@ struct notification_thread_data {
 	 * event_fd must be WRITE(2) to signal that a new command
 	 * has been enqueued.
 	 */
-	struct notification_cmd_queue {
+	struct {
 		int event_fd;
 		struct cds_list_head list;
 		pthread_mutex_t lock;
 	} cmd_queue;
+	/*
+	 * Read side of pipes used to receive channel status info collected
+	 * by the various consumer daemons.
+	 */
+	struct {
+		int ust32_consumer;
+		int ust64_consumer;
+		int kernel_consumer;
+	} channel_monitoring_pipes;
 };
 
 struct notification_command *notification_new_trigger_command_create(
@@ -60,7 +70,11 @@ struct notification_command *notification_new_trigger_command_destroy(
 
 void *thread_notification(void *data);
 
-struct notification_thread_data *notification_init_data(void);
+/* notification_thread_data takes ownership of the channel monitor pipes. */
+struct notification_thread_data *notification_create_data(
+		struct lttng_pipe *ust32_channel_monitor_pipe,
+		struct lttng_pipe *ust64_channel_monitor_pipe,
+		struct lttng_pipe *kernel_channel_monitor_pipe);
 void notification_destroy_data(struct notification_thread_data *data);
 
 #endif /* NOTIFICATION_THREAD_H */

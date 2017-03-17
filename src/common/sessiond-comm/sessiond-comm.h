@@ -148,6 +148,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_RELAYD_FAIL,              /* Error on remote relayd */
 	LTTCOMM_CONSUMERD_CHANNEL_FAIL,             /* Channel creation failed. */
 	LTTCOMM_CONSUMERD_CHAN_NOT_FOUND,           /* Channel not found. */
+	LTTCOMM_CONSUMERD_ALREADY_SET,              /* Resource already set. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */
@@ -459,6 +460,7 @@ struct lttcomm_consumer_msg {
 			uint32_t switch_timer_interval;		/* usec */
 			uint32_t read_timer_interval;		/* usec */
 			unsigned int live_timer_interval;		/* usec */
+			uint32_t monitor_timer_interval;	/* usec */
 			int32_t output;				/* splice, mmap */
 			int32_t type;				/* metadata or per_cpu */
 			uint64_t session_id;			/* Tracing session id */
@@ -534,6 +536,19 @@ struct lttcomm_consumer_msg {
 			uint64_t session_id;
 		} LTTNG_PACKED regenerate_metadata;
 	} u;
+} LTTNG_PACKED;
+
+/*
+ * Channel monitoring message returned to the session daemon on every
+ * monitor timer expiration.
+ */
+struct lttcomm_consumer_channel_monitor_msg {
+	/* Key of the sampled channel. */
+	uint64_t key;
+	/*
+	 * Lowest and highest usage (bytes) at the moment the sample was taken.
+	 */
+	uint64_t lowest, highest;
 } LTTNG_PACKED;
 
 /*

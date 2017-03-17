@@ -21,6 +21,7 @@
 #include <inttypes.h>
 #include <signal.h>
 
+#include <lttng/ust-ctl.h>
 #include <bin/lttng-consumerd/health-consumerd.h>
 #include <common/common.h>
 #include <common/compat/endian.h>
@@ -61,7 +62,13 @@ static void setmask(sigset_t *mask)
 	if (ret) {
 		PERROR("sigaddset live");
 	}
+	ret = sigaddset(mask, LTTNG_CONSUMER_SIG_MONITOR);
+	if (ret) {
+		PERROR("sigaddset monitor");
+	}
 }
+
+static int channel_monitor_pipe = -1;
 
 /*
  * Execute action on a timer switch.
@@ -482,7 +489,7 @@ end:
 }
 
 /*
- * Set the timer for periodical metadata flush.
+ * Set the channel's switch timer.
  */
 void consumer_timer_switch_start(struct lttng_consumer_channel *channel,
 		unsigned int switch_timer_interval_us)
@@ -517,7 +524,7 @@ void consumer_timer_switch_stop(struct lttng_consumer_channel *channel)
 }
 
 /*
- * Set the timer for the live mode.
+ * Set the channel's live timer.
  */
 void consumer_timer_live_start(struct lttng_consumer_channel *channel,
 		unsigned int live_timer_interval_us)
@@ -552,6 +559,49 @@ void consumer_timer_live_stop(struct lttng_consumer_channel *channel)
 }
 
 /*
+ * Set the channel's monitoring timer.
+ *
+ * Returns a negative value on error, 0 if a timer was created, and
+ * a positive value if no timer was created (not an error).
+ */
+int consumer_timer_monitor_start(struct lttng_consumer_channel *channel,
+		unsigned int monitor_timer_interval_us)
+{
+	int ret;
+
+	assert(channel);
+	assert(channel->key);
+	assert(!channel->monitor_timer_enabled);
+
+	ret = consumer_channel_timer_start(&channel->monitor_timer, channel,
+			monitor_timer_interval_us, LTTNG_CONSUMER_SIG_MONITOR);
+	channel->monitor_timer_enabled = !!(ret == 0);
+	return ret;
+}
+
+/*
+ * Stop and delete the channel's monitoring timer.
+ */
+int consumer_timer_monitor_stop(struct lttng_consumer_channel *channel)
+{
+	int ret;
+
+	assert(channel);
+	assert(channel->monitor_timer_enabled);
+
+	ret = consumer_channel_timer_stop(&channel->monitor_timer,
+			LTTNG_CONSUMER_SIG_MONITOR);
+	if (ret == -1) {
+		ERR("Failed to stop live timer");
+		goto end;
+	}
+
+	channel->monitor_timer_enabled = 0;
+end:
+	return ret;
+}
+
+/*
  * Block the RT signals for the entire process. It must be called from the
  * consumer main before creating the threads
  */
@@ -571,9 +621,159 @@ int consumer_signal_init(void)
 	return 0;
 }
 
+static
+int sample_ust_positions(struct lttng_consumer_channel *channel,
+		uint64_t *_highest_use, uint64_t *_lowest_use)
+{
+	int ret;
+	struct lttng_ht_iter iter;
+	struct lttng_consumer_stream *stream;
+	bool empty_channel = true;
+	uint64_t high = 0, low = UINT64_MAX;
+	struct lttng_ht *ht = consumer_data.stream_per_chan_id_ht;
+
+	rcu_read_lock();
+
+	cds_lfht_for_each_entry_duplicate(ht->ht,
+			ht->hash_fct(&channel->key, lttng_ht_seed),
+			ht->match_fct, &channel->key,
+			&iter.iter, stream, node_channel_id.node) {
+		unsigned long produced, consumed, usage;
+
+		empty_channel = false;
+
+		pthread_mutex_lock(&stream->lock);
+		if (cds_lfht_is_node_deleted(&stream->node.node)) {
+			goto next;
+		}
+
+		ret = ustctl_snapshot_sample_positions(stream->ustream);
+		if (ret) {
+			ERR("Failed to take buffer position snapshot in monitor timer (ret = %d)", ret);
+			pthread_mutex_unlock(&stream->lock);
+			goto end;
+		}
+		ret = ustctl_snapshot_get_consumed(stream->ustream,
+						   &consumed);
+		if (ret) {
+			ERR("Failed to get buffer consumed position in monitor timer");
+			pthread_mutex_unlock(&stream->lock);
+			goto end;
+		}
+		ret = ustctl_snapshot_get_produced(stream->ustream,
+						   &produced);
+		if (ret) {
+			ERR("Failed to get buffer produced position in monitor timer");
+			pthread_mutex_unlock(&stream->lock);
+			goto end;
+		}
+
+		usage = produced - consumed;
+		high = (usage > high) ? usage : high;
+		low = (usage < low) ? usage : low;
+	next:
+		pthread_mutex_unlock(&stream->lock);
+	}
+
+	*_highest_use = (uint64_t) high;
+	*_lowest_use = (uint64_t) low;
+end:
+	rcu_read_unlock();
+	if (empty_channel) {
+		ret = -1;
+	}
+	return ret;
+}
+
+/*
+ * Execute action on a monitor timer
+ */
+static
+void monitor_timer(struct lttng_consumer_local_data *ctx,
+		struct lttng_consumer_channel *channel)
+{
+	int ret;
+	int channel_monitor_pipe =
+			consumer_timer_thread_get_channel_monitor_pipe();
+	struct lttcomm_consumer_channel_monitor_msg msg = {
+		.key = channel->key,
+	};
+
+	assert(channel);
+	pthread_mutex_lock(&consumer_data.lock);
+
+	if (channel_monitor_pipe < 0) {
+		goto end;
+	}
+
+	switch (consumer_data.type) {
+	case LTTNG_CONSUMER_KERNEL:
+		/* TODO */
+		ret = -1;
+		break;
+	case LTTNG_CONSUMER32_UST:
+	case LTTNG_CONSUMER64_UST:
+	{
+		ret = sample_ust_positions(channel, &msg.highest, &msg.lowest);
+		break;
+	}
+	default:
+		abort();
+	}
+
+	if (ret) {
+		goto end;
+	}
+
+	/*
+	 * Writes performed here are assumed to be atomic which is only
+	 * guaranteed for sizes < than PIPE_BUF.
+	 */
+	assert(sizeof(msg) <= PIPE_BUF);
+
+	do {
+		ret = write(channel_monitor_pipe, &msg, sizeof(msg));
+	} while (ret == -1 && errno == EINTR);
+	if (ret == -1) {
+		if (errno == EAGAIN) {
+			/* Not an error, the sample is merely dropped. */
+			DBG("Channel monitor pipe is full; dropping sample for channel key = %"PRIu64,
+					channel->key);
+		} else {
+			PERROR("write to the channel monitor pipe");
+		}
+	} else {
+		DBG("Sent channel monitoring sample for channel key %" PRIu64
+				", (highest = %" PRIu64 ", lowest = %"PRIu64")",
+				channel->key, msg.highest, msg.lowest);
+	}
+end:
+	pthread_mutex_unlock(&consumer_data.lock);
+}
+
+int consumer_timer_thread_get_channel_monitor_pipe(void)
+{
+	return uatomic_read(&channel_monitor_pipe);
+}
+
+int consumer_timer_thread_set_channel_monitor_pipe(int fd)
+{
+	int ret;
+
+	ret = uatomic_cmpxchg(&channel_monitor_pipe, -1, fd);
+	if (ret != -1) {
+		ret = -1;
+		goto end;
+	}
+	ret = 0;
+end:
+	return ret;
+}
+
 /*
  * This thread is the sighandler for signals LTTNG_CONSUMER_SIG_SWITCH,
- * LTTNG_CONSUMER_SIG_TEARDOWN and LTTNG_CONSUMER_SIG_LIVE.
+ * LTTNG_CONSUMER_SIG_TEARDOWN, LTTNG_CONSUMER_SIG_LIVE, and
+ * LTTNG_CONSUMER_SIG_MONITOR.
  */
 void *consumer_timer_thread(void *data)
 {
@@ -622,6 +822,11 @@ void *consumer_timer_thread(void *data)
 			DBG("Signal timer metadata thread teardown");
 		} else if (signr == LTTNG_CONSUMER_SIG_LIVE) {
 			live_timer(ctx, info.si_signo, &info);
+		} else if (signr == LTTNG_CONSUMER_SIG_MONITOR) {
+			struct lttng_consumer_channel *channel;
+
+			channel = info.si_value.sival_ptr;
+			monitor_timer(ctx, channel);
 		} else {
 			ERR("Unexpected signal %d\n", info.si_signo);
 		}

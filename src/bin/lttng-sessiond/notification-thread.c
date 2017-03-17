@@ -87,7 +87,26 @@ void notification_destroy_data(struct notification_thread_data *data)
 	}
 
 	pthread_mutex_destroy(&data->cmd_queue.lock);
-	/* TODO: purge queue and mark commands as cancelled. */
+	/* TODO: purge queue. */
+
+	if (data->channel_monitoring_pipes.ust32_consumer) {
+		ret = close(data->channel_monitoring_pipes.ust32_consumer);
+		if (ret) {
+			PERROR("close 32-bit consumer channel monitoring pipe");
+		}
+	}
+	if (data->channel_monitoring_pipes.ust64_consumer) {
+		ret = close(data->channel_monitoring_pipes.ust64_consumer);
+		if (ret) {
+			PERROR("close 64-bit consumer channel monitoring pipe");
+		}
+	}
+	if (data->channel_monitoring_pipes.kernel_consumer) {
+		ret = close(data->channel_monitoring_pipes.kernel_consumer);
+		if (ret) {
+			PERROR("close kernel consumer channel monitoring pipe");
+		}
+	}
 end:
 	free(data);
 }
@@ -96,7 +115,10 @@ end:
  * Initialize the thread's data. This MUST be called before the notification
  * thread is started.
  */
-struct notification_thread_data *notification_init_data(void)
+struct notification_thread_data *notification_create_data(
+		struct lttng_pipe *ust32_channel_monitor_pipe,
+		struct lttng_pipe *ust64_channel_monitor_pipe,
+		struct lttng_pipe *kernel_channel_monitor_pipe)
 {
 	int ret;
 	struct notification_thread_data *data;
@@ -106,6 +128,7 @@ struct notification_thread_data *notification_init_data(void)
 		goto end;
 	}
 
+	/* FIXME Replace eventfd by a pipe to support older kernels. */
 	data->cmd_queue.event_fd = eventfd(0, EFD_CLOEXEC);
 	if (data->cmd_queue.event_fd < 0) {
 		PERROR("eventfd notification command queue");
@@ -115,6 +138,37 @@ struct notification_thread_data *notification_init_data(void)
 	ret = pthread_mutex_init(&data->cmd_queue.lock, NULL);
 	if (ret) {
 		goto error;
+	}
+
+	if (ust32_channel_monitor_pipe) {
+		data->channel_monitoring_pipes.ust32_consumer =
+				lttng_pipe_release_readfd(
+					ust32_channel_monitor_pipe);
+		if (data->channel_monitoring_pipes.ust32_consumer < 0) {
+			goto error;
+		}
+	} else {
+		data->channel_monitoring_pipes.ust32_consumer = -1;
+	}
+	if (ust64_channel_monitor_pipe) {
+		data->channel_monitoring_pipes.ust64_consumer =
+				lttng_pipe_release_readfd(
+					ust64_channel_monitor_pipe);
+		if (data->channel_monitoring_pipes.ust64_consumer < 0) {
+			goto error;
+		}
+	} else {
+		data->channel_monitoring_pipes.ust64_consumer = -1;
+	}
+	if (kernel_channel_monitor_pipe) {
+		data->channel_monitoring_pipes.kernel_consumer =
+				lttng_pipe_release_readfd(
+					kernel_channel_monitor_pipe);
+		if (data->channel_monitoring_pipes.kernel_consumer < 0) {
+			goto error;
+		}
+	} else {
+		data->channel_monitoring_pipes.kernel_consumer = -1;
 	}
 end:
 	return data;
@@ -703,6 +757,9 @@ void *thread_notification(void *data)
 		goto error;
 	}
 
+	/* Ready to handle client connections. */
+
+	sessiond_notify_ready();
 	while (true) {
 		int fd_count, i;
 

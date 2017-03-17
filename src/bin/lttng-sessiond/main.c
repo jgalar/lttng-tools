@@ -105,6 +105,7 @@ static struct consumer_data kconsumer_data = {
 	.cmd_unix_sock_path = DEFAULT_KCONSUMERD_CMD_SOCK_PATH,
 	.err_sock = -1,
 	.cmd_sock = -1,
+	.channel_monitor_pipe = -1,
 	.pid_mutex = PTHREAD_MUTEX_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.cond = PTHREAD_COND_INITIALIZER,
@@ -116,6 +117,7 @@ static struct consumer_data ustconsumer64_data = {
 	.cmd_unix_sock_path = DEFAULT_USTCONSUMERD64_CMD_SOCK_PATH,
 	.err_sock = -1,
 	.cmd_sock = -1,
+	.channel_monitor_pipe = -1,
 	.pid_mutex = PTHREAD_MUTEX_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.cond = PTHREAD_COND_INITIALIZER,
@@ -127,6 +129,7 @@ static struct consumer_data ustconsumer32_data = {
 	.cmd_unix_sock_path = DEFAULT_USTCONSUMERD32_CMD_SOCK_PATH,
 	.err_sock = -1,
 	.cmd_sock = -1,
+	.channel_monitor_pipe = -1,
 	.pid_mutex = PTHREAD_MUTEX_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.cond = PTHREAD_COND_INITIALIZER,
@@ -314,11 +317,12 @@ struct notification_thread_data *notification_thread_data;
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
 
 /*
- * Whether sessiond is ready for commands/health check requests.
+ * Whether sessiond is ready for commands/notification channel/health check
+ * requests.
  * NR_LTTNG_SESSIOND_READY must match the number of calls to
  * sessiond_notify_ready().
  */
-#define NR_LTTNG_SESSIOND_READY		3
+#define NR_LTTNG_SESSIOND_READY		4
 int lttng_sessiond_ready = NR_LTTNG_SESSIOND_READY;
 
 int sessiond_check_thread_quit_pipe(int fd, uint32_t events)
@@ -524,6 +528,24 @@ static void close_consumer_sockets(void)
 		ret = close(ustconsumer64_data.cmd_sock);
 		if (ret < 0) {
 			PERROR("UST consumerd64 cmd_sock close");
+		}
+	}
+	if (kconsumer_data.channel_monitor_pipe >= 0) {
+		ret = close(kconsumer_data.channel_monitor_pipe);
+		if (ret < 0) {
+			PERROR("kernel consumer channel monitor pipe close");
+		}
+	}
+	if (ustconsumer32_data.channel_monitor_pipe >= 0) {
+		ret = close(ustconsumer32_data.channel_monitor_pipe);
+		if (ret < 0) {
+			PERROR("UST consumerd32 channel monitor pipe close");
+		}
+	}
+	if (ustconsumer64_data.channel_monitor_pipe >= 0) {
+		ret = close(ustconsumer64_data.channel_monitor_pipe);
+		if (ret < 0) {
+			PERROR("UST consumerd64 channel monitor pipe close");
 		}
 	}
 }
@@ -1233,6 +1255,7 @@ static void *thread_manage_consumer(void *data)
 	enum lttcomm_return_code code;
 	struct lttng_poll_event events;
 	struct consumer_data *consumer_data = data;
+	struct consumer_socket *cmd_socket_wrapper = NULL;
 
 	DBG("[thread] Manage consumer started");
 
@@ -1342,39 +1365,43 @@ restart:
 	}
 
 	health_code_update();
-	if (code == LTTCOMM_CONSUMERD_COMMAND_SOCK_READY) {
-		/* Connect both socket, command and metadata. */
-		consumer_data->cmd_sock =
-			lttcomm_connect_unix_sock(consumer_data->cmd_unix_sock_path);
-		consumer_data->metadata_fd =
-			lttcomm_connect_unix_sock(consumer_data->cmd_unix_sock_path);
-		if (consumer_data->cmd_sock < 0
-				|| consumer_data->metadata_fd < 0) {
-			PERROR("consumer connect cmd socket");
-			/* On error, signal condition and quit. */
-			signal_consumer_condition(consumer_data, -1);
-			goto error;
-		}
-		consumer_data->metadata_sock.fd_ptr = &consumer_data->metadata_fd;
-		/* Create metadata socket lock. */
-		consumer_data->metadata_sock.lock = zmalloc(sizeof(pthread_mutex_t));
-		if (consumer_data->metadata_sock.lock == NULL) {
-			PERROR("zmalloc pthread mutex");
-			goto error;
-		}
-		pthread_mutex_init(consumer_data->metadata_sock.lock, NULL);
-
-		signal_consumer_condition(consumer_data, 1);
-		DBG("Consumer command socket ready (fd: %d", consumer_data->cmd_sock);
-		DBG("Consumer metadata socket ready (fd: %d)",
-				consumer_data->metadata_fd);
-	} else {
+	if (code != LTTCOMM_CONSUMERD_COMMAND_SOCK_READY) {
 		ERR("consumer error when waiting for SOCK_READY : %s",
 				lttcomm_get_readable_code(-code));
 		goto error;
 	}
+	
+	/* Connect both command and metadata sockets. */
+	consumer_data->cmd_sock =
+			lttcomm_connect_unix_sock(
+				consumer_data->cmd_unix_sock_path);
+	consumer_data->metadata_fd =
+			lttcomm_connect_unix_sock(
+				consumer_data->cmd_unix_sock_path);
+	if (consumer_data->cmd_sock < 0 || consumer_data->metadata_fd < 0) {
+		PERROR("consumer connect cmd socket");
+		/* On error, signal condition and quit. */
+		signal_consumer_condition(consumer_data, -1);
+		goto error;
+	}
 
-	/* Remove the consumerd error sock since we've established a connexion */
+	consumer_data->metadata_sock.fd_ptr = &consumer_data->metadata_fd;
+
+	/* Create metadata socket lock. */
+	consumer_data->metadata_sock.lock = zmalloc(sizeof(pthread_mutex_t));
+	if (consumer_data->metadata_sock.lock == NULL) {
+		PERROR("zmalloc pthread mutex");
+		goto error;
+	}
+	pthread_mutex_init(consumer_data->metadata_sock.lock, NULL);
+
+	DBG("Consumer command socket ready (fd: %d", consumer_data->cmd_sock);
+	DBG("Consumer metadata socket ready (fd: %d)",
+			consumer_data->metadata_fd);
+
+	/*
+	 * Remove the consumerd error sock since we've established a connection.
+	 */
 	ret = lttng_poll_del(&events, consumer_data->err_sock);
 	if (ret < 0) {
 		goto error;
@@ -1394,6 +1421,27 @@ restart:
 	}
 
 	health_code_update();
+
+	/*
+	 * Transfer the write-end of the channel monitoring pipe to the
+	 * by issuing a SET_CHANNEL_MONITOR_PIPE command.
+	 */
+	cmd_socket_wrapper = consumer_allocate_socket(&consumer_data->cmd_sock);
+	if (!cmd_socket_wrapper) {
+		goto error;
+	}
+
+	ret = consumer_send_channel_monitor_pipe(cmd_socket_wrapper,
+			consumer_data->channel_monitor_pipe);
+	if (ret) {
+		goto error;
+	}
+	/* Discard the socket wrapper as it is no longer needed. */
+	consumer_destroy_socket(cmd_socket_wrapper);
+	cmd_socket_wrapper = NULL;
+
+	/* The thread is completely initialized, signal that it is ready. */
+	signal_consumer_condition(consumer_data, 1);
 
 	/* Infinite blocking call, waiting for transmission */
 restart_poll:
@@ -1538,6 +1586,10 @@ error:
 		free(consumer_data->metadata_sock.lock);
 	}
 	lttng_poll_clean(&events);
+
+	if (cmd_socket_wrapper) {
+		consumer_destroy_socket(cmd_socket_wrapper);
+	}
 error_poll:
 	if (err) {
 		health_error();
@@ -5548,6 +5600,9 @@ int main(int argc, char **argv)
 	int ret = 0, retval = 0;
 	void *status;
 	const char *home_path, *env_app_timeout;
+	struct lttng_pipe *ust32_channel_monitor_pipe = NULL,
+			*ust64_channel_monitor_pipe = NULL,
+			*kernel_channel_monitor_pipe = NULL;
 
 	init_kernel_workarounds();
 
@@ -5706,6 +5761,19 @@ int main(int argc, char **argv)
 				kconsumer_data.err_unix_sock_path);
 		DBG2("Kernel consumer cmd path: %s",
 				kconsumer_data.cmd_unix_sock_path);
+		kernel_channel_monitor_pipe = lttng_pipe_open(0);
+		if (!kernel_channel_monitor_pipe) {
+			ERR("Failed to create kernel consumer channel monitor pipe");
+			retval = -1;
+			goto exit_init_data;
+		}
+		kconsumer_data.channel_monitor_pipe =
+				lttng_pipe_release_writefd(
+					kernel_channel_monitor_pipe);
+		if (kconsumer_data.channel_monitor_pipe < 0) {
+			retval = -1;
+			goto exit_init_data;
+		}
 	} else {
 		home_path = utils_get_home_dir();
 		if (home_path == NULL) {
@@ -5810,6 +5878,18 @@ int main(int argc, char **argv)
 			ustconsumer32_data.err_unix_sock_path);
 	DBG2("UST consumer 32 bits cmd path: %s",
 			ustconsumer32_data.cmd_unix_sock_path);
+	ust32_channel_monitor_pipe = lttng_pipe_open(0);
+	if (!ust32_channel_monitor_pipe) {
+		ERR("Failed to create 32-bit user space consumer channel monitor pipe");
+		retval = -1;
+		goto exit_init_data;
+	}
+	ustconsumer32_data.channel_monitor_pipe = lttng_pipe_release_writefd(
+			ust32_channel_monitor_pipe);
+	if (ustconsumer32_data.channel_monitor_pipe < 0) {
+		retval = -1;
+		goto exit_init_data;
+	}
 
 	/* 64 bits consumerd path setup */
 	ret = snprintf(ustconsumer64_data.err_unix_sock_path, PATH_MAX,
@@ -5831,6 +5911,18 @@ int main(int argc, char **argv)
 			ustconsumer64_data.err_unix_sock_path);
 	DBG2("UST consumer 64 bits cmd path: %s",
 			ustconsumer64_data.cmd_unix_sock_path);
+	ust64_channel_monitor_pipe = lttng_pipe_open(0);
+	if (!ust64_channel_monitor_pipe) {
+		ERR("Failed to create 64-bit user space consumer channel monitor pipe");
+		retval = -1;
+		goto exit_init_data;
+	}
+	ustconsumer64_data.channel_monitor_pipe = lttng_pipe_release_writefd(
+			ust64_channel_monitor_pipe);
+	if (ustconsumer64_data.channel_monitor_pipe < 0) {
+		retval = -1;
+		goto exit_init_data;
+	}
 
 	/*
 	 * See if daemon already exist.
@@ -6000,10 +6092,15 @@ int main(int argc, char **argv)
 		goto exit_health;
 	}
 
-	notification_thread_data = notification_init_data();
+	/* notification_thread_data acquires the pipes' read side. */
+	notification_thread_data = notification_create_data(
+			ust32_channel_monitor_pipe,
+			ust64_channel_monitor_pipe,
+			kernel_channel_monitor_pipe);
 	if (!notification_thread_data) {
 		retval = -1;
-		ERR("Failed to initialize notification thread shared data");
+		ERR("Failed to create notification thread shared data");
+		stop_threads();
 		goto exit_notification;
 	}
 
@@ -6227,6 +6324,9 @@ exit_init_data:
 	if (ret) {
 		retval = -1;
 	}
+	lttng_pipe_destroy(ust32_channel_monitor_pipe);
+	lttng_pipe_destroy(ust64_channel_monitor_pipe);
+	lttng_pipe_destroy(kernel_channel_monitor_pipe);
 exit_ht_cleanup:
 
 	health_app_destroy(health_sessiond);
@@ -6237,7 +6337,6 @@ exit_options:
 	sessiond_cleanup_options();
 
 exit_set_signal_handler:
-
 	if (!retval) {
 		exit(EXIT_SUCCESS);
 	} else {
