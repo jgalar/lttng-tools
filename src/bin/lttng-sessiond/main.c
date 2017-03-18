@@ -310,8 +310,8 @@ const char * const config_section_name = "sessiond";
 /* Load session thread information to operate. */
 struct load_session_thread_data *load_info;
 
-/* Notification thread command queue. */
-struct notification_thread_data *notification_thread_data;
+/* Notification thread handle. */
+struct notification_thread_handle *notification_thread_handle;
 
 /* Global hash tables */
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
@@ -724,8 +724,8 @@ static void sessiond_cleanup(void)
 		free(load_info);
 	}
 
-	if (notification_thread_data) {
-		notification_destroy_data(notification_thread_data);
+	if (notification_thread_handle) {
+		notification_thread_handle_destroy(notification_thread_handle);
 	}
 
 	/*
@@ -1370,7 +1370,7 @@ restart:
 				lttcomm_get_readable_code(-code));
 		goto error;
 	}
-	
+
 	/* Connect both command and metadata sockets. */
 	consumer_data->cmd_sock =
 			lttcomm_connect_unix_sock(
@@ -3066,6 +3066,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_REGENERATE_METADATA:
 	case LTTNG_REGENERATE_STATEDUMP:
 	case LTTNG_REGISTER_TRIGGER:
+	case LTTNG_UNREGISTER_TRIGGER:
 		need_domain = 0;
 		break;
 	default:
@@ -3129,6 +3130,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_LIST_TRACEPOINT_FIELDS:
 	case LTTNG_SAVE_SESSION:
 	case LTTNG_REGISTER_TRIGGER:
+	case LTTNG_UNREGISTER_TRIGGER:
 		need_tracing_session = 0;
 		break;
 	default:
@@ -4183,7 +4185,13 @@ error_add_context:
 	case LTTNG_REGISTER_TRIGGER:
 	{
 		ret = cmd_register_trigger(cmd_ctx, sock,
-				notification_thread_data);
+				notification_thread_handle);
+		break;
+	}
+	case LTTNG_UNREGISTER_TRIGGER:
+	{
+		ret = cmd_unregister_trigger(cmd_ctx, sock,
+				notification_thread_handle);
 		break;
 	}
 	default:
@@ -6093,11 +6101,11 @@ int main(int argc, char **argv)
 	}
 
 	/* notification_thread_data acquires the pipes' read side. */
-	notification_thread_data = notification_create_data(
+	notification_thread_handle = notification_thread_handle_create(
 			ust32_channel_monitor_pipe,
 			ust64_channel_monitor_pipe,
 			kernel_channel_monitor_pipe);
-	if (!notification_thread_data) {
+	if (!notification_thread_handle) {
 		retval = -1;
 		ERR("Failed to create notification thread shared data");
 		stop_threads();
@@ -6106,7 +6114,7 @@ int main(int argc, char **argv)
 
 	/* Create notification thread. */
 	ret = pthread_create(&notification_thread, default_pthread_attr(),
-			thread_notification, notification_thread_data);
+			thread_notification, notification_thread_handle);
 	if (ret) {
 		errno = ret;
 		PERROR("pthread_create notification");

@@ -35,6 +35,10 @@ struct lttng_trigger_comm {
 	char payload[];
 } LTTNG_PACKED;
 
+/*
+ * FIXME Add explicit buffer bound checking using a "len" parameter to
+ * ensure malformed buffers are caught and rejected.
+ */
 LTTNG_HIDDEN
 ssize_t lttng_trigger_create_from_buffer(const char *buf,
 		struct lttng_trigger **trigger);

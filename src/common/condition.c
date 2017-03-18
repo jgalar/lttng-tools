@@ -156,5 +156,4 @@ void lttng_condition_init(struct lttng_condition *condition,
 		enum lttng_condition_type type)
 {
 	condition->type = type;
-	CDS_INIT_LIST_HEAD(&condition->list_node);
 }

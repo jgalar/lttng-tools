@@ -38,6 +38,10 @@ struct lttng_evaluation {
 	evaluation_destroy_cb destroy;
 };
 
+/*
+ * FIXME Add explicit buffer bound checking using a "len" parameter to
+ * ensure malformed buffers are caught and rejected.
+ */
 LTTNG_HIDDEN
 ssize_t lttng_evaluation_create_from_buffer(const char *buf,
 		struct lttng_evaluation **evaluation);

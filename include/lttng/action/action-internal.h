@@ -44,6 +44,10 @@ bool lttng_action_validate(struct lttng_action *action);
 LTTNG_HIDDEN
 ssize_t lttng_action_serialize(struct lttng_action *action, char *buf);
 
+/*
+ * FIXME Add explicit buffer bound checking using a "len" parameter to
+ * ensure malformed buffers are caught and rejected.
+ */
 LTTNG_HIDDEN
 ssize_t lttng_action_create_from_buffer(const char *buf,
 		struct lttng_action **action);

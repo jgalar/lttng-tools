@@ -43,6 +43,7 @@
 #include "agent.h"
 #include "buffer-registry.h"
 #include "notification-thread.h"
+#include "notification-thread-commands.h"
 
 #include "cmd.h"
 
@@ -3569,14 +3570,13 @@ end:
 }
 
 int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
-		struct notification_thread_data *notification_thread)
+		struct notification_thread_handle *notification_thread)
 {
 	int ret;
 	size_t trigger_len;
 	ssize_t sock_recv_len;
 	char *trigger_buffer = NULL;
 	struct lttng_trigger *trigger = NULL;
-	uint64_t notification_counter = 1;
 
 	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.length;
 	trigger_buffer = zmalloc(trigger_len);
@@ -3601,19 +3601,47 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		goto end;
 	}
 
-	/* Enqueue and signal. */
-	pthread_mutex_lock(&notification_thread->cmd_queue.lock);
-	cds_list_add(&trigger->list_node, &notification_thread->cmd_queue.list);
-	trigger = NULL;
-	pthread_mutex_unlock(&notification_thread->cmd_queue.lock);
-	ret = write(notification_thread->cmd_queue.event_fd,
-			&notification_counter, sizeof(notification_counter));
-	if (ret < 0) {
-		PERROR("write to notification thread's queue event fd");
-	} else {
-		ret = LTTNG_OK;
+	ret = notification_thread_command_register_trigger(notification_thread,
+			trigger);
+end:
+	free(trigger_buffer);
+	return ret;
+}
+
+int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
+		struct notification_thread_handle *notification_thread)
+{
+	int ret;
+	size_t trigger_len;
+	ssize_t sock_recv_len;
+	char *trigger_buffer = NULL;
+	struct lttng_trigger *trigger = NULL;
+
+	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.length;
+	trigger_buffer = zmalloc(trigger_len);
+	if (!trigger_buffer) {
+		ret = LTTNG_ERR_NOMEM;
+		goto end;
 	}
-	DBG("Command register trigger succeeded");
+
+	sock_recv_len = lttcomm_recv_unix_sock(sock, trigger_buffer,
+			trigger_len);
+	if (sock_recv_len < 0 || sock_recv_len != trigger_len) {
+		ERR("Failed to receive \"register trigger\" command payload");
+		/* TODO: should this be a new error enum ? */
+		ret = LTTNG_ERR_INVALID_TRIGGER;
+		goto end;
+	}
+
+	if (lttng_trigger_create_from_buffer(trigger_buffer, &trigger) !=
+			trigger_len) {
+		ERR("Invalid trigger payload received in \"register trigger\" command");
+		ret = LTTNG_ERR_INVALID_TRIGGER;
+		goto end;
+	}
+
+	ret = notification_thread_command_unregister_trigger(notification_thread,
+			trigger);
 end:
 	free(trigger_buffer);
 	return ret;

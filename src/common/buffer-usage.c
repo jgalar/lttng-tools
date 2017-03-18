@@ -22,17 +22,18 @@
 #include <assert.h>
 #include <math.h>
 #include <float.h>
+#include <time.h>
 
 static
-double fixed_to_double(uint64_t val)
+double fixed_to_double(uint32_t val)
 {
-	return (double) val / (double) UINT64_MAX;
+	return (double) val / (double) UINT32_MAX;
 }
 
 static
 uint64_t double_to_fixed(double val)
 {
-	return (val * (double) UINT64_MAX);
+	return (val * (double) UINT32_MAX);
 }
 
 static
@@ -101,11 +102,11 @@ ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition
 		char *buf)
 {
 	struct lttng_condition_buffer_usage *usage;
-	ssize_t size;
+	ssize_t ret, size;
 	size_t session_name_len, channel_name_len;
 
 	if (!condition || !is_usage_condition(condition)) {
-		size = -1;
+		ret = -1;
 		goto end;
 	}
 
@@ -127,8 +128,15 @@ ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition
 		if (usage->threshold_bytes.set) {
 			usage_comm.threshold = usage->threshold_bytes.value;
 		} else {
-			usage_comm.threshold = double_to_fixed(
+			uint64_t val = double_to_fixed(
 					usage->threshold_ratio.value);
+
+			if (val > UINT32_MAX) {
+				/* overflow. */
+				ret = -1;
+				goto end;
+			}
+			usage_comm.threshold = val;
 		}
 
 		memcpy(buf, &usage_comm, sizeof(usage_comm));
@@ -138,8 +146,9 @@ ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition
 		memcpy(buf, usage->channel_name, channel_name_len);
 		buf += channel_name_len;
 	}
+	ret = size;
 end:
-	return size;
+	return ret;
 }
 
 static
@@ -551,7 +560,7 @@ end:
 	return status;
 }
 
-extern enum lttng_condition_status
+enum lttng_condition_status
 lttng_condition_buffer_usage_set_session_name(
 		struct lttng_condition *condition, const char *session_name)
 {
@@ -604,7 +613,7 @@ end:
 	return status;
 }
 
-extern enum lttng_condition_status
+enum lttng_condition_status
 lttng_condition_buffer_usage_set_channel_name(
 		struct lttng_condition *condition, const char *channel_name)
 {
@@ -634,7 +643,7 @@ end:
 	return status;
 }
 
-extern enum lttng_condition_status
+enum lttng_condition_status
 lttng_condition_buffer_usage_get_domain_type(
 		struct lttng_condition *condition, enum lttng_domain_type *type)
 {
@@ -657,7 +666,7 @@ end:
 	return status;
 }
 
-extern enum lttng_condition_status
+enum lttng_condition_status
 lttng_condition_buffer_usage_set_domain_type(
 		struct lttng_condition *condition, enum lttng_domain_type type)
 {

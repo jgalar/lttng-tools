@@ -46,10 +46,10 @@ struct lttng_condition_buffer_usage_comm {
 	/*
 	 * Expressed in bytes if "threshold_set_in_bytes" is not 0.
 	 * Otherwise, it is expressed a ratio in the interval [0.0, 1.0]
-	 * that is mapped to the range on a 64-bit unsigned integer.
-	 * The ratio is obtained by (threshold / UINT64_MAX).
+	 * that is mapped to the range on a 32-bit unsigned integer.
+	 * The ratio is obtained by (threshold / UINT32_MAX).
 	 */
-	uint64_t threshold;
+	uint32_t threshold;
 	/* Both lengths include the trailing \0. */
 	uint32_t session_name_len;
 	uint32_t channel_name_len;
@@ -75,6 +75,12 @@ struct lttng_evaluation *lttng_evaluation_buffer_usage_create(
 		enum lttng_condition_type type, uint64_t use,
 		uint64_t capacity);
 
+/*
+ * Applies to all below:
+ *
+ * FIXME Add explicit buffer bound checking using a "len" parameter to
+ * ensure malformed buffers are caught and rejected.
+ */
 LTTNG_HIDDEN
 ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
 		struct lttng_condition **condition);

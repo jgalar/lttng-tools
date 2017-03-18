@@ -18,30 +18,16 @@
 #ifndef NOTIFICATION_THREAD_H
 #define NOTIFICATION_THREAD_H
 
-#include <urcu/wfcqueue.h>
+#include <urcu/list.h>
+#include <urcu.h>
+#include <urcu/rculfhash.h>
 #include <lttng/trigger/trigger.h>
 #include <common/pipe.h>
+#include <common/compat/poll.h>
+#include <common/hashtable/hashtable.h>
 #include <pthread.h>
 
-enum notification_command_type {
-	NOTIFICATION_COMMAND_TYPE_NEW_TRIGGER,
-};
-
-struct notification_command {
-	/* Futex on which to wait for command reply. */
-	int32_t futex;
-	enum lttng_error_code result;
-	enum notification_command_type type;
-};
-
-struct notification_new_trigger_command {
-	struct notification_command parent;
-	/* Set to NULL if ownership was transfered. */
-	struct lttng_trigger *trigger;
-};
-
-/* Data passed to the thread on initialization. */
-struct notification_thread_data {
+struct notification_thread_handle {
 	/*
 	 * Queue of struct notification command.
 	 * event_fd must be WRITE(2) to signal that a new command
@@ -63,18 +49,25 @@ struct notification_thread_data {
 	} channel_monitoring_pipes;
 };
 
-struct notification_command *notification_new_trigger_command_create(
-		struct lttng_trigger *trigger);
-struct notification_command *notification_new_trigger_command_destroy(
-		struct lttng_trigger *trigger);
-
-void *thread_notification(void *data);
+struct notification_thread_state {
+	int notification_channel_socket;
+	struct lttng_poll_event events;
+	struct cds_lfht *client_socket_ht;
+	struct cds_lfht *channel_triggers_ht;
+	struct cds_lfht *channel_state_ht;
+	struct cds_lfht *notification_trigger_clients_ht;
+	struct cds_lfht *channels_ht;
+	struct cds_lfht *triggers_ht;
+};
 
 /* notification_thread_data takes ownership of the channel monitor pipes. */
-struct notification_thread_data *notification_create_data(
+struct notification_thread_handle *notification_thread_handle_create(
 		struct lttng_pipe *ust32_channel_monitor_pipe,
 		struct lttng_pipe *ust64_channel_monitor_pipe,
 		struct lttng_pipe *kernel_channel_monitor_pipe);
-void notification_destroy_data(struct notification_thread_data *data);
+void notification_thread_handle_destroy(
+		struct notification_thread_handle *handle);
+
+void *thread_notification(void *data);
 
 #endif /* NOTIFICATION_THREAD_H */

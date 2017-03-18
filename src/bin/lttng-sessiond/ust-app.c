@@ -41,6 +41,8 @@
 #include "ust-ctl.h"
 #include "utils.h"
 #include "session.h"
+#include "lttng-sessiond.h"
+#include "notification-thread-commands.h"
 
 static
 int ust_app_flush_app_session(struct ust_app *app, struct ust_app_session *ua_sess);
@@ -446,6 +448,7 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 		struct ust_app *app)
 {
 	int ret;
+	enum lttng_error_code cmd_ret;
 	struct lttng_ht_iter iter;
 	struct ust_app_event *ua_event;
 	struct ust_app_ctx *ua_ctx;
@@ -455,6 +458,13 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 	assert(ua_chan);
 
 	DBG3("UST app deleting channel %s", ua_chan->name);
+
+	cmd_ret = notification_thread_command_remove_channel(
+			notification_thread_handle, ua_chan->key,
+			LTTNG_DOMAIN_UST);
+	if (cmd_ret != LTTNG_OK) {
+		ERR("Failed to remove channel from notification thread");
+	}
 
 	/* Wipe stream */
 	cds_list_for_each_entry_safe(stream, stmp, &ua_chan->streams.head, list) {
@@ -3075,8 +3085,6 @@ static int create_ust_app_channel(struct ust_app_session *ua_sess,
 
 	/* Only add the channel if successful on the tracer side. */
 	lttng_ht_add_unique_str(ua_sess->channels, &ua_chan->node);
-	/* TODO NOTIFY NOTIFICATION THREAD OF CHANNEL CREATION */
-
 end:
 	if (ua_chanp) {
 		*ua_chanp = ua_chan;

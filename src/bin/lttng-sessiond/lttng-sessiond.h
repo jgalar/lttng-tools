@@ -29,6 +29,7 @@
 #include "session.h"
 #include "ust-app.h"
 #include "version.h"
+#include "notification-thread.h"
 
 extern const char default_home_dir[],
 	default_tracing_group[],
@@ -37,6 +38,8 @@ extern const char default_home_dir[],
 
 /* Set in main.c at boot time of the daemon */
 extern int kernel_tracer_fd;
+
+extern struct notification_thread_handle *notification_thread_handle;
 
 /*
  * This contains extra data needed for processing a command received by the

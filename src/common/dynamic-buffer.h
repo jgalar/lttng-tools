@@ -26,7 +26,33 @@ struct lttng_dynamic_buffer {
 	size_t capacity;
 };
 
+void lttng_dynamic_buffer_init(struct lttng_dynamic_buffer *buffer);
+
 int lttng_dynamic_buffer_append(struct lttng_dynamic_buffer *buffer,
 		const void *buf, size_t len);
+
+/*
+ * Set the buffer's size to new_size. The capacity of the buffer will
+ * be expanded (if necessary) to accomodate new_size. Areas acquired by
+ * an enlarging new_size _will be zeroed_.
+ *
+ * Be careful to expand the buffer's size _before_ calling out external
+ * APIs (e.g. read(3)) which may populate the buffer as setting the size
+ * _after_ will zero-out the result of the operation.
+ */
+int lttng_dynamic_buffer_set_size(struct lttng_dynamic_buffer *buffer,
+		size_t new_size);
+
+/*
+ * Set the buffer's capacity to accomodate the new_capacity, allocating memory
+ * as necessary. The buffer's content is preserved.
+ *
+ * If the current size > new_capacity, the operation will fail.
+ */
+int lttng_dynamic_buffer_set_capacity(struct lttng_dynamic_buffer *buffer,
+		size_t new_capacity);
+
+/* Release any memory used by the dynamic buffer. */
+void lttng_dynamic_buffer_reset(struct lttng_dynamic_buffer *buffer);
 
 #endif /* LTTNG_DYNAMIC_BUFFER_H */

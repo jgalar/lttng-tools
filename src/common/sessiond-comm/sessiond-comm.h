@@ -98,6 +98,7 @@ enum lttcomm_sessiond_command {
 	LTTNG_REGENERATE_METADATA           = 41,
 	LTTNG_REGENERATE_STATEDUMP          = 42,
 	LTTNG_REGISTER_TRIGGER              = 43,
+	LTTNG_UNREGISTER_TRIGGER            = 44,
 };
 
 enum lttcomm_relayd_command {

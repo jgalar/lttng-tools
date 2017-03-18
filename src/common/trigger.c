@@ -54,7 +54,6 @@ struct lttng_trigger *lttng_trigger_create(
 
 	trigger->condition = condition;
 	trigger->action = action;
-	CDS_INIT_LIST_HEAD(&trigger->list_node);
 end:
 	return trigger;
 }

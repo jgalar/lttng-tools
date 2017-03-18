@@ -45,6 +45,8 @@ extern void lttng_trigger_destroy(struct lttng_trigger *trigger);
 
 extern int lttng_register_trigger(struct lttng_trigger *trigger);
 
+extern int lttng_unregister_trigger(struct lttng_trigger *trigger);
+
 #ifdef __cplusplus
 }
 #endif
