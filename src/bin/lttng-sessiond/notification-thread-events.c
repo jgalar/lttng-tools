@@ -88,6 +88,106 @@ struct channel_state {
 };
 
 static
+int match_client(struct cds_lfht_node *node, const void *key)
+{
+	int socket = (int) key;
+	struct notification_client *client;
+
+	client = caa_container_of(node, struct notification_client,
+			client_socket_ht_node);
+
+	return !!(client->socket == socket);
+}
+
+static
+int match_channel_trigger_list(struct cds_lfht_node *node, const void *key)
+{
+	struct channel_key *channel_key = (struct channel_key *) key;
+	struct lttng_channel_trigger_list *trigger_list;
+
+	trigger_list = caa_container_of(node, struct lttng_channel_trigger_list,
+			channel_triggers_ht_node);
+
+	return !!((channel_key->key == trigger_list->channel_key.key) &&
+			(channel_key->domain == trigger_list->channel_key.domain));
+}
+
+static
+int match_channel_state(struct cds_lfht_node *node, const void *key)
+{
+	struct channel_key *channel_key = (struct channel_key *) key;
+	struct channel_state *state;
+
+	state = caa_container_of(node, struct channel_state,
+			channel_state_ht_node);
+
+	return !!((channel_key->key == state->key.key) &&
+			(channel_key->domain == state->key.domain));
+}
+
+static
+int match_channel_info(struct cds_lfht_node *node, const void *key)
+{
+	struct channel_key *channel_key = (struct channel_key *) key;
+	struct channel_info *channel_info;
+
+	channel_info = caa_container_of(node, struct channel_info,
+			channels_ht_node);
+
+	return !!((channel_key->key == channel_info->key.key) &&
+			(channel_key->domain == channel_info->key.domain));
+}
+
+static
+int match_condition(struct cds_lfht_node *node, const void *key)
+{
+	struct lttng_condition *condition_key = (struct lttng_condition *) key;
+	struct lttng_trigger_ht_element *trigger;
+	struct lttng_condition *condition;
+
+	trigger = caa_container_of(node, struct lttng_trigger_ht_element,
+			node);
+	condition = lttng_trigger_get_condition(trigger->trigger);
+	assert(condition);
+
+	return !!lttng_condition_is_equal(condition_key, condition);
+}
+
+static
+int match_client_list(struct cds_lfht_node *node, const void *key)
+{
+	struct lttng_trigger *trigger_key = (struct lttng_trigger *) key;
+	struct notification_client_list *client_list;
+	struct lttng_condition *condition;
+	struct lttng_condition *condition_key = lttng_trigger_get_condition(
+			trigger_key);
+
+	assert(condition_key);
+
+	client_list = caa_container_of(node, struct notification_client_list,
+			notification_trigger_ht_node);
+	condition = lttng_trigger_get_condition(client_list->trigger);
+
+	return !!lttng_condition_is_equal(condition_key, condition);
+}
+
+static
+int match_client_list_condition(struct cds_lfht_node *node, const void *key)
+{
+	struct lttng_condition *condition_key = (struct lttng_condition *) key;
+	struct notification_client_list *client_list;
+	struct lttng_condition *condition;
+
+	assert(condition_key);
+
+	client_list = caa_container_of(node, struct notification_client_list,
+			notification_trigger_ht_node);
+	condition = lttng_trigger_get_condition(client_list->trigger);
+
+	return !!lttng_condition_is_equal(condition_key, condition);
+}
+
+static
 unsigned long lttng_condition_buffer_usage_hash(
 	struct lttng_condition *_condition)
 {
@@ -190,20 +290,164 @@ error:
 }
 
 static
-int notification_thread_client_subscribe(
-		struct notification_client *client,
+int notification_thread_client_subscribe(struct notification_client *client,
 		struct lttng_condition *condition,
-		struct notification_thread_state *state)
+		struct notification_thread_state *state,
+		enum lttng_notification_channel_status *_status)
 {
-	return 0;
+	int ret = 0;
+	struct cds_lfht_iter iter;
+	struct cds_lfht_node *node;
+	struct notification_client_list *client_list;
+	struct lttng_condition_list_element *condition_list_element = NULL;
+	struct notification_client_list_element *client_list_element = NULL;
+	enum lttng_notification_channel_status status =
+			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
+
+	/*
+	 * Ensure that the client has not already subscribed to this condition
+	 * before.
+	 */
+	cds_list_for_each_entry(condition_list_element, &client->condition_list, node) {
+		if (lttng_condition_is_equal(condition_list_element->condition,
+				condition)) {
+			status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ALREADY_SUBSCRIBED;
+			goto end;
+		}
+	}
+
+	condition_list_element = zmalloc(sizeof(*condition_list_element));
+	if (!condition_list_element) {
+		ret = -1;
+		goto error;
+	}
+	client_list_element = zmalloc(sizeof(*client_list_element));
+	if (!client_list_element) {
+		ret = -1;
+		goto error;
+	}
+
+	rcu_read_lock();
+
+	/*
+	 * Add the newly-subscribed condition to the client's subscription list.
+	 */
+	CDS_INIT_LIST_HEAD(&condition_list_element->node);
+	condition_list_element->condition = condition;
+	cds_list_add(&condition_list_element->node, &client->condition_list);
+
+	/*
+	 * Add the client to the list of clients interested in a given trigger
+	 * if a "notification" trigger with a corresponding condition was
+	 * added prior.
+	 */
+	cds_lfht_lookup(state->notification_trigger_clients_ht,
+			lttng_condition_hash(condition),
+			match_client_list_condition,
+			condition,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (!node) {
+		goto end_unlock;
+	}
+
+	client_list = caa_container_of(node, struct notification_client_list,
+			notification_trigger_ht_node);
+	client_list_element->client = client;
+	CDS_INIT_LIST_HEAD(&client_list_element->node);
+	cds_list_add(&client_list->list, &client_list_element->node);
+end_unlock:
+	rcu_read_unlock();
+end:
+	if (_status) {
+		*_status = status;
+	}
+	return ret;
+error:
+	free(condition_list_element);
+	free(client_list_element);
+	return ret;
 }
 
 static
 int notification_thread_client_unsubscribe(
 		struct notification_client *client,
 		struct lttng_condition *condition,
-		struct notification_thread_state *state)
+		struct notification_thread_state *state,
+		enum lttng_notification_channel_status *_status)
 {
+	struct cds_lfht_iter iter;
+	struct cds_lfht_node *node;
+	struct notification_client_list *client_list;
+	struct lttng_condition_list_element *condition_list_element,
+			*condition_tmp;
+	struct notification_client_list_element *client_list_element,
+			*client_tmp;
+	bool condition_found = false;
+	enum lttng_notification_channel_status status =
+			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
+
+	/* Remove the condition from the client's condition list. */
+	cds_list_for_each_entry_safe(condition_list_element, condition_tmp,
+			&client->condition_list, node) {
+		if (!lttng_condition_is_equal(condition_list_element->condition,
+				condition)) {
+			continue;
+		}
+
+		cds_list_del(&condition_list_element->node);
+		/*
+		 * The caller may be iterating on the client's conditions to
+		 * tear down a client's connection. In this case, the condition
+		 * will be destroyed at the end.
+		 */
+		if (condition != condition_list_element->condition) {
+			lttng_condition_destroy(
+					condition_list_element->condition);
+		}
+		free(condition_list_element);
+		condition_found = true;
+		break;
+	}
+
+	if (!condition_found) {
+		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_UNKNOWN_CONDITION;
+		goto end;
+	}
+
+	/*
+	 * Remove the client from the list of clients interested the trigger
+	 * matching the condition.
+	 */
+	rcu_read_lock();
+	cds_lfht_lookup(state->notification_trigger_clients_ht,
+			lttng_condition_hash(condition),
+			match_client_list_condition,
+			condition,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (!node) {
+		goto end_unlock;
+	}
+
+	client_list = caa_container_of(node, struct notification_client_list,
+			notification_trigger_ht_node);
+	cds_list_for_each_entry_safe(client_list_element, client_tmp,
+			&client_list->list, node) {
+		if (client_list_element->client->socket != client->socket) {
+			continue;
+		}
+		cds_list_del(&client_list_element->node);
+		free(client_list_element);
+		break;
+	}
+end_unlock:
+	rcu_read_unlock();
+end:
+	lttng_condition_destroy(condition);
+	if (_status) {
+		*_status = status;
+	}
 	return 0;
 }
 
@@ -221,28 +465,13 @@ void notification_client_destroy(struct notification_client *client,
 	cds_list_for_each_entry_safe(condition_list_element, tmp,
 			&client->condition_list, node) {
 		(void) notification_thread_client_unsubscribe(client,
-				condition_list_element->condition, state);
-		cds_list_del(&condition_list_element->node);
-		lttng_condition_destroy(condition_list_element->condition);
-		free(condition_list_element);
+				condition_list_element->condition, state, NULL);
 	}
 
 	if (client->socket >= 0) {
 		(void) lttcomm_close_unix_sock(client->socket);
 	}
 	free(client);
-}
-
-static
-int match_client(struct cds_lfht_node *node, const void *key)
-{
-	int socket = (int) key;
-	struct notification_client *client;
-
-	client = caa_container_of(node, struct notification_client,
-			client_socket_ht_node);
-
-	return !!(client->socket == socket);
 }
 
 /*
@@ -347,94 +576,6 @@ unsigned long hash_channel_key(struct channel_key *key)
 {
 	return hash_key_u64(&key->key, lttng_ht_seed) ^ hash_key_ulong(
 		(void *) (unsigned long) key->domain, lttng_ht_seed);
-}
-
-static
-int match_channel_trigger_list(struct cds_lfht_node *node, const void *key)
-{
-	struct channel_key *channel_key = (struct channel_key *) key;
-	struct lttng_channel_trigger_list *trigger_list;
-
-	trigger_list = caa_container_of(node, struct lttng_channel_trigger_list,
-			channel_triggers_ht_node);
-
-	return !!((channel_key->key == trigger_list->channel_key.key) &&
-			(channel_key->domain == trigger_list->channel_key.domain));
-}
-
-static
-int match_channel_state(struct cds_lfht_node *node, const void *key)
-{
-	struct channel_key *channel_key = (struct channel_key *) key;
-	struct channel_state *state;
-
-	state = caa_container_of(node, struct channel_state,
-			channel_state_ht_node);
-
-	return !!((channel_key->key == state->key.key) &&
-			(channel_key->domain == state->key.domain));
-}
-
-static
-int match_channel_info(struct cds_lfht_node *node, const void *key)
-{
-	struct channel_key *channel_key = (struct channel_key *) key;
-	struct channel_info *channel_info;
-
-	channel_info = caa_container_of(node, struct channel_info,
-			channels_ht_node);
-
-	return !!((channel_key->key == channel_info->key.key) &&
-			(channel_key->domain == channel_info->key.domain));
-}
-
-static
-int match_condition(struct cds_lfht_node *node, const void *key)
-{
-	struct lttng_condition *condition_key = (struct lttng_condition *) key;
-	struct lttng_trigger_ht_element *trigger;
-	struct lttng_condition *condition;
-
-	trigger = caa_container_of(node, struct lttng_trigger_ht_element,
-			node);
-	condition = lttng_trigger_get_condition(trigger->trigger);
-	assert(condition);
-
-	return !!lttng_condition_is_equal(condition_key, condition);
-}
-
-static
-int match_client_list(struct cds_lfht_node *node, const void *key)
-{
-	struct lttng_trigger *trigger_key = (struct lttng_trigger *) key;
-	struct notification_client_list *client_list;
-	struct lttng_condition *condition;
-	struct lttng_condition *condition_key = lttng_trigger_get_condition(
-			trigger_key);
-
-	assert(condition_key);
-
-	client_list = caa_container_of(node, struct notification_client_list,
-			notification_trigger_ht_node);
-	condition = lttng_trigger_get_condition(client_list->trigger);
-
-	return !!lttng_condition_is_equal(condition_key, condition);
-}
-
-static
-int match_client_list_condition(struct cds_lfht_node *node, const void *key)
-{
-	struct lttng_condition *condition_key = (struct lttng_condition *) key;
-	struct notification_client_list *client_list;
-	struct lttng_condition *condition;
-
-	assert(condition_key);
-
-	client_list = caa_container_of(node, struct notification_client_list,
-			notification_trigger_ht_node);
-	condition = lttng_trigger_get_condition(client_list->trigger);
-
-	return !!lttng_condition_is_equal(condition_key, condition);
 }
 
 static
@@ -938,6 +1079,8 @@ int handle_notification_thread_client_connect(
 		goto error;
 	}
 
+	/* FIXME perform handshake. */
+
 	ret = lttng_poll_add(&state->events, client->socket,
 			LPOLLIN | LPOLLERR |
 			LPOLLHUP | LPOLLRDHUP);
@@ -1163,11 +1306,11 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 	switch ((enum lttng_notification_channel_command_type) command.type) {
 	case LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_SUBSCRIBE:
 		ret = notification_thread_client_subscribe(client, condition,
-				state);
+				state, &status);
 		break;
 	case LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_UNSUBSCRIBE:
 		ret = notification_thread_client_unsubscribe(client, condition,
-				state);
+				state, &status);
 		break;
 	default:
 		ERR("[notification-thread] Unknown command type received from notification channel client");
@@ -1179,9 +1322,10 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 		goto error_disconnect_client;
 	}
 
-end:
 	lttng_dynamic_buffer_reset(&buffer);
+	ret = 0;
 	return ret;
+
 error_disconnect_client:
 	ret = handle_notification_thread_client_disconnect(socket, state);
 error_no_reply:
