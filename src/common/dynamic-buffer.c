@@ -58,7 +58,7 @@ int lttng_dynamic_buffer_append(struct lttng_dynamic_buffer *buffer,
 	if ((buffer->capacity - buffer->size) < len) {
 		ret = lttng_dynamic_buffer_set_capacity(buffer,
 				buffer->capacity +
-				(buffer->capacity - buffer->size));
+				(len - (buffer->capacity - buffer->size)));
 		if (ret) {
 			goto end;
 		}
@@ -123,35 +123,33 @@ int lttng_dynamic_buffer_set_capacity(struct lttng_dynamic_buffer *buffer,
 	}
 
 	if (!buffer->data) {
-		buffer->data = zmalloc(new_capacity);
+		buffer->data = zmalloc(rounded_capacity);
 		if (!buffer->data) {
 			ret = -1;
 			goto end;
 		}
-		buffer->capacity = new_capacity;
 	} else {
 		void *new_buf;
 
-		new_buf = realloc(buffer->data, new_capacity);
+		new_buf = realloc(buffer->data, rounded_capacity);
 		if (new_buf) {
-			if (new_capacity > buffer->capacity) {
+			if (rounded_capacity > buffer->capacity) {
 				memset(new_buf + buffer->capacity, 0,
-						new_capacity - buffer->capacity);
+						rounded_capacity - buffer->capacity);
 			}
 		} else {
 			/* Realloc failed, try to acquire a new block. */
-			new_buf = zmalloc(new_capacity);
+			new_buf = zmalloc(rounded_capacity);
 			if (!new_buf) {
 				ret = -1;
 				goto end;
 			}
 			memcpy(new_buf, buffer->data, buffer->size);
 			free(buffer->data);
-			buffer->data = new_buf;
 		}
-		buffer->capacity = new_capacity;
+		buffer->data = new_buf;
 	}
-
+	buffer->capacity = rounded_capacity;
 end:
 	return ret;
 }

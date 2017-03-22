@@ -19,9 +19,10 @@
 #define LTTNG_DYNAMIC_BUFFER_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 struct lttng_dynamic_buffer {
-	void *data;
+	char *data;
 	size_t size;
 	size_t capacity;
 };

@@ -23,17 +23,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-enum lttng_notification_channel_command_type {
+enum lttng_notification_channel_message_type {
 	LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_SUBSCRIBE = 0,
 	LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_UNSUBSCRIBE = 1,
+	LTTNG_NOTIFICATION_CHANNEL_COMMAND_REPLY = 2,
+	LTTNG_NOTIFICATION_CHANNEL_NOTIFICATION = 3,
 };
 
-struct lttng_notification_channel_command {
-	/* enum lttng_notification_channel_command_type */
+struct lttng_notification_channel_message {
+	/* enum lttng_notification_channel_message_type */
 	int8_t type;
-	/* size of the condition following this field */
+	/* size of the payload following this field */
 	uint32_t size;
-	char condition[];
+	char payload[];
 } LTTNG_PACKED;
 
 struct lttng_notification_channel_command_reply {
@@ -42,6 +44,7 @@ struct lttng_notification_channel_command_reply {
 } LTTNG_PACKED;
 
 struct lttng_notification_channel {
+	/* FIXME Add mutex to protect the socket from concurrent uses. */
 	int socket;
 };
 

@@ -29,12 +29,15 @@
 #include <common/hashtable/utils.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <lttng/condition/condition.h>
+#include <lttng/action/action.h>
+#include <lttng/notification/notification-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
 #include <lttng/notification/channel-internal.h>
 #include <time.h>
 #include <unistd.h>
 #include <assert.h>
+#include <inttypes.h>
 
 struct lttng_trigger_list_element {
 	struct lttng_trigger *trigger;
@@ -81,7 +84,7 @@ struct notification_client {
 	struct cds_lfht_node client_socket_ht_node;
 };
 
-struct channel_state {
+struct channel_state_sample {
 	struct channel_key key;
 	struct cds_lfht_node channel_state_ht_node;
 	uint64_t highest_usage;
@@ -114,16 +117,16 @@ int match_channel_trigger_list(struct cds_lfht_node *node, const void *key)
 }
 
 static
-int match_channel_state(struct cds_lfht_node *node, const void *key)
+int match_channel_state_sample(struct cds_lfht_node *node, const void *key)
 {
 	struct channel_key *channel_key = (struct channel_key *) key;
-	struct channel_state *state;
+	struct channel_state_sample *sample;
 
-	state = caa_container_of(node, struct channel_state,
+	sample = caa_container_of(node, struct channel_state_sample,
 			channel_state_ht_node);
 
-	return !!((channel_key->key == state->key.key) &&
-			(channel_key->domain == state->key.domain));
+	return !!((channel_key->key == sample->key.key) &&
+			(channel_key->domain == sample->key.domain));
 }
 
 static
@@ -694,7 +697,7 @@ int handle_notification_thread_command_remove_channel(
 	/* Free sampled channel state. */
 	cds_lfht_lookup(state->channel_state_ht,
 			hash_channel_key(&key),
-			match_channel_state,
+			match_channel_state_sample,
 			&key,
 			&iter);
 	node = cds_lfht_iter_get_node(&iter);
@@ -703,11 +706,12 @@ int handle_notification_thread_command_remove_channel(
 	 * received a sample.
 	 */
 	if (node) {
-		struct channel_state *channel_state = caa_container_of(node,
-				struct channel_state, channel_state_ht_node);
+		struct channel_state_sample *sample = caa_container_of(node,
+				struct channel_state_sample,
+				channel_state_ht_node);
 
 		cds_lfht_del(state->channel_state_ht, node);
-		free(channel_state);
+		free(sample);
 	}
 
 	/* Remove the channel from the channels_ht and free it. */
@@ -1066,11 +1070,13 @@ int handle_notification_thread_client_connect(
 	client->socket = ret;
 
 	/* FIXME set client socket as non-blocking. */
-//	ret = set_socket_non_blocking(client->socket);
-//	if (ret) {
-//		ERR("[notification-thread] Failed to set new notification channel client connection socket as non-blocking");
-//		goto error;
-//	}
+	/*
+	ret = set_socket_non_blocking(client->socket);
+	if (ret) {
+		ERR("[notification-thread] Failed to set new notification channel client connection socket as non-blocking");
+		goto error;
+	}
+	*/
 
 	/* FIXME handle creds. */
 	ret = lttcomm_setsockopt_creds_unix_sock(client->socket);
@@ -1205,7 +1211,7 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 	int ret = 0;
 	size_t received = 0;
 	struct notification_client *client;
-	struct lttng_notification_channel_command command;
+	struct lttng_notification_channel_message msg;
 	struct lttng_dynamic_buffer buffer;
 	struct lttng_condition *condition = NULL;
 	enum lttng_notification_channel_status status =
@@ -1220,13 +1226,13 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 		goto error_no_reply;
 	}
 
-	/* Receive command header. */
+	/* Receive message header. */
 	do {
 		ssize_t recv_ret;
 
 		recv_ret = lttcomm_recv_unix_sock(socket,
-				((char *) &command) + received,
-				sizeof(command) - received);
+				((char *) &msg) + received,
+				sizeof(msg) - received);
 		if (recv_ret <= 0) {
 			ERR("[notification-thread] Failed to receive channel command from client (received %zu bytes)", received);
 			/*
@@ -1236,37 +1242,37 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 			goto error_disconnect_client;
 		}
 		received += recv_ret;
-	} while (received < sizeof(command));
+	} while (received < sizeof(msg));
 
-	ret = lttng_dynamic_buffer_set_size(&buffer, command.size);
+	ret = lttng_dynamic_buffer_set_size(&buffer, msg.size);
 	if (ret) {
 		goto error_disconnect_client;
 	}
 
-	/* Receive command body. */
+	/* Receive message body. */
 	received = 0;
 	do {
 		ssize_t recv_ret;
 
 		recv_ret = lttcomm_recv_unix_sock(socket,
 				buffer.data + received,
-				command.size - received);
+				msg.size - received);
 		if (recv_ret <= 0) {
 			ERR("[notification-thread] Failed to receive condition from client");
 			goto error_disconnect_client;
 		}
 		received += recv_ret;
-	} while (received < command.size);
+	} while (received < msg.size);
 
 	ret = lttng_condition_create_from_buffer(buffer.data, &condition);
-	if (ret < 0 || ret < command.size) {
+	if (ret < 0 || ret < msg.size) {
 		ERR("[notification-thread] Malformed condition received from client");
 		goto error_disconnect_client;
 	}
 
 	DBG("[notification-thread] Successfully received condition from notification channel client");
 
-	switch ((enum lttng_notification_channel_command_type) command.type) {
+	switch ((enum lttng_notification_channel_message_type) msg.type) {
 	case LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_SUBSCRIBE:
 		ret = notification_thread_client_subscribe(client, condition,
 				state, &status);
@@ -1298,12 +1304,163 @@ error_no_reply:
 }
 
 static
-int evaluate_trigger(struct lttng_trigger *trigger,
-		struct channel_key *channel_key,
-		struct lttng_evaluation **_evaluation,
-		struct notification_thread_state *state)
+bool evaluate_buffer_usage_condition(struct lttng_condition *condition,
+		struct channel_state_sample *sample, uint64_t buffer_capacity)
 {
-	return 0;
+	bool result = false;
+	uint64_t threshold;
+	enum lttng_condition_type condition_type;
+	struct lttng_condition_buffer_usage *use_condition = container_of(
+			condition, struct lttng_condition_buffer_usage,
+			parent);
+
+	if (!sample) {
+		goto end;
+	}
+
+	if (use_condition->threshold_bytes.set) {
+		threshold = use_condition->threshold_bytes.value;
+	} else {
+		/* Threshold was expressed as a ratio. */
+		threshold = (uint64_t) (use_condition->threshold_ratio.value *
+				(double) buffer_capacity);
+	}
+
+	condition_type = lttng_condition_get_type(condition);
+	if (condition_type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW) {
+		/*
+		 * The low condition should only be triggered once _all_ of the
+		 * streams in a channel have gone below the "low" threshold.
+		 */
+		if (sample->highest_usage <= threshold) {
+			result = true;
+		}
+	} else {
+		/*
+		 * For high buffer usage scenarios, we want to trigger whenever
+		 * _any_ of the streams has reached the "high" threshold.
+		 */
+		if (sample->highest_usage >= threshold) {
+			result = true;
+		}
+	}
+end:
+	return result;
+}
+
+static
+int evaluate_condition(struct lttng_condition *condition,
+		struct lttng_evaluation **evaluation,
+		struct notification_thread_state *state,
+		struct channel_state_sample *previous_sample,
+		struct channel_state_sample *latest_sample,
+		uint64_t buffer_capacity)
+{
+	int ret = 0;
+	enum lttng_condition_type condition_type;
+	bool previous_sample_result;
+	bool latest_sample_result;
+
+	condition_type = lttng_condition_get_type(condition);
+	/* No other condition type supported for the moment. */
+	assert(condition_type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW ||
+			condition_type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH);
+
+	previous_sample_result = evaluate_buffer_usage_condition(condition,
+			previous_sample, buffer_capacity);
+	latest_sample_result = evaluate_buffer_usage_condition(condition,
+			latest_sample, buffer_capacity);
+	rcu_read_lock();
+	if (previous_sample_result == latest_sample_result) {
+		/*
+		 * Only trigger on a condition evaluation transition.
+		 * NOTE: This edge-triggered logic may not be appropriate for
+		 * future condition types.
+		 */
+		goto end;
+	}
+
+	if (evaluation) {
+		*evaluation = lttng_evaluation_buffer_usage_create(
+				condition_type,
+				latest_sample->highest_usage,
+				buffer_capacity);
+		if (!*evaluation) {
+			ret = -1;
+			goto end;
+		}
+	}
+end:
+	rcu_read_unlock();
+	return ret;
+}
+
+static
+int send_evaluation_to_clients(struct lttng_trigger *trigger,
+		struct lttng_evaluation *evaluation,
+		struct notification_client_list* client_list)
+{
+	int ret = 0;
+	struct lttng_dynamic_buffer msg_buffer;
+	struct notification_client_list_element *client_list_element, *tmp;
+	struct lttng_notification *notification;
+	struct lttng_condition *condition;
+	ssize_t expected_notification_size, notification_size;
+	struct lttng_notification_channel_message msg;
+
+	lttng_dynamic_buffer_init(&msg_buffer);
+
+	condition = lttng_trigger_get_condition(trigger);
+	assert(condition);
+
+	notification = lttng_notification_create(condition, evaluation);
+	if (!notification) {
+		ret = -1;
+		goto end;
+	}
+
+	expected_notification_size = lttng_notification_serialize(notification,
+			NULL);
+	if (expected_notification_size < 0) {
+		ERR("[notification-thread] Failed to get size of serialized notification");
+		ret = -1;
+		goto end;
+	}
+
+	msg.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_NOTIFICATION;
+	msg.size = (uint32_t) expected_notification_size;
+	ret = lttng_dynamic_buffer_append(&msg_buffer, &msg, sizeof(msg));
+	if (ret) {
+		goto end;
+	}
+
+	ret = lttng_dynamic_buffer_set_size(&msg_buffer,
+			msg_buffer.size + expected_notification_size);
+	if (ret) {
+		goto end;
+	}
+
+	notification_size = lttng_notification_serialize(notification,
+			msg_buffer.data + sizeof(msg));
+	if (notification_size != expected_notification_size) {
+		ERR("[notification-thread] Failed to serialize notification");
+		ret = -1;
+		goto end;
+	}
+
+	cds_list_for_each_entry_safe(client_list_element, tmp,
+			&client_list->list, node) {
+		ret = lttcomm_send_unix_sock(
+				client_list_element->client->socket,
+				msg_buffer.data, msg_buffer.size);
+		if (ret < 0) {
+			ERR("[notification-thread] Failed to send notification to client");
+		}
+	}
+	ret = 0;
+end:
+	lttng_dynamic_buffer_reset(&msg_buffer);
+	return ret;
 }
 
 int handle_notification_thread_channel_sample(
@@ -1311,22 +1468,23 @@ int handle_notification_thread_channel_sample(
 		enum lttng_domain_type domain)
 {
 	int ret = 0;
-	struct lttcomm_consumer_channel_monitor_msg msg;
-	struct channel_key key;
+	struct lttcomm_consumer_channel_monitor_msg sample_msg;
+	struct channel_state_sample previous_sample, latest_sample;
+	struct channel_info *channel_info;
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
 	struct lttng_channel_trigger_list *trigger_list;
 	struct lttng_trigger_list_element *trigger_list_element;
+	bool previous_sample_available = false;
 
-	DBG("[notification-thread] Handling channel sample");
 	/*
 	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
 	 * ensuring that read/write of sampling messages are atomic.
 	 */
 	do {
-		ret = read(pipe, &msg, sizeof(msg));
+		ret = read(pipe, &sample_msg, sizeof(sample_msg));
 	} while (ret == -1 && errno == EINTR);
-	if (ret != sizeof(msg)) {
+	if (ret != sizeof(sample_msg)) {
 		ERR("[notification-thread] Failed to read from monitoring pipe (fd = %i)",
 				pipe);
 		ret = -1;
@@ -1334,38 +1492,148 @@ int handle_notification_thread_channel_sample(
 	}
 
 	ret = 0;
-	key.key = msg.key;
-	key.domain = domain;
+	latest_sample.key.key = sample_msg.key;
+	latest_sample.key.domain = domain;
+	latest_sample.highest_usage = sample_msg.highest;
+	latest_sample.lowest_usage = sample_msg.lowest;
 
-	/* Find triggers associated with this channel. */
-	cds_lfht_lookup(state->channel_triggers_ht,
-			hash_channel_key(&key),
-			match_channel_trigger_list,
-			&key,
+	rcu_read_lock();
+
+	/* Retrieve the channel's informations */
+	cds_lfht_lookup(state->channels_ht,
+			hash_channel_key(&latest_sample.key),
+			match_channel_info,
+			&latest_sample.key,
 			&iter);
 	node = cds_lfht_iter_get_node(&iter);
 	if (!node) {
-	        DBG("[notification-thread] No triggers associated with sampled channel");
-		goto end;
+		/*
+		 * Not an error since the consumer can push a sample to the pipe
+		 * and the rest of the session daemon could notify us of the
+		 * channel's destruction before we get a chance to process that
+		 * sample.
+		 */
+		DBG("[notification-thread] Received a sample for an unknown channel from consumerd, key = %" PRIu64 " in %s domain",
+				latest_sample.key.key,
+				domain == LTTNG_DOMAIN_KERNEL ? "kernel" :
+					"user space");
+		goto end_unlock;
+	}
+	channel_info = caa_container_of(node, struct channel_info,
+			channels_ht_node);
+
+	/* Retrieve the channel's last sample, if it exists, and update it. */
+	cds_lfht_lookup(state->channel_state_ht,
+			hash_channel_key(&latest_sample.key),
+			match_channel_state_sample,
+			&latest_sample.key,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (node) {
+		struct channel_state_sample *stored_sample;
+
+		/* Update the sample stored. */
+		stored_sample = caa_container_of(node,
+				struct channel_state_sample,
+				channel_state_ht_node);
+		memcpy(&previous_sample, stored_sample,
+				sizeof(previous_sample));
+		stored_sample->highest_usage = latest_sample.highest_usage;
+		stored_sample->lowest_usage = latest_sample.lowest_usage;
+		previous_sample_available = true;
+	} else {
+		/*
+		 * This is the channel's first sample, allocate space for and
+		 * store the new sample.
+		 */
+		struct channel_state_sample *stored_sample;
+
+		stored_sample = zmalloc(sizeof(*stored_sample));
+		if (!stored_sample) {
+			ret = -1;
+			goto end_unlock;
+		}
+
+		memcpy(stored_sample, &latest_sample, sizeof(*stored_sample));
+		cds_lfht_node_init(&stored_sample->channel_state_ht_node);
+		cds_lfht_add(state->channel_state_ht,
+				hash_channel_key(&stored_sample->key),
+				&stored_sample->channel_state_ht_node);
+	}
+
+	/* Find triggers associated with this channel. */
+	cds_lfht_lookup(state->channel_triggers_ht,
+			hash_channel_key(&latest_sample.key),
+			match_channel_trigger_list,
+			&latest_sample.key,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (!node) {
+		goto end_unlock;
 	}
 
 	trigger_list = caa_container_of(node, struct lttng_channel_trigger_list,
 			channel_triggers_ht_node);
 	cds_list_for_each_entry(trigger_list_element, &trigger_list->list,
 		        node) {
+		struct lttng_condition *condition;
+		struct lttng_action *action;
+		struct lttng_trigger *trigger;
+		struct notification_client_list *client_list;
 		struct lttng_evaluation *evaluation = NULL;
 
-		DBG("[notification-thread] Evaluating trigger...");
-		ret = evaluate_trigger(trigger_list_element->trigger, &key,
-				&evaluation, state);
+		trigger = trigger_list_element->trigger;
+		condition = lttng_trigger_get_condition(trigger);
+		assert(condition);
+		action = lttng_trigger_get_action(trigger);
+
+		/* Notify actions are the only type currently supported. */
+		assert(lttng_action_get_type(action) ==
+				LTTNG_ACTION_TYPE_NOTIFY);
+
+		/*
+		 * Check if any client is subscribed to the result of this
+		 * evaluation.
+		 */
+		cds_lfht_lookup(state->notification_trigger_clients_ht,
+				lttng_condition_hash(condition),
+				match_client_list,
+				trigger,
+				&iter);
+		node = cds_lfht_iter_get_node(&iter);
+		assert(node);
+
+		client_list = caa_container_of(node,
+				struct notification_client_list,
+				notification_trigger_ht_node);
+		if (cds_list_empty(&client_list->list)) {
+			/*
+			 * No clients interested in the evaluation's result,
+			 * skip it.
+			 */
+			continue;
+		}
+
+		ret = evaluate_condition(condition, &evaluation, state,
+				previous_sample_available ? &previous_sample : NULL,
+				&latest_sample, channel_info->capacity);
 		if (ret) {
-			goto end;
+			goto end_unlock;
 		}
 
 		if (!evaluation) {
 			continue;
 		}
+
+		/* Dispatch evaluation result to all clients. */
+		ret = send_evaluation_to_clients(trigger_list_element->trigger,
+				evaluation, client_list);
+		if (ret) {
+			goto end_unlock;
+		}
 	}
+end_unlock:
+	rcu_read_unlock();
 end:
 	return ret;
 }

@@ -147,7 +147,7 @@ error:
 static
 enum lttng_notification_channel_status send_command(
 		struct lttng_notification_channel *channel,
-		enum lttng_notification_channel_command_type type,
+		enum lttng_notification_channel_message_type type,
 		struct lttng_condition *condition)
 {
 	int socket;
@@ -156,7 +156,7 @@ enum lttng_notification_channel_status send_command(
 	enum lttng_notification_channel_status status =
 			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
 	char *command_buffer = NULL;
-	struct lttng_notification_channel_command cmd = {
+	struct lttng_notification_channel_message cmd = {
 		.type = type,
 	};
 	struct lttng_notification_channel_command_reply reply;
@@ -180,7 +180,7 @@ enum lttng_notification_channel_status send_command(
 	assert(ret < UINT32_MAX);
 	cmd.size = (uint32_t) ret;
 	command_size = ret + sizeof(
-			struct lttng_notification_channel_command);
+			struct lttng_notification_channel_message);
 	command_buffer = zmalloc(command_size);
 	if (!command_buffer) {
 		goto end;

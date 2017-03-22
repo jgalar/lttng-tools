@@ -675,8 +675,8 @@ int sample_ust_positions(struct lttng_consumer_channel *channel,
 		pthread_mutex_unlock(&stream->lock);
 	}
 
-	*_highest_use = (uint64_t) high;
-	*_lowest_use = (uint64_t) low;
+	*_highest_use = high;
+	*_lowest_use = low;
 end:
 	rcu_read_unlock();
 	if (empty_channel) {
