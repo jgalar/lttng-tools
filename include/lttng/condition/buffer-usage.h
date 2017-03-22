@@ -33,7 +33,7 @@ lttng_condition_buffer_usage_high_create(void);
 
 /* threshold_ratio expressed as [0.0, 1.0]. */
 extern enum lttng_condition_status
-lttng_condition_buffer_usage_get_threshold_ration(
+lttng_condition_buffer_usage_get_threshold_ratio(
 		struct lttng_condition *condition,
 	        double *threshold_ratio);
 
