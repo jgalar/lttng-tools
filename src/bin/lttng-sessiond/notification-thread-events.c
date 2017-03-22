@@ -27,6 +27,7 @@
 #include <common/unix.h>
 #include <common/dynamic-buffer.h>
 #include <common/hashtable/utils.h>
+#include <common/sessiond-comm/sessiond-comm.h>
 #include <lttng/condition/condition.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
@@ -1111,7 +1112,6 @@ int handle_notification_thread_client_disconnect(
 {
 	int ret = 0;
 	struct notification_client *client;
-	struct lttng_condition_list_element *condition_list_element;
 
 	rcu_read_lock();
 	DBG("[notification-thread] Closing client connection (socket fd = %i)",
@@ -1125,50 +1125,13 @@ int handle_notification_thread_client_disconnect(
 		goto end;
 	}
 
-	/*
-	 * Remove the client from all lists in notification_trigger_clients_ht
-	 * that match its conditions.
-	 */
-	cds_list_for_each_entry(condition_list_element, &client->condition_list,
-			node) {
-		struct cds_lfht_iter iter;
-		struct cds_lfht_node *node;
-		struct notification_client_list_element *client_list_element,
-				*tmp;
-		struct notification_client_list *client_list;
-
-		cds_lfht_lookup(state->notification_trigger_clients_ht,
-				lttng_condition_hash(
-					condition_list_element->condition),
-				match_client_list_condition,
-				&condition_list_element->condition,
-				&iter);
-		node = cds_lfht_iter_get_node(&iter);
-		if (!node) {
-			/* This condition is not associated with a trigger. */
-			continue;
-		}
-
-		client_list = caa_container_of(node,
-				struct notification_client_list,
-				notification_trigger_ht_node);
-		cds_list_for_each_entry_safe(client_list_element, tmp,
-				&client_list->list, node) {
-			/* Found client in list, remove it. */
-			if (client->socket ==
-				client_list_element->client->socket) {
-				DBG("[notification-thread] Removing client from list associated to one of its subscribed conditions");
-				cds_list_del(&client_list_element->node);
-				free(client_list_element);
-				break;
-			}
-		}
-	}
-
 	ret = lttng_poll_del(&state->events, client_socket);
-	notification_client_destroy(client, state);
-	ret = cds_lfht_del(state->client_socket_ht,
+	if (ret) {
+		ERR("[notification-thread] Failed to remove client socket from poll set");
+	}
+        cds_lfht_del(state->client_socket_ht,
 			&client->client_socket_ht_node);
+	notification_client_destroy(client, state);
 end:
 	rcu_read_unlock();
 	return ret;
@@ -1331,5 +1294,78 @@ error_disconnect_client:
 error_no_reply:
 	lttng_dynamic_buffer_reset(&buffer);
 	lttng_condition_destroy(condition);
+	return ret;
+}
+
+static
+int evaluate_trigger(struct lttng_trigger *trigger,
+		struct channel_key *channel_key,
+		struct lttng_evaluation **_evaluation,
+		struct notification_thread_state *state)
+{
+	return 0;
+}
+
+int handle_notification_thread_channel_sample(
+		struct notification_thread_state *state, int pipe,
+		enum lttng_domain_type domain)
+{
+	int ret = 0;
+	struct lttcomm_consumer_channel_monitor_msg msg;
+	struct channel_key key;
+	struct cds_lfht_node *node;
+	struct cds_lfht_iter iter;
+	struct lttng_channel_trigger_list *trigger_list;
+	struct lttng_trigger_list_element *trigger_list_element;
+
+	DBG("[notification-thread] Handling channel sample");
+	/*
+	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
+	 * ensuring that read/write of sampling messages are atomic.
+	 */
+	do {
+		ret = read(pipe, &msg, sizeof(msg));
+	} while (ret == -1 && errno == EINTR);
+	if (ret != sizeof(msg)) {
+		ERR("[notification-thread] Failed to read from monitoring pipe (fd = %i)",
+				pipe);
+		ret = -1;
+		goto end;
+	}
+
+	ret = 0;
+	key.key = msg.key;
+	key.domain = domain;
+
+	/* Find triggers associated with this channel. */
+	cds_lfht_lookup(state->channel_triggers_ht,
+			hash_channel_key(&key),
+			match_channel_trigger_list,
+			&key,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (!node) {
+	        DBG("[notification-thread] No triggers associated with sampled channel");
+		goto end;
+	}
+
+	trigger_list = caa_container_of(node, struct lttng_channel_trigger_list,
+			channel_triggers_ht_node);
+	cds_list_for_each_entry(trigger_list_element, &trigger_list->list,
+		        node) {
+		struct lttng_evaluation *evaluation = NULL;
+
+		DBG("[notification-thread] Evaluating trigger...");
+		ret = evaluate_trigger(trigger_list_element->trigger, &key,
+				&evaluation, state);
+		if (ret) {
+			goto end;
+		}
+
+		if (!evaluation) {
+			continue;
+		}
+	}
+end:
 	return ret;
 }

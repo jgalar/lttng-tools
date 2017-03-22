@@ -18,6 +18,7 @@
 #ifndef NOTIFICATION_THREAD_EVENTS_H
 #define NOTIFICATION_THREAD_EVENTS_H
 
+#include <lttng/domain.h>
 #include "notification-thread.h"
 
 /**
@@ -43,5 +44,9 @@ int handle_notification_thread_trigger_unregister_all(
 
 int handle_notification_thread_client(struct notification_thread_state *state,
 		int socket);
+
+int handle_notification_thread_channel_sample(
+		struct notification_thread_state *state, int pipe,
+		enum lttng_domain_type domain);
 
 #endif /* NOTIFICATION_THREAD_EVENTS_H */
