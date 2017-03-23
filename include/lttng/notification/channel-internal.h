@@ -22,6 +22,7 @@
 #include <common/macros.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 enum lttng_notification_channel_message_type {
 	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE = 0,
@@ -44,7 +45,7 @@ struct lttng_notification_channel_command_reply {
 } LTTNG_PACKED;
 
 struct lttng_notification_channel {
-	/* FIXME Add mutex to protect the socket from concurrent uses. */
+	pthread_mutex_t lock;
 	int socket;
 };
 

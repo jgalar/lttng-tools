@@ -50,6 +50,7 @@ struct lttng_notification_channel *lttng_notification_channel_create(
 		goto end;
 	}
 	channel->socket = -1;
+	pthread_mutex_init(&channel->lock, NULL);
 
 	is_root = (getuid() == 0);
 	if (!is_root) {
@@ -113,32 +114,33 @@ lttng_notification_channel_get_next_notification(
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID;
 		goto end;
 	}
+	pthread_mutex_lock(&channel->lock);
 
 	ret = lttcomm_recv_unix_sock(channel->socket, &msg, sizeof(msg));
 	if (ret <= 0) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 	if (msg.size > DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 	if (msg.type != LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 
 	ret = lttcomm_recv_unix_sock(channel->socket, &comm, sizeof(comm));
 	if (ret < sizeof(comm)) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 
 	ret = lttng_dynamic_buffer_set_size(&reception_buffer,
 			comm.length + sizeof(comm));
 	if (ret) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 
 	memcpy(reception_buffer.data, &comm, sizeof(comm));
@@ -147,7 +149,7 @@ lttng_notification_channel_get_next_notification(
 			comm.length);
 	if (ret < (ssize_t) comm.length) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 
 	ret = lttng_notification_create_from_buffer(reception_buffer.data,
@@ -157,12 +159,14 @@ lttng_notification_channel_get_next_notification(
 		goto error;
 	}
 	*_notification = notification;
+end_unlock:
+	pthread_mutex_unlock(&channel->lock);
 end:
 	lttng_dynamic_buffer_reset(&reception_buffer);
 	return status;
 error:
 	lttng_notification_destroy(notification);
-	goto end;
+	goto end_unlock;
 }
 
 static
@@ -188,16 +192,17 @@ enum lttng_notification_channel_status send_command(
 		goto end;
 	}
 
+	pthread_mutex_lock(&channel->lock);
 	socket = channel->socket;
 	if (!lttng_condition_validate(condition)) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID;
-		goto end;
+		goto end_unlock;
 	}
 
 	ret = lttng_condition_serialize(condition, NULL);
 	if (ret < 0) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID;
-		goto end;
+		goto end_unlock;
 	}
 	assert(ret < UINT32_MAX);
 	cmd_message.size = (uint32_t) ret;
@@ -205,20 +210,20 @@ enum lttng_notification_channel_status send_command(
 			struct lttng_notification_channel_message);
 	command_buffer = zmalloc(command_size);
 	if (!command_buffer) {
-		goto end;
+		goto end_unlock;
 	}
 
 	memcpy(command_buffer, &cmd_message, sizeof(cmd_message));
 	ret = lttng_condition_serialize(condition,
 			command_buffer + sizeof(cmd_message));
 	if (ret < 0) {
-		goto end;
+		goto end_unlock;
 	}
 
 	ret = lttcomm_send_unix_sock(socket, command_buffer, command_size);
 	if (ret < 0) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 
 	/* Receive command reply header. */
@@ -228,7 +233,7 @@ enum lttng_notification_channel_status send_command(
 				sizeof(reply_message) - received);
 		if (ret <= 0) {
 			status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-			goto end;
+			goto end_unlock;
 		}
 		received += ret;
 	} while (received < sizeof(reply_message));
@@ -236,7 +241,7 @@ enum lttng_notification_channel_status send_command(
 			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY ||
 			reply_message.size != sizeof(reply)) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-		goto end;
+		goto end_unlock;
 	}
 
 	/* Receive command reply payload. */
@@ -247,11 +252,13 @@ enum lttng_notification_channel_status send_command(
 				sizeof(reply) - received);
 		if (ret <= 0) {
 			status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
-			goto end;
+			goto end_unlock;
 		}
 		received += ret;
 	} while (received < sizeof(reply));
 	status = (enum lttng_notification_channel_status) reply.status;
+end_unlock:
+	pthread_mutex_unlock(&channel->lock);
 end:
 	free(command_buffer);
 	return status;
@@ -285,6 +292,7 @@ void lttng_notification_channel_destroy(
 	if (channel->socket >= 0) {
 		(void) lttcomm_close_unix_sock(channel->socket);
 	}
+	pthread_mutex_destroy(&channel->lock);
 	free(channel);
 }
 
