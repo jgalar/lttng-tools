@@ -1385,8 +1385,9 @@ int evaluate_condition(struct lttng_condition *condition,
 			previous_sample, buffer_capacity);
 	latest_sample_result = evaluate_buffer_usage_condition(condition,
 			latest_sample, buffer_capacity);
-	rcu_read_lock();
-	if (previous_sample_result == latest_sample_result) {
+
+	if (!latest_sample_result ||
+			(previous_sample_result == latest_sample_result)) {
 		/*
 		 * Only trigger on a condition evaluation transition.
 		 * NOTE: This edge-triggered logic may not be appropriate for
@@ -1395,7 +1396,7 @@ int evaluate_condition(struct lttng_condition *condition,
 		goto end;
 	}
 
-	if (evaluation) {
+	if (evaluation && latest_sample_result) {
 		*evaluation = lttng_evaluation_buffer_usage_create(
 				condition_type,
 				latest_sample->highest_usage,
@@ -1406,7 +1407,6 @@ int evaluate_condition(struct lttng_condition *condition,
 		}
 	}
 end:
-	rcu_read_unlock();
 	return ret;
 }
 
