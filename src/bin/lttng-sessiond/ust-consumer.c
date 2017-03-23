@@ -235,7 +235,6 @@ int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
 		struct consumer_socket *socket, struct ust_registry_session *registry)
 {
 	int ret;
-	enum lttng_error_code cmd_ret;
 	struct ltt_session *session;
 
 	assert(ua_sess);
@@ -252,32 +251,12 @@ int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
 
 	session = session_find_by_id(ua_sess->tracing_id);
 	assert(session);
-	/*
-	cmd_ret = notification_thread_command_add_channel(
-			notification_thread_handle, session->name,
-			ua_sess->euid, ua_sess->egid,
-			ua_chan->name,
-			ua_chan->key,
-			LTTNG_DOMAIN_UST,
-			ua_chan->attr.subbuf_size * ua_chan->attr.num_subbuf);
-	if (cmd_ret != LTTNG_OK) {
-		ret = - (int) cmd_ret;
-		ERR("Failed to add channel to notification thread");
-		goto error;
-	}
-	*/
+
 	pthread_mutex_lock(socket->lock);
 	ret = ask_channel_creation(ua_sess, ua_chan, consumer, socket, registry);
 	pthread_mutex_unlock(socket->lock);
 	if (ret < 0) {
 		ERR("ask_channel_creation consumer command failed");
-/*		cmd_ret = notification_thread_command_remove_channel(
-				notification_thread_handle, ua_chan->key,
-				LTTNG_DOMAIN_UST);
-		if (cmd_ret != LTTNG_OK) {
-			ERR("Failed to remove channel from notification thread");
-		}
-*/
 		goto error;
 	}
 

@@ -1097,7 +1097,7 @@ int handle_notification_thread_client_connect(
 		goto error;
 	}
 
-	/* FIXME perform handshake. */
+	/* FIXME protocol version handshake. */
 
 	ret = lttng_poll_add(&state->events, client->socket,
 			LPOLLIN | LPOLLERR |
@@ -1516,6 +1516,10 @@ int handle_notification_thread_channel_sample(
 	latest_sample.key.domain = domain;
 	latest_sample.highest_usage = sample_msg.highest;
 	latest_sample.lowest_usage = sample_msg.lowest;
+
+	DBG("[notification-thread] Handling channel sample (highest usage = %" PRIu64 ", lowest usage = %" PRIu64")",
+			latest_sample.highest_usage,
+			latest_sample.lowest_usage);
 
 	rcu_read_lock();
 

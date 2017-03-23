@@ -27,6 +27,7 @@
 #include "ust-app.h"
 #include "utils.h"
 #include "lttng-sessiond.h"
+#include "notification-thread-commands.h"
 
 /*
  * Hash table match function for event in the registry.

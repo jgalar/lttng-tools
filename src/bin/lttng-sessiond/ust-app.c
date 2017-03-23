@@ -448,7 +448,6 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 		struct ust_app *app)
 {
 	int ret;
-	enum lttng_error_code cmd_ret;
 	struct lttng_ht_iter iter;
 	struct ust_app_event *ua_event;
 	struct ust_app_ctx *ua_ctx;
@@ -458,15 +457,6 @@ void delete_ust_app_channel(int sock, struct ust_app_channel *ua_chan,
 	assert(ua_chan);
 
 	DBG3("UST app deleting channel %s", ua_chan->name);
-
-	/*
-	cmd_ret = notification_thread_command_remove_channel(
-			notification_thread_handle, ua_chan->key,
-			LTTNG_DOMAIN_UST);
-	if (cmd_ret != LTTNG_OK) {
-		ERR("Failed to remove channel from notification thread");
-	}
-	*/
 
 	/* Wipe stream */
 	cds_list_for_each_entry_safe(stream, stmp, &ua_chan->streams.head, list) {
