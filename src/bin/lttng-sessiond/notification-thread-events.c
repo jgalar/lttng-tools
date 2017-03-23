@@ -22,6 +22,7 @@
 #include "notification-thread.h"
 #include "notification-thread-events.h"
 #include "notification-thread-commands.h"
+#include <common/defaults.h>
 #include <common/error.h>
 #include <common/futex.h>
 #include <common/unix.h>
@@ -1263,6 +1264,9 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 		received += recv_ret;
 	} while (received < sizeof(msg));
 
+	if (msg.size > DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE) {
+		goto error_disconnect_client;
+	}
 	ret = lttng_dynamic_buffer_set_size(&buffer, msg.size);
 	if (ret) {
 		goto error_disconnect_client;

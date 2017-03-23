@@ -315,6 +315,9 @@
 /* Default thread stack size; the default mandated by pthread_create(3) */
 #define DEFAULT_LTTNG_THREAD_STACK_SIZE		2097152
 
+/* Default maximal size of message notification channel message payloads. */
+#define DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE	65536
+
 /*
  * Returns the default subbuf size.
  *

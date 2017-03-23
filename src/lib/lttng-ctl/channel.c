@@ -19,6 +19,7 @@
 #include <lttng/notification/channel-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/endpoint.h>
+#include <common/defaults.h>
 #include <common/error.h>
 #include <common/dynamic-buffer.h>
 #include <common/utils.h>
@@ -115,6 +116,10 @@ lttng_notification_channel_get_next_notification(
 
 	ret = lttcomm_recv_unix_sock(channel->socket, &msg, sizeof(msg));
 	if (ret <= 0) {
+		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
+		goto end;
+	}
+	if (msg.size > DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
 		goto end;
 	}
