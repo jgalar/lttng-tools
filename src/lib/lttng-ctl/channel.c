@@ -20,6 +20,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/endpoint.h>
 #include <common/error.h>
+#include <common/dynamic-buffer.h>
 #include <common/utils.h>
 #include <common/defaults.h>
 #include <assert.h>
@@ -98,14 +99,27 @@ lttng_notification_channel_get_next_notification(
 		struct lttng_notification **_notification)
 {
 	ssize_t ret;
-	char *notification_buffer = NULL;
 	struct lttng_notification_comm comm;
 	struct lttng_notification *notification = NULL;
+	struct lttng_dynamic_buffer reception_buffer;
+	struct lttng_notification_channel_message msg;
 	enum lttng_notification_channel_status status =
 			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
 
+	lttng_dynamic_buffer_init(&reception_buffer);
+
 	if (!channel || !_notification) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID;
+		goto end;
+	}
+
+	ret = lttcomm_recv_unix_sock(channel->socket, &msg, sizeof(msg));
+	if (ret <= 0) {
+		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
+		goto end;
+	}
+	if (msg.type != LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION) {
+		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
 		goto end;
 	}
 
@@ -115,21 +129,23 @@ lttng_notification_channel_get_next_notification(
 		goto end;
 	}
 
-	notification_buffer = zmalloc(comm.length + sizeof(comm));
-	if (!notification_buffer) {
+	ret = lttng_dynamic_buffer_set_size(&reception_buffer,
+			comm.length + sizeof(comm));
+	if (ret) {
+		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
 		goto end;
 	}
 
-	memcpy(notification_buffer, &comm, sizeof(comm));
+	memcpy(reception_buffer.data, &comm, sizeof(comm));
 	ret = lttcomm_recv_unix_sock(channel->socket,
-			notification_buffer + sizeof(comm),
+			reception_buffer.data + sizeof(comm),
 			comm.length);
 	if (ret < (ssize_t) comm.length) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
 		goto end;
 	}
 
-	ret = lttng_notification_create_from_buffer(notification_buffer,
+	ret = lttng_notification_create_from_buffer(reception_buffer.data,
 			&notification);
 	if (ret != (sizeof(comm) + (ssize_t) comm.length)) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
@@ -137,7 +153,7 @@ lttng_notification_channel_get_next_notification(
 	}
 	*_notification = notification;
 end:
-	free(notification_buffer);
+	lttng_dynamic_buffer_reset(&reception_buffer);
 	return status;
 error:
 	lttng_notification_destroy(notification);
@@ -156,9 +172,10 @@ enum lttng_notification_channel_status send_command(
 	enum lttng_notification_channel_status status =
 			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
 	char *command_buffer = NULL;
-	struct lttng_notification_channel_message cmd = {
+	struct lttng_notification_channel_message cmd_message = {
 		.type = type,
 	};
+	struct lttng_notification_channel_message reply_message;
 	struct lttng_notification_channel_command_reply reply;
 
 	if (!channel) {
@@ -178,7 +195,7 @@ enum lttng_notification_channel_status send_command(
 		goto end;
 	}
 	assert(ret < UINT32_MAX);
-	cmd.size = (uint32_t) ret;
+	cmd_message.size = (uint32_t) ret;
 	command_size = ret + sizeof(
 			struct lttng_notification_channel_message);
 	command_buffer = zmalloc(command_size);
@@ -186,9 +203,9 @@ enum lttng_notification_channel_status send_command(
 		goto end;
 	}
 
-	memcpy(command_buffer, &cmd, sizeof(cmd));
+	memcpy(command_buffer, &cmd_message, sizeof(cmd_message));
 	ret = lttng_condition_serialize(condition,
-			command_buffer + sizeof(cmd));
+			command_buffer + sizeof(cmd_message));
 	if (ret < 0) {
 		goto end;
 	}
@@ -199,9 +216,27 @@ enum lttng_notification_channel_status send_command(
 		goto end;
 	}
 
-	/* Receive command reply. */
-	do
-	{
+	/* Receive command reply header. */
+	do {
+		ret = lttcomm_recv_unix_sock(socket,
+				((char *) &reply_message) + received,
+				sizeof(reply_message) - received);
+		if (ret <= 0) {
+			status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
+			goto end;
+		}
+		received += ret;
+	} while (received < sizeof(reply_message));
+	if (reply_message.type !=
+			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY ||
+			reply_message.size != sizeof(reply)) {
+		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_ERROR;
+		goto end;
+	}
+
+	/* Receive command reply payload. */
+	received = 0;
+	do {
 		ret = lttcomm_recv_unix_sock(socket,
 				((char *) &reply) + received,
 				sizeof(reply) - received);
@@ -222,7 +257,7 @@ enum lttng_notification_channel_status lttng_notification_channel_subscribe(
 		struct lttng_condition *condition)
 {
 	return send_command(channel,
-			LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_SUBSCRIBE,
+			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE,
 			condition);
 }
 
@@ -231,7 +266,7 @@ enum lttng_notification_channel_status lttng_notification_channel_unsubscribe(
 		struct lttng_condition *condition)
 {
 	return send_command(channel,
-			LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_UNSUBSCRIBE,
+			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE,
 			condition);
 }
 

@@ -596,6 +596,10 @@ int handle_notification_thread_command_add_channel(
 	int trigger_count = 0;
 	struct cds_lfht_iter iter;
 
+	DBG("[notification-thread] Adding channel %s from session %s, channel key = %" PRIu64 " in %s domain",
+			channel_info->channel_name, channel_info->session_name,
+			channel_info->key.key, channel_info->key.domain == LTTNG_DOMAIN_KERNEL ? "kernel" : "user space");
+
 	CDS_INIT_LIST_HEAD(&trigger_list);
 
 	new_channel_info = channel_info_copy(channel_info);
@@ -669,6 +673,9 @@ int handle_notification_thread_command_remove_channel(
 	struct lttng_trigger_list_element *trigger_list_element, *tmp;
 	struct channel_key key = { .key = channel_key, .domain = domain };
 	struct channel_info *channel_info;
+
+	DBG("[notification-thread] Removing channel key = %" PRIu64 " in %s domain",
+			channel_key, domain == LTTNG_DOMAIN_KERNEL ? "kernel" : "user space");
 
 	rcu_read_lock();
 
@@ -1192,10 +1199,18 @@ int send_client_reply(int socket,
 	struct lttng_notification_channel_command_reply reply = {
 		.status = (int8_t) status,
 	};
+	struct lttng_notification_channel_message msg = {
+		.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY,
+		.size = sizeof(reply),
+	};
+	char *buffer[sizeof(msg) + sizeof(reply)] = {};
 
+	memcpy(buffer, &msg, sizeof(msg));
+	memcpy(buffer + sizeof(msg), &reply, sizeof(reply));
 	DBG("[notification-thread] Send command reply (%i)", (int) status);
 
-	ret = lttcomm_send_unix_sock(socket, &reply, sizeof(reply));
+	ret = lttcomm_send_unix_sock(socket, buffer,
+			sizeof(msg) + sizeof(reply));
 	if (ret < 0) {
 		ERR("[notification-thread] Failed to send command reply");
 		goto error;
@@ -1273,11 +1288,11 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 	DBG("[notification-thread] Successfully received condition from notification channel client");
 
 	switch ((enum lttng_notification_channel_message_type) msg.type) {
-	case LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_SUBSCRIBE:
+	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE:
 		ret = notification_thread_client_subscribe(client, condition,
 				state, &status);
 		break;
-	case LTTNG_NOTIFICATION_CHANNEL_COMMAND_TYPE_UNSUBSCRIBE:
+	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE:
 		ret = notification_thread_client_unsubscribe(client, condition,
 				state, &status);
 		break;
@@ -1427,7 +1442,7 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		goto end;
 	}
 
-	msg.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_NOTIFICATION;
+	msg.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION;
 	msg.size = (uint32_t) expected_notification_size;
 	ret = lttng_dynamic_buffer_append(&msg_buffer, &msg, sizeof(msg));
 	if (ret) {
@@ -1459,6 +1474,7 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 	}
 	ret = 0;
 end:
+	lttng_notification_destroy(notification);
 	lttng_dynamic_buffer_reset(&msg_buffer);
 	return ret;
 }

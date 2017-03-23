@@ -21,10 +21,12 @@
 #include <lttng/notification/notification.h>
 #include <common/macros.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 struct lttng_notification {
 	struct lttng_condition *condition;
 	struct lttng_evaluation *evaluation;
+	bool owns_elements;
 };
 
 struct lttng_notification_comm {

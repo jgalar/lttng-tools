@@ -40,6 +40,7 @@ struct lttng_notification *lttng_notification_create(
 
 	notification->condition = condition;
 	notification->evaluation = evaluation;
+	notification->owns_elements = false;
 end:
 	return notification;
 }
@@ -132,6 +133,7 @@ ssize_t lttng_notification_create_from_buffer(const char *buf,
 		goto error;
 	}
 	ret = offset;
+	(*notification)->owns_elements = true;
 end:
 	return ret;
 error:
@@ -146,8 +148,10 @@ void lttng_notification_destroy(struct lttng_notification *notification)
 		return;
 	}
 
-	lttng_condition_destroy(notification->condition);
-	lttng_evaluation_destroy(notification->evaluation);
+	if (notification->owns_elements) {
+		lttng_condition_destroy(notification->condition);
+		lttng_evaluation_destroy(notification->evaluation);
+	}
 	free(notification);
 }
 
