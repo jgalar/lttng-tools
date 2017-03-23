@@ -689,7 +689,11 @@ int handle_notification_thread_command_remove_channel(
 	 * There is a severe internal error if we are being asked to remove a
 	 * channel that doesn't exist.
 	 */
-	assert(node);
+	if (!node) {
+		ERR("[notification-thread] Channel being removed is unknown to the notification thread");
+		goto end;
+	}
+
 	/* Free the list of triggers associated with this channel. */
 	trigger_list = caa_container_of(node, struct lttng_channel_trigger_list,
 			channel_triggers_ht_node);
@@ -733,8 +737,8 @@ int handle_notification_thread_command_remove_channel(
 			channels_ht_node);
 	cds_lfht_del(state->channels_ht, node);
 	channel_info_destroy(channel_info);
+end:
 	rcu_read_unlock();
-
 	*cmd_result = LTTNG_OK;
 	return 0;
 }
