@@ -116,6 +116,11 @@ ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition
 	size = sizeof(struct lttng_condition_buffer_usage_comm);
 	session_name_len = strlen(usage->session_name) + 1;
 	channel_name_len = strlen(usage->channel_name) + 1;
+	if (session_name_len > LTTNG_NAME_MAX ||
+			channel_name_len > LTTNG_NAME_MAX) {
+		ret = -1;
+		goto end;
+	}
 	size += session_name_len + channel_name_len;
 	if (buf) {
 		struct lttng_condition_buffer_usage_comm usage_comm = {
@@ -263,6 +268,13 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 	struct lttng_condition_buffer_usage_comm *condition_comm =
 			(struct lttng_condition_buffer_usage_comm *) buf;
 	const char *session_name, *channel_name;
+
+	if (condition_comm->session_name_len > LTTNG_NAME_MAX ||
+			condition_comm->channel_name_len > LTTNG_NAME_MAX) {
+		ERR("Failed to initialize from malformed condition buffer: name too long");
+		ret = -1;
+		goto end;
+	}
 
 	if (condition_comm->threshold_set_in_bytes) {
 		status = lttng_condition_buffer_usage_set_threshold(condition,
