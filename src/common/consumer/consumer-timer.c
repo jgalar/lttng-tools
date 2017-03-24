@@ -647,21 +647,21 @@ int sample_ust_positions(struct lttng_consumer_channel *channel,
 			goto next;
 		}
 
-		ret = ustctl_snapshot_sample_positions(stream->ustream);
+		ret = lttng_ustconsumer_sample_snapshot_positions(stream);
 		if (ret) {
 			ERR("Failed to take buffer position snapshot in monitor timer (ret = %d)", ret);
 			pthread_mutex_unlock(&stream->lock);
 			goto end;
 		}
-		ret = ustctl_snapshot_get_consumed(stream->ustream,
-						   &consumed);
+		ret = lttng_ustconsumer_get_consumed_snapshot(stream,
+				&consumed);
 		if (ret) {
 			ERR("Failed to get buffer consumed position in monitor timer");
 			pthread_mutex_unlock(&stream->lock);
 			goto end;
 		}
-		ret = ustctl_snapshot_get_produced(stream->ustream,
-						   &produced);
+		ret = lttng_ustconsumer_get_produced_snapshot(stream,
+				&produced);
 		if (ret) {
 			ERR("Failed to get buffer produced position in monitor timer");
 			pthread_mutex_unlock(&stream->lock);

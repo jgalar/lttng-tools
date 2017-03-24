@@ -2008,6 +2008,20 @@ int lttng_ustconsumer_take_snapshot(struct lttng_consumer_stream *stream)
 }
 
 /*
+ * Sample consumed and produced positions for a specific fd.
+ *
+ * Returns 0 on success, < 0 on error.
+ */
+int lttng_ustconsumer_sample_snapshot_positions(
+		struct lttng_consumer_stream *stream)
+{
+	assert(stream);
+	assert(stream->ustream);
+
+	return ustctl_snapshot_sample_positions(stream->ustream);
+}
+
+/*
  * Get the produced position
  *
  * Returns 0 on success, < 0 on error
