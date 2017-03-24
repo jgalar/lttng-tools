@@ -35,7 +35,7 @@ enum lttng_evaluation_status {
 };
 
 extern enum lttng_condition_type lttng_evaluation_get_type(
-		struct lttng_evaluation *evaluation);
+		const struct lttng_evaluation *evaluation);
 
 extern void lttng_evaluation_destroy(struct lttng_evaluation *evaluation);
 

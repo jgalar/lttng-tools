@@ -31,10 +31,10 @@ struct lttng_notification;
  * Destroying the notification will also destroy the notification and evaluation
  * objects.
  */
-extern struct lttng_condition *lttng_notification_get_condition(
+extern const struct lttng_condition *lttng_notification_get_condition(
 		struct lttng_notification *notification);
 
-extern struct lttng_evaluation *lttng_notification_get_evaluation(
+extern const struct lttng_evaluation *lttng_notification_get_evaluation(
 		struct lttng_notification *notification);
 
 extern void lttng_notification_destroy(struct lttng_notification *notification);

@@ -23,7 +23,7 @@
 #include <assert.h>
 
 enum lttng_condition_type lttng_condition_get_type(
-		struct lttng_condition *condition)
+		const struct lttng_condition *condition)
 {
 	return condition ? condition->type : LTTNG_CONDITION_TYPE_UNKNOWN;
 }

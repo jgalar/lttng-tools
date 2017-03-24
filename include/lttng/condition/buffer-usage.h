@@ -34,7 +34,7 @@ lttng_condition_buffer_usage_high_create(void);
 /* threshold_ratio expressed as [0.0, 1.0]. */
 extern enum lttng_condition_status
 lttng_condition_buffer_usage_get_threshold_ratio(
-		struct lttng_condition *condition,
+		const struct lttng_condition *condition,
 	        double *threshold_ratio);
 
 /* threshold_ratio expressed as [0.0, 1.0]. */
@@ -45,7 +45,7 @@ lttng_condition_buffer_usage_set_threshold_ratio(
 
 extern enum lttng_condition_status
 lttng_condition_buffer_usage_get_threshold(
-		struct lttng_condition *condition,
+		const struct lttng_condition *condition,
 	        uint64_t *threshold_bytes);
 
 extern enum lttng_condition_status
@@ -55,7 +55,7 @@ lttng_condition_buffer_usage_set_threshold(
 
 extern enum lttng_condition_status
 lttng_condition_buffer_usage_get_session_name(
-		struct lttng_condition *condition,
+		const struct lttng_condition *condition,
 		const char **session_name);
 
 extern enum lttng_condition_status
@@ -65,7 +65,7 @@ lttng_condition_buffer_usage_set_session_name(
 
 extern enum lttng_condition_status
 lttng_condition_buffer_usage_get_channel_name(
-		struct lttng_condition *condition,
+		const struct lttng_condition *condition,
 		const char **channel_name);
 
 extern enum lttng_condition_status
@@ -75,7 +75,7 @@ lttng_condition_buffer_usage_set_channel_name(
 
 extern enum lttng_condition_status
 lttng_condition_buffer_usage_get_domain_type(
-		struct lttng_condition *condition,
+		const struct lttng_condition *condition,
 		enum lttng_domain_type *type);
 
 extern enum lttng_condition_status
@@ -87,12 +87,12 @@ lttng_condition_buffer_usage_set_domain_type(
 /* LTTng Condition Evaluation */
 extern enum lttng_evaluation_status
 lttng_evaluation_buffer_usage_get_usage_ratio(
-		struct lttng_evaluation *evaluation,
+		const struct lttng_evaluation *evaluation,
 		double *usage_ratio);
 
 extern enum lttng_evaluation_status
 lttng_evaluation_buffer_usage_get_usage(
-		struct lttng_evaluation *evaluation,
+		const struct lttng_evaluation *evaluation,
 	        uint64_t *usage_bytes);
 
 #ifdef __cplusplus

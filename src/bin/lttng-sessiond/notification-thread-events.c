@@ -892,6 +892,10 @@ error_free_ht_element:
 	free(trigger_ht_element);
 error:
 	if (free_trigger) {
+		struct lttng_action *action = lttng_trigger_get_action(trigger);
+
+		lttng_condition_destroy(condition);
+		lttng_action_destroy(action);
 		lttng_trigger_destroy(trigger);
 	}
 	rcu_read_unlock();
@@ -911,6 +915,7 @@ int handle_notification_thread_command_unregister_trigger(
 	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
 	struct lttng_condition *condition = lttng_trigger_get_condition(
 			trigger);
+	struct lttng_action *action;
 	enum lttng_error_code cmd_reply;
 
 	rcu_read_lock();
@@ -974,6 +979,11 @@ int handle_notification_thread_command_unregister_trigger(
 	trigger_ht_element = caa_container_of(triggers_ht_node,
 			struct lttng_trigger_ht_element, node);
 	cds_lfht_del(state->triggers_ht, triggers_ht_node);
+
+	condition = lttng_trigger_get_condition(trigger_ht_element->trigger);
+	lttng_condition_destroy(condition);
+	action = lttng_trigger_get_action(trigger_ht_element->trigger);
+	lttng_action_destroy(action);
 	lttng_trigger_destroy(trigger_ht_element->trigger);
 	free(trigger_ht_element);
 end:

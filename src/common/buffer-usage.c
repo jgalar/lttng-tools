@@ -24,6 +24,11 @@
 #include <float.h>
 #include <time.h>
 
+#define IS_USAGE_CONDITION(condition) ( \
+	lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW || \
+	lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH   \
+	)
+
 static
 double fixed_to_double(uint32_t val)
 {
@@ -37,16 +42,7 @@ uint64_t double_to_fixed(double val)
 }
 
 static
-bool is_usage_condition(struct lttng_condition *condition)
-{
-	enum lttng_condition_type type = lttng_condition_get_type(condition);
-
-	return type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW ||
-			type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH;
-}
-
-static
-bool is_usage_evaluation(struct lttng_evaluation *evaluation)
+bool is_usage_evaluation(const struct lttng_evaluation *evaluation)
 {
 	enum lttng_condition_type type = lttng_evaluation_get_type(evaluation);
 
@@ -105,7 +101,7 @@ ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition
 	ssize_t ret, size;
 	size_t session_name_len, channel_name_len;
 
-	if (!condition || !is_usage_condition(condition)) {
+	if (!condition || !IS_USAGE_CONDITION(condition)) {
 		ret = -1;
 		goto end;
 	}
@@ -459,12 +455,13 @@ error:
 
 enum lttng_condition_status
 lttng_condition_buffer_usage_get_threshold_ratio(
-		struct lttng_condition *condition, double *threshold_ratio)
+		const struct lttng_condition *condition,
+		double *threshold_ratio)
 {
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) ||
+	if (!condition || !IS_USAGE_CONDITION(condition) ||
 			!threshold_ratio) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
@@ -489,7 +486,7 @@ lttng_condition_buffer_usage_set_threshold_ratio(
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) ||
+	if (!condition || !IS_USAGE_CONDITION(condition) ||
 			threshold_ratio < 0.0 ||
 			threshold_ratio > 1.0) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
@@ -507,12 +504,13 @@ end:
 
 enum lttng_condition_status
 lttng_condition_buffer_usage_get_threshold(
-		struct lttng_condition *condition, uint64_t *threshold_bytes)
+		const struct lttng_condition *condition,
+		uint64_t *threshold_bytes)
 {
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) || !threshold_bytes) {
+	if (!condition || !IS_USAGE_CONDITION(condition) || !threshold_bytes) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
@@ -535,7 +533,7 @@ lttng_condition_buffer_usage_set_threshold(
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition)) {
+	if (!condition || !IS_USAGE_CONDITION(condition)) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
@@ -551,12 +549,13 @@ end:
 
 enum lttng_condition_status
 lttng_condition_buffer_usage_get_session_name(
-		struct lttng_condition *condition, const char **session_name)
+		const struct lttng_condition *condition,
+		const char **session_name)
 {
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) || !session_name) {
+	if (!condition || !IS_USAGE_CONDITION(condition) || !session_name) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
@@ -580,7 +579,7 @@ lttng_condition_buffer_usage_set_session_name(
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) || !session_name ||
+	if (!condition || !IS_USAGE_CONDITION(condition) || !session_name ||
 			strlen(session_name) == 0) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
@@ -604,12 +603,13 @@ end:
 
 enum lttng_condition_status
 lttng_condition_buffer_usage_get_channel_name(
-		struct lttng_condition *condition, const char **channel_name)
+		const struct lttng_condition *condition,
+		const char **channel_name)
 {
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) || !channel_name) {
+	if (!condition || !IS_USAGE_CONDITION(condition) || !channel_name) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
@@ -633,7 +633,7 @@ lttng_condition_buffer_usage_set_channel_name(
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) || !channel_name ||
+	if (!condition || !IS_USAGE_CONDITION(condition) || !channel_name ||
 			strlen(channel_name) == 0) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
@@ -657,12 +657,13 @@ end:
 
 enum lttng_condition_status
 lttng_condition_buffer_usage_get_domain_type(
-		struct lttng_condition *condition, enum lttng_domain_type *type)
+		const struct lttng_condition *condition,
+		enum lttng_domain_type *type)
 {
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) || !type) {
+	if (!condition || !IS_USAGE_CONDITION(condition) || !type) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
@@ -685,7 +686,7 @@ lttng_condition_buffer_usage_set_domain_type(
 	struct lttng_condition_buffer_usage *usage;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !is_usage_condition(condition) ||
+	if (!condition || !IS_USAGE_CONDITION(condition) ||
 			type == LTTNG_DOMAIN_NONE) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
@@ -758,7 +759,7 @@ end:
  */
 enum lttng_evaluation_status
 lttng_evaluation_buffer_usage_get_usage_ratio(
-		struct lttng_evaluation *evaluation, double *usage_ratio)
+		const struct lttng_evaluation *evaluation, double *usage_ratio)
 {
 	struct lttng_evaluation_buffer_usage *usage;
 	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;
@@ -777,8 +778,9 @@ end:
 }
 
 enum lttng_evaluation_status
-lttng_evaluation_buffer_usage_get_usage(struct lttng_evaluation *evaluation,
-	        uint64_t *usage_bytes)
+lttng_evaluation_buffer_usage_get_usage(
+		const struct lttng_evaluation *evaluation,
+		uint64_t *usage_bytes)
 {
 	struct lttng_evaluation_buffer_usage *usage;
 	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;

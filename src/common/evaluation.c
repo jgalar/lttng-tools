@@ -94,7 +94,7 @@ end:
 }
 
 enum lttng_condition_type lttng_evaluation_get_type(
-		struct lttng_evaluation *evaluation)
+		const struct lttng_evaluation *evaluation)
 {
 	return evaluation ? evaluation->type : LTTNG_CONDITION_TYPE_UNKNOWN;
 }

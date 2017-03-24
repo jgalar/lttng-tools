@@ -31,7 +31,7 @@ enum lttng_register_trigger_status {
 	LTTNG_REGISTER_TRIGGER_STATUS_INVALID = -1,
 };
 
-/* Trigger assumes ownership of both condition and action after call. */
+/* The caller retains the ownership of both condition and action. */
 extern struct lttng_trigger *lttng_trigger_create(
 		struct lttng_condition *condition, struct lttng_action *action);
 

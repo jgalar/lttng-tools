@@ -155,13 +155,13 @@ void lttng_notification_destroy(struct lttng_notification *notification)
 	free(notification);
 }
 
-struct lttng_condition *lttng_notification_get_condition(
+const struct lttng_condition *lttng_notification_get_condition(
 		struct lttng_notification *notification)
 {
 	return notification ? notification->condition : NULL;
 }
 
-struct lttng_evaluation *lttng_notification_get_evaluation(
+const struct lttng_evaluation *lttng_notification_get_evaluation(
 		struct lttng_notification *notification)
 {
 	return notification ? notification->evaluation : NULL;

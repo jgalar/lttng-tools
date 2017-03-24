@@ -30,6 +30,8 @@
 #include <common/compat/string.h>
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <lttng/trigger/trigger-internal.h>
+#include <lttng/condition/condition.h>
+#include <lttng/action/action.h>
 
 #include "channel.h"
 #include "consumer.h"
@@ -3616,6 +3618,8 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 	ssize_t sock_recv_len;
 	char *trigger_buffer = NULL;
 	struct lttng_trigger *trigger = NULL;
+	struct lttng_condition *condition;
+	struct lttng_action *action;
 
 	trigger_len = (size_t) cmd_ctx->lsm->u.trigger.length;
 	trigger_buffer = zmalloc(trigger_len);
@@ -3642,6 +3646,11 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 
 	ret = notification_thread_command_unregister_trigger(notification_thread,
 			trigger);
+	condition = lttng_trigger_get_condition(trigger);
+	lttng_condition_destroy(condition);
+	action = lttng_trigger_get_action(trigger);
+	lttng_action_destroy(action);
+	lttng_trigger_destroy(trigger);
 end:
 	free(trigger_buffer);
 	return ret;

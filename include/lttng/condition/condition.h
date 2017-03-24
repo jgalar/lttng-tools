@@ -41,7 +41,7 @@ enum lttng_condition_status {
 };
 
 extern enum lttng_condition_type lttng_condition_get_type(
-		struct lttng_condition *condition);
+		const struct lttng_condition *condition);
 
 extern void lttng_condition_destroy(struct lttng_condition *condition);
 

@@ -76,8 +76,6 @@ void lttng_trigger_destroy(struct lttng_trigger *trigger)
 		return;
 	}
 
-	lttng_condition_destroy(trigger->condition);
-	lttng_action_destroy(trigger->action);
 	free(trigger);
 }
 
