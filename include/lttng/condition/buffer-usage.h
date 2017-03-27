@@ -18,6 +18,10 @@
 #ifndef LTTNG_CONDITION_BUFFER_USAGE_H
 #define LTTNG_CONDITION_BUFFER_USAGE_H
 
+#include <stdint.h>
+
+#include <lttng/domain.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

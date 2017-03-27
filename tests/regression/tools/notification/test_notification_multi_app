@@ -1,0 +1,187 @@
+#!/bin/bash
+#
+# Copyright (C) - 2017 Jonathan Rajotte <jonathan.rajotte-julien@efficiso.com>>
+#
+# This library is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; version 2.1 of the License.
+#
+# This library is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+TEST_DESC="Notification"
+
+CURDIR=$(dirname $0)/
+TESTDIR=$CURDIR/../../../
+SESSIOND_BIN="lttng-sessiond"
+RELAYD_BIN="lttng-relayd"
+LTTNG_BIN="lttng"
+
+NR_ITER=100000
+NR_USEC_WAIT=5
+DELAY_USEC=2000000
+TESTAPP_PATH="$TESTDIR/utils/testapp"
+TESTAPP_NAME="gen-ust-events"
+TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
+
+SESSION_NAME="my_session"
+UST_CHANNEL_NAME="my_ust_channel"
+EVENT_NAME="tp:tptest"
+
+NR_NOTIFICATION_EXPECTED=3
+NR_CLIENT_APP=5
+
+MAX_RETRY_NUMBER_VALIDATE_NOTIFICATION=100
+
+TRACE_PATH=$(mktemp -d)
+
+DIR=$(readlink -f $TESTDIR)
+
+NUM_TESTS=15
+
+source $TESTDIR/utils/utils.sh
+
+# MUST set TESTDIR before calling those functions
+plan_tests $NUM_TESTS
+
+print_test_banner "$TEST_DESC"
+
+app_pids=()
+function start_client {
+	local pid=-1
+	local output_file=$1
+	local session_name=$2
+	local channel_name=$3
+	local domain_type=$4
+	local buffer_usage_type=$5
+	local buffer_usage_threshold_type=$6
+	local buffer_usage_threshold_value=$7
+	local nr_expected_notification=$8
+
+	${CURDIR}/base_client ${session_name} ${channel_name} ${domain_type} ${buffer_usage_type} ${buffer_usage_threshold_type} ${buffer_usage_threshold_value} ${nr_expected_notification} > ${output_file} &
+	pid=$!
+
+	# Set to cpu zero to force specific sub-buffer-usage
+	taskset -p -c 0 $pid >/dev/null 2&>1
+
+	app_pids+=("$pid")
+}
+
+function wait_for_message ()
+{
+	local message=$1
+	local nr_apps=$2
+	local nr_attempt_recv_notficatyion_validation=0
+
+	for (( j = 0; j < $nr_apps; j++ )); do
+		# Check for "error" message
+		grep -q "error" $CURDIR/app_output_file_$j
+		app_error=$?
+		if [ $app_error -eq "0" ] || [ $nr_attempt_recv_notficatyion_validation -gt $MAX_RETRY_NUMBER_VALIDATE_NOTIFICATION ]; then
+			# An error occurred
+			return 1
+		fi
+
+		grep -q "${message}" $CURDIR/app_output_file_$j
+		if [[ "$?" -ne "0" ]]; then
+			# Lookup failed restart loop
+			nr_attempt_recv_notficatyion_validation+=1
+			sleep 0.5
+			j=0;
+		fi
+	done
+	return 0
+}
+
+function print_errors ()
+{
+	local nr_apps=$1
+
+	for (( j = 0; j < $nr_apps; j++ )); do
+		# Check for "error" message
+		error_message=$(grep "error:" $CURDIR/app_output_file_$j)
+		if [[ "${error_message}" -ne "" ]]; then
+			diag "Errors for application $j:"
+			diag "${error_message}"
+		fi
+	done
+}
+
+function test_multi_app_low ()
+{
+	local app_pids=()
+
+	# Cleanup
+	rm ${CURDIR}*app_output_file* 2> /dev/null
+
+	# Setup
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	enable_ust_lttng_channel_ok $SESSION_NAME $UST_CHANNEL_NAME
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $UST_CHANNEL_NAME
+
+	for (( i = 0; i < $NR_CLIENT_APP; i++ )); do
+		app_output_file=$CURDIR/app_output_file_$i
+		start_client $app_output_file $SESSION_NAME $UST_CHANNEL_NAME LTTNG_DOMAIN_UST LOW RATIO 0.0 $NR_NOTIFICATION_EXPECTED
+	done
+
+	wait_for_message "sync: ready" $NR_CLIENT_APP
+
+	# Test notification reception
+	for (( i = 0; i < $NR_NOTIFICATION_EXPECTED; i++ )); do
+		start_lttng_tracing_ok $SESSION_NAME
+		$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT >/dev/null 2>&1
+		# Ensure that the sampling reset the last trigger state
+		# and that a sampling as occurred.
+		# TODO: real synchronization point
+		sleep 1.5
+
+		# Stop tracing forcing full buffer consumption
+		stop_lttng_tracing $SESSION_NAME
+
+		# Check for notifications reception
+		wait_for_message "notification: low $i" $NR_CLIENT_APP
+		ret=$?
+		ok $ret "Notifications $i received"
+		if [[ $ret -ne "0" ]]; then
+			# Error occurred bail out
+			break;
+		fi
+	done
+
+	wait_for_message "exit: 0" $NR_CLIENT_APP
+	ret=$?
+	ok $ret "Application terminated normally"
+	print_errors $NR_CLIENT_APP
+
+	# Run app in background
+	if [[ $ret -eq "0" ]]; then
+		rm ${CURDIR}*app_output_file*
+	fi
+}
+
+start_lttng_sessiond
+
+TESTS=(
+	test_multi_app_low
+)
+
+for fct_test in ${TESTS[@]};
+do
+	TRACE_PATH=$(mktemp -d)
+
+	${fct_test}
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+
+	# Only delete if successful
+	rm -rf $TRACE_PATH
+done
+
+stop_lttng_sessiond
