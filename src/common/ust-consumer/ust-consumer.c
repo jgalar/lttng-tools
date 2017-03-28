@@ -2273,10 +2273,10 @@ int lttng_ustconsumer_sync_metadata(struct lttng_consumer_local_data *ctx,
 	 * because we locked the metadata thread.
 	 */
 	ret = lttng_ustconsumer_request_metadata(ctx, metadata->chan, 0, 0);
+	pthread_mutex_lock(&metadata->lock);
 	if (ret < 0) {
 		goto end;
 	}
-	pthread_mutex_lock(&metadata->lock);
 
 	ret = commit_one_metadata_packet(metadata);
 	if (ret <= 0) {
@@ -2496,6 +2496,8 @@ retry:
 		index.offset = htobe64(stream->out_fd_offset);
 		ret = get_index_values(&index, ustream);
 		if (ret < 0) {
+			err = ustctl_put_subbuf(ustream);
+			assert(err == 0);
 			goto end;
 		}
 
@@ -2503,6 +2505,8 @@ retry:
 		ret = update_stream_stats(stream);
 		if (ret < 0) {
 			PERROR("kernctl_get_events_discarded");
+			err = ustctl_put_subbuf(ustream);
+			assert(err == 0);
 			goto end;
 		}
 	} else {

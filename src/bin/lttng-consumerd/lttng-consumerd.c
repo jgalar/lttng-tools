@@ -308,6 +308,8 @@ int main(int argc, char **argv)
 	void *status;
 	struct lttng_consumer_local_data *tmp_ctx;
 
+	rcu_register_thread();
+
 	if (set_signal_handler()) {
 		retval = -1;
 		goto exit_set_signal_handler;
@@ -622,6 +624,12 @@ exit_init_data:
 	tmp_ctx = ctx;
 	ctx = NULL;
 	cmm_barrier();	/* Clear ctx for signal handler. */
+	/*
+	 * Wait for all pending call_rcu work to complete before tearing
+	 * down data structures. call_rcu worker may be trying to
+	 * perform lookups in those structures.
+	 */
+	rcu_barrier();
 	lttng_consumer_destroy(tmp_ctx);
 	lttng_consumer_cleanup();
 
@@ -636,6 +644,8 @@ exit_init_data:
 exit_health_consumerd_cleanup:
 exit_options:
 exit_set_signal_handler:
+
+	rcu_unregister_thread();
 
 	if (!retval) {
 		exit(EXIT_SUCCESS);

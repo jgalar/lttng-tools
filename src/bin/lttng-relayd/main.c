@@ -2680,6 +2680,11 @@ error:
 			destroy_conn,
 			sock_n.node) {
 		health_code_update();
+
+		if (session_abort(destroy_conn->session)) {
+			assert(0);
+		}
+
 		/*
 		 * No need to grab another ref, because we own
 		 * destroy_conn.
@@ -2932,6 +2937,12 @@ exit_init_data:
 	health_app_destroy(health_relayd);
 exit_health_app_create:
 exit_options:
+	/*
+	 * Wait for all pending call_rcu work to complete before tearing
+	 * down data structures. call_rcu worker may be trying to
+	 * perform lookups in those structures.
+	 */
+	rcu_barrier();
 	relayd_cleanup();
 
 	/* Ensure all prior call_rcu are done. */

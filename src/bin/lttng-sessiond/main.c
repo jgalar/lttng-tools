@@ -1855,6 +1855,8 @@ static void *thread_dispatch_ust_registration(void *data)
 		.count = 0,
 	};
 
+	rcu_register_thread();
+
 	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_APP_REG_DISPATCH);
 
 	if (testpoint(sessiond_thread_app_reg_dispatch)) {
@@ -2088,6 +2090,7 @@ error_testpoint:
 		ERR("Health error occurred in %s", __func__);
 	}
 	health_unregister(health_sessiond);
+	rcu_unregister_thread();
 	return NULL;
 }
 
@@ -6147,6 +6150,12 @@ exit_client:
 exit_health:
 
 exit_init_data:
+	/*
+	 * Wait for all pending call_rcu work to complete before tearing
+	 * down data structures. call_rcu worker may be trying to
+	 * perform lookups in those structures.
+	 */
+	rcu_barrier();
 	/*
 	 * sessiond_cleanup() is called when no other thread is running, except
 	 * the ht_cleanup thread, which is needed to destroy the hash tables.
