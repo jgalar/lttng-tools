@@ -360,7 +360,7 @@ int notification_thread_client_subscribe(struct notification_client *client,
 			notification_trigger_ht_node);
 	client_list_element->client = client;
 	CDS_INIT_LIST_HEAD(&client_list_element->node);
-	cds_list_add(&client_list->list, &client_list_element->node);
+	cds_list_add(&client_list_element->node, &client_list->list);
 end_unlock:
 	rcu_read_unlock();
 end:
