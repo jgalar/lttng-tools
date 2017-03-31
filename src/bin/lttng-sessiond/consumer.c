@@ -1083,6 +1083,35 @@ error:
 	return ret;
 }
 
+int consumer_send_channel_rotate_pipe(struct consumer_socket *consumer_sock,
+		int pipe)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg;
+
+	/* Code flow error. Safety net. */
+
+	memset(&msg, 0, sizeof(msg));
+	msg.cmd_type = LTTNG_CONSUMER_SET_CHANNEL_ROTATE_PIPE;
+
+	DBG3("Sending set_channel_rotate_pipe command to consumer");
+	ret = consumer_send_msg(consumer_sock, &msg);
+	if (ret < 0) {
+		goto error;
+	}
+
+	DBG3("Sending channel rotation pipe %d to consumer on socket %d",
+			pipe, *consumer_sock->fd_ptr);
+	ret = consumer_send_fds(consumer_sock, &pipe, 1);
+	if (ret < 0) {
+		goto error;
+	}
+
+	DBG2("Channel rotation pipe successfully sent");
+error:
+	return ret;
+}
+
 /*
  * Set consumer subdirectory using the session name and a generated datetime if
  * needed. This is appended to the current subdirectory.
@@ -1559,5 +1588,69 @@ int consumer_get_lost_packets(uint64_t session_id, uint64_t channel_key,
 
 end:
 	rcu_read_unlock();
+	return ret;
+}
+
+int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
+		uid_t uid, gid_t gid, struct consumer_output *output,
+		char *tmp, uint32_t metadata)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg;
+
+	assert(socket);
+
+	DBG("Consumer rotate channel key %" PRIu64, key);
+
+	fprintf(stderr, "rotate socket %p\n", socket);
+	memset(&msg, 0, sizeof(msg));
+	msg.cmd_type = LTTNG_CONSUMER_ROTATE_CHANNEL;
+	msg.u.rotate_channel.key = key;
+	msg.u.rotate_channel.metadata = metadata;
+
+	if (output->type == CONSUMER_DST_NET) {
+		ERR("TODO");
+		ret = -1;
+		goto error;
+		/*
+		msg.u.rotate_channel.relayd_id = output->consumer->net_seq_index;
+		ret = snprintf(msg.u.rotate_channel.pathname,
+				sizeof(msg.u.rotate_channel.pathname),
+				"%s/%s-%s-%" PRIu64 "%s", output->consumer->subdir,
+				output->name, output->datetime, output->nb_rotate,
+				session_path);
+		if (ret < 0) {
+			ret = -LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		*/
+	} else {
+		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
+		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s/%s/%s",
+				output->dst.session_root_path,
+				output->chunk_path, tmp);
+		fprintf(stderr, "rotate to %s\n",
+				msg.u.rotate_channel.pathname);
+
+		/* Create directory. Ignore if exist. */
+		ret = run_as_mkdir_recursive(msg.u.rotate_channel.pathname,
+				S_IRWXU | S_IRWXG, uid, gid);
+		if (ret < 0) {
+			if (errno != EEXIST) {
+				ERR("Trace directory creation error");
+				goto error;
+			}
+		}
+	}
+
+	health_code_update();
+	fprintf(stderr, "send %d\n", LTTNG_CONSUMER_ROTATE_CHANNEL);
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		goto error;
+	}
+
+error:
+	health_code_update();
 	return ret;
 }

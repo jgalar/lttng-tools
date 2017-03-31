@@ -31,6 +31,7 @@
 #include <lttng/save-internal.h>
 #include <lttng/channel-internal.h>
 #include <lttng/trigger/trigger-internal.h>
+#include <lttng/rotate-internal.h>
 #include <common/compat/socket.h>
 #include <common/uri.h>
 #include <common/defaults.h>
@@ -100,6 +101,8 @@ enum lttcomm_sessiond_command {
 	LTTNG_REGENERATE_STATEDUMP          = 42,
 	LTTNG_REGISTER_TRIGGER              = 43,
 	LTTNG_UNREGISTER_TRIGGER            = 44,
+	LTTNG_ROTATE_SESSION                = 45,
+	LTTNG_ROTATE_PENDING                = 46,
 };
 
 enum lttcomm_relayd_command {
@@ -123,6 +126,7 @@ enum lttcomm_relayd_command {
 	RELAYD_STREAMS_SENT                 = 16,
 	/* Ask the relay to reset the metadata trace file (2.8+) */
 	RELAYD_RESET_METADATA               = 17,
+	RELAYD_ROTATE                       = 18,
 };
 
 /*
@@ -321,6 +325,9 @@ struct lttcomm_session_msg {
 		struct {
 			uint32_t length;
 		} LTTNG_PACKED trigger;
+		struct {
+			uint64_t rotate_id;
+		} LTTNG_PACKED rotate_pending;
 	} u;
 } LTTNG_PACKED;
 
@@ -534,6 +541,12 @@ struct lttcomm_consumer_msg {
 		struct {
 			uint64_t session_id;
 		} LTTNG_PACKED regenerate_metadata;
+		struct {
+			char pathname[PATH_MAX];
+			uint32_t metadata; /* This is a metadata channel. */
+			uint64_t relayd_id; /* Relayd id if apply. */
+			uint64_t key;
+		} LTTNG_PACKED rotate_channel;
 	} u;
 } LTTNG_PACKED;
 

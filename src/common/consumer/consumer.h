@@ -62,6 +62,8 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_LOST_PACKETS,
 	LTTNG_CONSUMER_CLEAR_QUIESCENT_CHANNEL,
 	LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE,
+	LTTNG_CONSUMER_SET_CHANNEL_ROTATE_PIPE,
+	LTTNG_CONSUMER_ROTATE_CHANNEL,
 };
 
 /* State of each fd in consumer */
@@ -226,6 +228,13 @@ struct lttng_consumer_channel {
 	uint64_t lost_packets;
 
 	bool streams_sent_to_relayd;
+
+	/*
+	 * Account how many streams are waiting for their rotation to be
+	 * complete. When this number reaches 0, we inform the session
+	 * daemon that this channel has finished its rotation.
+	 */
+	uint64_t nr_stream_rotate_pending;
 };
 
 /*
@@ -413,6 +422,22 @@ struct lttng_consumer_stream {
 	pthread_cond_t metadata_rdv;
 	pthread_mutex_t metadata_rdv_lock;
 
+	/*
+	 * If rotate_position != 0, when we reach this position in the
+	 * ring-buffer, close this tracefile and create a new one in
+	 * chan->pathname.
+	 */
+	uint64_t rotate_position;
+
+	/*
+	 * If rotate_ready is set to 1, rotate the stream the next time data
+	 * need to be extracted, regardless of the rotate_position. This is
+	 * used if all the metadata has been consumed when we rotate. In this
+	 * case, the snapshot of the positions returns -EAGAIN and we cannot
+	 * use the produced/consumed positions as reference.
+	 */
+	unsigned int rotate_ready:1;
+
 	/* Indicate if the stream still has some data to be read. */
 	unsigned int has_data:1;
 	/*
@@ -552,6 +577,11 @@ struct lttng_consumer_local_data {
 	 * to the session daemon (write-only).
 	 */
 	int channel_monitor_pipe;
+	/*
+	 * Pipe used to inform the session daemon that a stream has finished
+	 * its rotation (write-only).
+	 */
+	int channel_rotate_pipe;
 };
 
 /*

@@ -54,6 +54,22 @@ struct ltt_session_list {
 	struct cds_list_head head;
 };
 
+struct ltt_session_chunk {
+	/*
+	 * When the rotation is in progress, the temporary path name is
+	 * stored here. When the rotation is complete, the final path name
+	 * is here and can be queried with the rotate_pending call.
+	 */
+	char current_rotate_path[PATH_MAX];
+	/*
+	 * The path where the consumer is currently writing after the first
+	 * session rotation.
+	 */
+	char active_tracing_path[PATH_MAX];
+	time_t rotate_start_time;
+	time_t rotate_end_time;
+};
+
 /*
  * This data structure contains information needed to identify a tracing
  * session for both LTTng and UST.
@@ -117,6 +133,27 @@ struct ltt_session {
 	 * Node in ltt_sessions_ht_by_id.
 	 */
 	struct lttng_ht_node_u64 node;
+	/*
+	 * Number of session rotation for this session.
+	 */
+	uint64_t rotate_count;
+	unsigned int rotate_pending:1;
+	/*
+	 * Number of channels waiting for a rotate.
+	 * When this number reaches 0, we can handle the rename of the chunk
+	 * folder and inform the client that the rotate is finished.
+	 *
+	 * TODO: replace rotate_pending checks by that.
+	 */
+	unsigned int nr_chan_rotate_pending;
+	struct ltt_session_chunk rotation_chunk;
+	/*
+	 * Store the timestamp when the session started for an eventual
+	 * session rotation call.
+	 */
+	time_t session_start_ts;
+	time_t session_last_stop_ts;
+	time_t last_begin_rotation_ts;
 };
 
 /* Prototypes */

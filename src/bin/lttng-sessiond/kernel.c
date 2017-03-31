@@ -33,6 +33,7 @@
 #include "kernel-consumer.h"
 #include "kern-modules.h"
 #include "utils.h"
+#include "rotation-thread.h"
 
 /*
  * Add context on a kernel channel.
@@ -1124,5 +1125,92 @@ int kernel_supports_ring_buffer_snapshot_sample_positions(int tracer_fd)
 		ret = 0;
 	}
 error:
+	return ret;
+}
+
+/*
+ * Rotate a kernel session.
+ *
+ * Return 0 on success or else return a LTTNG_ERR code.
+ */
+int kernel_rotate_session(struct ltt_session *session)
+{
+	int ret;
+	struct consumer_socket *socket;
+	struct lttng_ht_iter iter;
+	struct ltt_kernel_session *ksess = session->kernel_session;
+
+	assert(ksess);
+	assert(ksess->consumer);
+
+	DBG("Rotate kernel session started");
+
+	rcu_read_lock();
+
+	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
+			socket, node.node) {
+		struct ltt_kernel_channel *chan;
+
+		/*
+		 * Account the metadata channel first to make sure the
+		 * number of channels waiting for a rotation cannot
+		 * reach 0 before we complete the iteration over all
+		 * the channels.
+		 */
+		ret = rotate_add_channel_pending(ksess->metadata->fd,
+				LTTNG_DOMAIN_KERNEL, session);
+		if (ret < 0) {
+			ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
+			pthread_mutex_unlock(socket->lock);
+			goto error;
+		}
+
+		/* For each channel, ask the consumer to rotate it. */
+		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
+			/* FIXME: is that lock necessary, we don't do it in UST ? */
+			pthread_mutex_lock(socket->lock);
+			ret = rotate_add_channel_pending(chan->fd,
+					LTTNG_DOMAIN_KERNEL, session);
+			if (ret < 0) {
+				ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
+				pthread_mutex_unlock(socket->lock);
+				goto error;
+			}
+
+			ret = consumer_rotate_channel(socket, chan->fd,
+					ksess->uid, ksess->gid, ksess->consumer,
+					"", 0);
+			if (ret < 0) {
+				ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
+				pthread_mutex_unlock(socket->lock);
+				goto error;
+			}
+
+			pthread_mutex_unlock(socket->lock);
+		}
+
+		/*
+		 * Rotate the metadata channel.
+		 */
+		pthread_mutex_lock(socket->lock);
+		ret = consumer_rotate_channel(socket, ksess->metadata->fd,
+				ksess->uid, ksess->gid, ksess->consumer, "", 1);
+		if (ret < 0) {
+			ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
+			pthread_mutex_unlock(socket->lock);
+			goto error;
+		}
+		pthread_mutex_unlock(socket->lock);
+	}
+	ret = kernctl_session_metadata_cache_dump(ksess->fd);
+	if (ret < 0) {
+		ERR("Dump the kernel metadata cache");
+		goto error;
+	}
+
+	ret = LTTNG_OK;
+
+error:
+	rcu_read_unlock();
 	return ret;
 }

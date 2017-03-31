@@ -51,6 +51,7 @@
 #include "buffer-registry.h"
 #include "notification-thread.h"
 #include "notification-thread-commands.h"
+#include "rotation-thread.h"
 
 #include "cmd.h"
 
@@ -2395,6 +2396,19 @@ int cmd_start_trace(struct ltt_session *session)
 		goto error;
 	}
 
+	/*
+	 * Record the timestamp of the first time the session is started for
+	 * an eventual session rotation call.
+	 */
+	if (!session->has_been_started) {
+		session->session_start_ts = time(NULL);
+		if (session->session_start_ts == (time_t) -1) {
+			PERROR("Get start time");
+			ret = LTTNG_ERR_FATAL;
+			goto error;
+		}
+	}
+
 	/* Kernel tracing */
 	if (ksession != NULL) {
 		ret = start_kernel_session(ksession, kernel_tracer_fd);
@@ -2494,6 +2508,8 @@ int cmd_stop_trace(struct ltt_session *session)
 			goto error;
 		}
 	}
+
+	session->session_last_stop_ts = time(NULL);
 
 	/* Flag inactive after a successful stop. */
 	session->active = 0;
@@ -2749,6 +2765,22 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 
 		/* Clean up the rest. */
 		trace_ust_destroy_session(usess);
+	}
+
+	if (session->rotate_count > 0) {
+		session->rotate_count++;
+		/*
+		 * The currently active tracing path is now the folder we
+		 * want to rename.
+		 */
+		snprintf(session->rotation_chunk.current_rotate_path,
+				PATH_MAX, "%s",
+				session->rotation_chunk.active_tracing_path);
+		ret = rename_complete_chunk(session,
+				session->session_last_stop_ts);
+		if (ret < 0) {
+			ERR("Renaming session on destroy");
+		}
 	}
 
 	/*
@@ -4097,6 +4129,248 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 	session->shm_path[sizeof(session->shm_path) - 1] = '\0';
 
 	return 0;
+}
+
+static
+int rename_first_chunk(struct consumer_output *consumer, char *datetime)
+{
+	int ret;
+	char *tmppath = NULL, *tmppath2 = NULL;
+
+	tmppath = zmalloc(PATH_MAX * sizeof(char));
+	if (!tmppath) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+	tmppath2 = zmalloc(PATH_MAX * sizeof(char));
+	if (!tmppath2) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+
+	/* Current domain path: <session>/kernel */
+	snprintf(tmppath, PATH_MAX, "%s/%s",
+			consumer->dst.session_root_path, consumer->subdir);
+	/* New domain path: <session>/<start-date>-/kernel */
+	snprintf(tmppath2, PATH_MAX, "%s/%s-/%s",
+			consumer->dst.session_root_path, datetime,
+			consumer->subdir);
+	/*
+	 * Move the per-domain folder inside the first rotation
+	 * folder.
+	 */
+	ret = rename(tmppath, tmppath2);
+	if (ret < 0) {
+		PERROR("Rename first trace directory");
+		ret = -LTTNG_ERR_ROTATE_NO_DATA;
+		goto error;
+	}
+
+	ret = 0;
+
+error:
+	free(tmppath);
+	free(tmppath2);
+
+	return ret;
+}
+
+/*
+ * Command LTTNG_ROTATE_SESSION from the lttng-ctl library.
+ *
+ * Ask the consumer to rotate the session output directory.
+ *
+ * Return 0 on success or else a LTTNG_ERR code.
+ */
+int cmd_rotate_session(struct ltt_session *session,
+		struct lttng_rotate_session_return **rotate_return)
+{
+	int ret;
+	struct tm *timeinfo;
+	char datetime[16];
+	time_t now;
+
+	assert(session);
+
+	*rotate_return = zmalloc(sizeof(struct lttng_rotate_session_return));
+	if (!*rotate_return) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	if (session->live_timer || session->snapshot_mode ||
+			!session->output_traces) {
+		ret = -LTTNG_ERR_ROTATE_NOT_AVAILABLE;
+		goto error;
+	}
+
+	if (session->rotate_pending) {
+		ret = -LTTNG_ERR_ROTATE_PENDING;
+		goto error;
+	}
+
+	/* Special case for the first rotation. */
+	if (session->rotate_count == 0) {
+		timeinfo = localtime(&session->session_start_ts);
+		strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+		if (session->kernel_session) {
+			snprintf(session->rotation_chunk.current_rotate_path,
+					PATH_MAX, "%s/%s-",
+					session->kernel_session->consumer->dst.session_root_path,
+					datetime);
+		} else if (session->ust_session) {
+			snprintf(session->rotation_chunk.current_rotate_path,
+					PATH_MAX, "%s/%s-",
+					session->ust_session->consumer->dst.session_root_path,
+					datetime);
+		} else {
+			assert(0);
+		}
+
+		/*
+		 * Create the first rotation folder to move the existing
+		 * kernel/ust folders into.
+		 */
+		ret = run_as_mkdir_recursive(session->rotation_chunk.current_rotate_path,
+				S_IRWXU | S_IRWXG, session->uid, session->gid);
+		if (ret < 0) {
+			if (errno != EEXIST) {
+				ERR("Trace directory creation error");
+				ret = -LTTNG_ERR_ROTATE_NOT_AVAILABLE;
+				goto error;
+			}
+		}
+		if (session->kernel_session) {
+			ret = rename_first_chunk(session->kernel_session->consumer,
+					datetime);
+			if (ret < 0) {
+				goto error;
+			}
+		}
+		if (session->ust_session) {
+			ret = rename_first_chunk(session->ust_session->consumer,
+					datetime);
+			if (ret < 0) {
+				goto error;
+			}
+		}
+	} else {
+		/*
+		 * The currently active tracing path is now the folder we
+		 * want to rotate.
+		 */
+		snprintf(session->rotation_chunk.current_rotate_path,
+				PATH_MAX, "%s",
+				session->rotation_chunk.active_tracing_path);
+	}
+
+	session->rotate_count++;
+	session->rotate_pending = 1;
+
+	/*
+	 * Create the path name for the next chunk.
+	 */
+	now = time(NULL);
+	if (now == (time_t) -1) {
+		ret = -LTTNG_ERR_ROTATE_NOT_AVAILABLE;
+		goto error;
+	}
+
+	timeinfo = localtime(&now);
+	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+	if (session->kernel_session) {
+		/* The active path for the next rotation/destroy. */
+		snprintf(session->rotation_chunk.active_tracing_path,
+				PATH_MAX, "%s/%s-",
+				session->kernel_session->consumer->dst.session_root_path,
+				datetime);
+		/* The sub-directory for the consumer. */
+		snprintf(session->kernel_session->consumer->chunk_path,
+				PATH_MAX, "/%s-/%s/", datetime,
+				session->kernel_session->consumer->subdir);
+		ret = kernel_rotate_session(session);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
+	}
+	if (session->ust_session) {
+		snprintf(session->rotation_chunk.active_tracing_path,
+				PATH_MAX, "%s/%s-",
+				session->ust_session->consumer->dst.session_root_path,
+				datetime);
+		snprintf(session->ust_session->consumer->chunk_path,
+				PATH_MAX, "/%s-/", datetime);
+		ret = ust_app_rotate_session(session);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
+	}
+
+	(*rotate_return)->rotate_id = session->rotate_count;
+	(*rotate_return)->status = LTTNG_ROTATE_STARTED;
+
+	DBG("Cmd rotate session %s, rotate_id %" PRIu64, session->name,
+			session->rotate_count);
+	ret = LTTNG_OK;
+
+	goto end;
+
+error:
+	(*rotate_return)->status = LTTNG_ROTATE_ERROR;
+end:
+	return ret;
+}
+
+/*
+ * Command LTTNG_ROTATE_PENDING from the lttng-ctl library.
+ *
+ * Check if the session has finished its rotation.
+ *
+ * Return 0 on success or else a LTTNG_ERR code.
+ */
+int cmd_rotate_pending(struct ltt_session *session,
+		struct lttng_rotate_pending_return **pending_return,
+		uint64_t rotate_id)
+{
+	int ret;
+
+	assert(session);
+
+	DBG("Cmd rotate pending session %s, rotate_id %" PRIu64, session->name,
+			session->rotate_count);
+
+	*pending_return = zmalloc(sizeof(struct lttng_rotate_pending_return));
+	if (!*pending_return) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	if (session->rotate_count != rotate_id) {
+		(*pending_return)->status = LTTNG_ROTATE_EXPIRED;
+		ret = LTTNG_OK;
+		goto end;
+	}
+
+	if (session->rotate_pending) {
+		DBG("Session %s, rotate_id %" PRIu64 " still pending",
+				session->name, session->rotate_count);
+		(*pending_return)->status = LTTNG_ROTATE_STARTED;
+	} else {
+		DBG("Session %s, rotate_id %" PRIu64 " finished",
+				session->name, session->rotate_count);
+		(*pending_return)->status = LTTNG_ROTATE_COMPLETED;
+		snprintf((*pending_return)->output_path, PATH_MAX, "%s",
+				session->rotation_chunk.current_rotate_path);
+	}
+
+	ret = LTTNG_OK;
+
+	goto end;
+
+error:
+	(*pending_return)->status = LTTNG_ROTATE_ERROR;
+end:
+	return ret;
 }
 
 /*

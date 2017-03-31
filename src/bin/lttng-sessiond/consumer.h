@@ -99,6 +99,11 @@ struct consumer_data {
 	 */
 	int channel_monitor_pipe;
 	/*
+	 * Write-end of the channel rotation pipe to be passed to the
+	 * consumer.
+	 */
+	int channel_rotate_pipe;
+	/*
 	 * The metadata socket object is handled differently and only created
 	 * locally in this object thus it's the only reference available in the
 	 * session daemon. For that reason, a variable for the fd is required and
@@ -233,6 +238,8 @@ int consumer_send_relayd_socket(struct consumer_socket *consumer_sock,
 		char *session_name, char *hostname, int session_live_timer);
 int consumer_send_channel_monitor_pipe(struct consumer_socket *consumer_sock,
 		int pipe);
+int consumer_send_channel_rotate_pipe(struct consumer_socket *consumer_sock,
+		int pipe);
 int consumer_send_destroy_relayd(struct consumer_socket *sock,
 		struct consumer_output *consumer);
 int consumer_recv_status_reply(struct consumer_socket *sock);
@@ -316,5 +323,9 @@ int consumer_get_lost_packets(uint64_t session_id, uint64_t channel_key,
 int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 		struct snapshot_output *output, int metadata, uid_t uid, gid_t gid,
 		const char *session_path, int wait, uint64_t nb_packets_per_stream);
+
+int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
+		uid_t uid, gid_t gid, struct consumer_output *output,
+		char *tmp, uint32_t metadata);
 
 #endif /* _CONSUMER_H */

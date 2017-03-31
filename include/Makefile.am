@@ -78,6 +78,7 @@ lttnginclude_HEADERS = \
 	lttng/save.h \
 	lttng/load.h \
 	lttng/endpoint.h \
+	lttng/rotate.h \
 	version.h.tmpl
 
 lttngactioninclude_HEADERS= \
@@ -111,3 +112,4 @@ noinst_HEADERS = \
 	lttng/endpoint-internal.h \
 	lttng/notification/channel-internal.h \
 	lttng/channel-internal.h
+	lttng/rotate-internal.h

@@ -74,6 +74,7 @@ const char * const mi_lttng_element_command_success = "success";
 const char * const mi_lttng_element_command_track = "track";
 const char * const mi_lttng_element_command_untrack = "untrack";
 const char * const mi_lttng_element_command_version = "version";
+const char * const mi_lttng_element_command_rotate = "rotate";
 
 /* Strings related to version command */
 const char * const mi_lttng_element_version = "version";

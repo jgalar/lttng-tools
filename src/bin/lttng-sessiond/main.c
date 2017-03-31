@@ -73,6 +73,7 @@
 #include "load-session-thread.h"
 #include "notification-thread.h"
 #include "notification-thread-commands.h"
+#include "rotation-thread.h"
 #include "syscall.h"
 #include "agent.h"
 #include "ht-cleanup.h"
@@ -115,6 +116,7 @@ static struct consumer_data kconsumer_data = {
 	.err_sock = -1,
 	.cmd_sock = -1,
 	.channel_monitor_pipe = -1,
+	.channel_rotate_pipe = -1,
 	.pid_mutex = PTHREAD_MUTEX_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.cond = PTHREAD_COND_INITIALIZER,
@@ -127,6 +129,7 @@ static struct consumer_data ustconsumer64_data = {
 	.err_sock = -1,
 	.cmd_sock = -1,
 	.channel_monitor_pipe = -1,
+	.channel_rotate_pipe = -1,
 	.pid_mutex = PTHREAD_MUTEX_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.cond = PTHREAD_COND_INITIALIZER,
@@ -139,6 +142,7 @@ static struct consumer_data ustconsumer32_data = {
 	.err_sock = -1,
 	.cmd_sock = -1,
 	.channel_monitor_pipe = -1,
+	.channel_rotate_pipe = -1,
 	.pid_mutex = PTHREAD_MUTEX_INITIALIZER,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.cond = PTHREAD_COND_INITIALIZER,
@@ -225,6 +229,7 @@ static pthread_t ht_cleanup_thread;
 static pthread_t agent_reg_thread;
 static pthread_t load_session_thread;
 static pthread_t notification_thread;
+static pthread_t rotation_thread;
 
 /*
  * UST registration command queue. This queue is tied with a futex and uses a N
@@ -322,6 +327,9 @@ struct load_session_thread_data *load_info;
 /* Notification thread handle. */
 struct notification_thread_handle *notification_thread_handle;
 
+/* Rotation thread handle. */
+struct rotation_thread_handle *rotation_thread_handle;
+
 /* Global hash tables */
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
 
@@ -331,7 +339,7 @@ struct lttng_ht *agent_apps_ht_by_sock = NULL;
  * NR_LTTNG_SESSIOND_READY must match the number of calls to
  * sessiond_notify_ready().
  */
-#define NR_LTTNG_SESSIOND_READY		4
+#define NR_LTTNG_SESSIOND_READY		5
 int lttng_sessiond_ready = NR_LTTNG_SESSIOND_READY;
 
 int sessiond_check_thread_quit_pipe(int fd, uint32_t events)
@@ -555,6 +563,24 @@ static void close_consumer_sockets(void)
 		ret = close(ustconsumer64_data.channel_monitor_pipe);
 		if (ret < 0) {
 			PERROR("UST consumerd64 channel monitor pipe close");
+		}
+	}
+	if (kconsumer_data.channel_rotate_pipe >= 0) {
+		ret = close(kconsumer_data.channel_rotate_pipe);
+		if (ret < 0) {
+			PERROR("kernel consumer channel rotate pipe close");
+		}
+	}
+	if (ustconsumer32_data.channel_rotate_pipe >= 0) {
+		ret = close(ustconsumer32_data.channel_rotate_pipe);
+		if (ret < 0) {
+			PERROR("UST consumerd32 channel rotate pipe close");
+		}
+	}
+	if (ustconsumer64_data.channel_rotate_pipe >= 0) {
+		ret = close(ustconsumer64_data.channel_rotate_pipe);
+		if (ret < 0) {
+			PERROR("UST consumerd64 channel rotate pipe close");
 		}
 	}
 }
@@ -1427,8 +1453,9 @@ restart:
 	health_code_update();
 
 	/*
-	 * Transfer the write-end of the channel monitoring pipe to the
-	 * by issuing a SET_CHANNEL_MONITOR_PIPE command.
+	 * Transfer the write-end of the channel monitoring and rotate pipe
+	 * to the consumer by issuing a SET_CHANNEL_MONITOR_PIPE and
+	 * SET_CHANNEL_ROTATE_PIPE commands.
 	 */
 	cmd_socket_wrapper = consumer_allocate_socket(&consumer_data->cmd_sock);
 	if (!cmd_socket_wrapper) {
@@ -1440,6 +1467,13 @@ restart:
 	if (ret) {
 		goto error;
 	}
+
+	ret = consumer_send_channel_rotate_pipe(cmd_socket_wrapper,
+			consumer_data->channel_rotate_pipe);
+	if (ret) {
+		goto error;
+	}
+
 	/* Discard the socket wrapper as it is no longer needed. */
 	consumer_destroy_socket(cmd_socket_wrapper);
 	cmd_socket_wrapper = NULL;
@@ -3086,6 +3120,8 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_REGENERATE_STATEDUMP:
 	case LTTNG_REGISTER_TRIGGER:
 	case LTTNG_UNREGISTER_TRIGGER:
+	case LTTNG_ROTATE_SESSION:
+	case LTTNG_ROTATE_PENDING:
 		need_domain = 0;
 		break;
 	default:
@@ -3128,6 +3164,8 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_LIST_SYSCALLS:
 	case LTTNG_LIST_TRACKER_PIDS:
 	case LTTNG_DATA_PENDING:
+	case LTTNG_ROTATE_SESSION:
+	case LTTNG_ROTATE_PENDING:
 		break;
 	default:
 		/* Setup lttng message with no payload */
@@ -4216,6 +4254,50 @@ error_add_context:
 				notification_thread_handle);
 		break;
 	}
+	case LTTNG_ROTATE_SESSION:
+	{
+		struct lttng_rotate_session_return *rotate_return = NULL;
+
+		ret = cmd_rotate_session(cmd_ctx->session, &rotate_return);
+		if (ret < 0) {
+			ret = -ret;
+			fprintf(stderr, "cmd ret: %d\n", ret);
+			goto error;
+		}
+
+		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, rotate_return,
+				sizeof(struct lttng_rotate_session_return));
+		free(rotate_return);
+		if (ret < 0) {
+			ret = -ret;
+			goto error;
+		}
+
+		ret = LTTNG_OK;
+		break;
+	}
+	case LTTNG_ROTATE_PENDING:
+	{
+		struct lttng_rotate_pending_return *pending_return = NULL;
+
+		ret = cmd_rotate_pending(cmd_ctx->session, &pending_return,
+				cmd_ctx->lsm->u.rotate_pending.rotate_id);
+		if (ret < 0) {
+			ret = -ret;
+			goto error;
+		}
+
+		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, pending_return,
+				sizeof(struct lttng_rotate_session_handle));
+		free(pending_return);
+		if (ret < 0) {
+			ret = -ret;
+			goto error;
+		}
+
+		ret = LTTNG_OK;
+		break;
+	}
 	default:
 		ret = LTTNG_ERR_UND;
 		break;
@@ -4230,6 +4312,7 @@ error:
 	}
 	/* Set return code */
 	cmd_ctx->llm->ret_code = ret;
+	fprintf(stderr, "llm ret: %d\n", ret);
 setup_error:
 	if (cmd_ctx->session) {
 		session_unlock(cmd_ctx->session);
@@ -5631,6 +5714,9 @@ int main(int argc, char **argv)
 			*ust64_channel_monitor_pipe = NULL,
 			*kernel_channel_monitor_pipe = NULL;
 	bool notification_thread_running = false;
+	struct lttng_pipe *ust32_channel_rotate_pipe = NULL,
+			*ust64_channel_rotate_pipe = NULL,
+			*kernel_channel_rotate_pipe = NULL;
 
 	init_kernel_workarounds();
 
@@ -5802,6 +5888,19 @@ int main(int argc, char **argv)
 			retval = -1;
 			goto exit_init_data;
 		}
+		kernel_channel_rotate_pipe = lttng_pipe_open(0);
+		if (!kernel_channel_rotate_pipe) {
+			ERR("Failed to create kernel consumer channel rotate pipe");
+			retval = -1;
+			goto exit_init_data;
+		}
+		kconsumer_data.channel_rotate_pipe =
+				lttng_pipe_release_writefd(
+					kernel_channel_rotate_pipe);
+		if (kconsumer_data.channel_rotate_pipe < 0) {
+			retval = -1;
+			goto exit_init_data;
+		}
 	} else {
 		home_path = utils_get_home_dir();
 		if (home_path == NULL) {
@@ -5918,6 +6017,18 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto exit_init_data;
 	}
+	ust32_channel_rotate_pipe = lttng_pipe_open(0);
+	if (!ust32_channel_rotate_pipe) {
+		ERR("Failed to create 32-bit user space consumer channel rotate pipe");
+		retval = -1;
+		goto exit_init_data;
+	}
+	ustconsumer32_data.channel_rotate_pipe = lttng_pipe_release_writefd(
+			ust32_channel_rotate_pipe);
+	if (ustconsumer32_data.channel_rotate_pipe < 0) {
+		retval = -1;
+		goto exit_init_data;
+	}
 
 	/* 64 bits consumerd path setup */
 	ret = snprintf(ustconsumer64_data.err_unix_sock_path, PATH_MAX,
@@ -5948,6 +6059,18 @@ int main(int argc, char **argv)
 	ustconsumer64_data.channel_monitor_pipe = lttng_pipe_release_writefd(
 			ust64_channel_monitor_pipe);
 	if (ustconsumer64_data.channel_monitor_pipe < 0) {
+		retval = -1;
+		goto exit_init_data;
+	}
+	ust64_channel_rotate_pipe = lttng_pipe_open(0);
+	if (!ust64_channel_rotate_pipe) {
+		ERR("Failed to create 64-bit user space consumer channel rotate pipe");
+		retval = -1;
+		goto exit_init_data;
+	}
+	ustconsumer64_data.channel_rotate_pipe = lttng_pipe_release_writefd(
+			ust64_channel_rotate_pipe);
+	if (ustconsumer64_data.channel_rotate_pipe < 0) {
 		retval = -1;
 		goto exit_init_data;
 	}
@@ -6144,6 +6267,30 @@ int main(int argc, char **argv)
 	}
 	notification_thread_running = true;
 
+	/* rotation_thread_data acquires the pipes' read side. */
+	rotation_thread_handle = rotation_thread_handle_create(
+			ust32_channel_rotate_pipe,
+			ust64_channel_rotate_pipe,
+			kernel_channel_rotate_pipe,
+			thread_quit_pipe[0]);
+	if (!rotation_thread_handle) {
+		retval = -1;
+		ERR("Failed to create rotation thread shared data");
+		stop_threads();
+		goto exit_rotation;
+	}
+
+	/* Create rotation thread. */
+	ret = pthread_create(&rotation_thread, default_pthread_attr(),
+			thread_rotation, rotation_thread_handle);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_create rotation");
+		retval = -1;
+		stop_threads();
+		goto exit_rotation;
+	}
+
 	/* Create thread to manage the client socket */
 	ret = pthread_create(&client_thread, default_pthread_attr(),
 			thread_manage_clients, (void *) NULL);
@@ -6310,6 +6457,7 @@ exit_dispatch:
 	}
 
 exit_client:
+exit_rotation:
 exit_notification:
 	ret = pthread_join(health_thread, &status);
 	if (ret) {
@@ -6359,6 +6507,17 @@ exit_init_data:
 		notification_thread_handle_destroy(notification_thread_handle);
 	}
 
+	if (rotation_thread_handle) {
+		rotation_thread_handle_destroy(rotation_thread_handle);
+	}
+
+	ret = pthread_join(rotation_thread, &status);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_join rotation thread");
+		retval = -1;
+	}
+
 	rcu_thread_offline();
 	rcu_unregister_thread();
 
@@ -6369,6 +6528,9 @@ exit_init_data:
 	lttng_pipe_destroy(ust32_channel_monitor_pipe);
 	lttng_pipe_destroy(ust64_channel_monitor_pipe);
 	lttng_pipe_destroy(kernel_channel_monitor_pipe);
+	lttng_pipe_destroy(ust32_channel_rotate_pipe);
+	lttng_pipe_destroy(ust64_channel_rotate_pipe);
+	lttng_pipe_destroy(kernel_channel_rotate_pipe);
 exit_ht_cleanup:
 
 	health_app_destroy(health_sessiond);

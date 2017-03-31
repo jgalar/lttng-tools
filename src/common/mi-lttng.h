@@ -80,6 +80,7 @@ extern const char * const mi_lttng_element_command_success;
 extern const char * const mi_lttng_element_command_track;
 extern const char * const mi_lttng_element_command_untrack;
 extern const char * const mi_lttng_element_command_version;
+extern const char * const mi_lttng_element_command_rotate;
 
 /* Strings related to version command */
 extern const char * const mi_lttng_element_version;
