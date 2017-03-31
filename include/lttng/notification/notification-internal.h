@@ -44,9 +44,9 @@ struct lttng_notification {
 };
 
 struct lttng_notification_comm {
-	/* length excludes its own length. */
+	/* Size of the payload following this field. */
 	uint32_t length;
-	/* A condition and evaluation object follow. */
+	/* Condition and evaluation objects follow. */
 	char payload[];
 } LTTNG_PACKED;
 

@@ -20,11 +20,14 @@
 
 #include <lttng/notification/channel.h>
 #include <common/macros.h>
+#include <common/dynamic-buffer.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <urcu/list.h>
 
 enum lttng_notification_channel_message_type {
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN = -1,
 	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE = 0,
 	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE = 1,
 	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY = 2,
@@ -35,7 +38,7 @@ enum lttng_notification_channel_message_type {
 struct lttng_notification_channel_message {
 	/* enum lttng_notification_channel_message_type */
 	int8_t type;
-	/* size of the payload following this field */
+	/* Size of the payload following this field. */
 	uint32_t size;
 	char payload[];
 } LTTNG_PACKED;
@@ -45,9 +48,38 @@ struct lttng_notification_channel_command_reply {
 	int8_t status;
 } LTTNG_PACKED;
 
+struct pending_notification {
+	/* NULL means "notification dropped". */
+	struct lttng_notification *notification;
+	struct cds_list_head node;
+};
+
+/*
+ * The notification channel protocol is bidirectional and accomodates
+ * synchronous and asynchronous communication modes:
+ *
+ *   - Synchronous: commands emitted by the client to which a reply is expected
+ *     (e.g. subscribing/unsubscribing to conditions),
+ *   - Asynchronous: notifications which are sent by the lttng_endpoint to the
+ *     client as one of the subscribed condition has occured.
+ *
+ * The nature of this hybrid communication mode means that asynchronous messages
+ * (e.g. notifications) may be interleaved between synchronous messages (e.g. a
+ * command and its reply).
+ *
+ * Notifications that are received between a command and its reply and enqueued
+ * in the pending_notifications list.
+ */
 struct lttng_notification_channel {
 	pthread_mutex_t lock;
 	int socket;
+	struct {
+		/* Count of pending notifications. */
+		unsigned int count;
+		/* List of struct pending_notification. */
+		struct cds_list_head list;
+	} pending_notifications;
+	struct lttng_dynamic_buffer reception_buffer;
 };
 
 #endif /* LTTNG_NOTIFICATION_CHANNEL_INTERNAL_H */
