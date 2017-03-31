@@ -2964,6 +2964,8 @@ static int create_channel_per_pid(struct ust_app *app,
 	struct ust_registry_session *registry;
 	enum lttng_error_code cmd_ret;
 	struct ltt_session *session;
+	uint64_t chan_reg_key;
+	struct ust_registry_channel *chan_reg;
 
 	assert(app);
 	assert(usess);
@@ -3004,9 +3006,6 @@ static int create_channel_per_pid(struct ust_app *app,
 
 	session = session_find_by_id(ua_sess->tracing_id);
 	assert(session);
-
-	uint64_t chan_reg_key;
-	struct ust_registry_channel *chan_reg;
 
 	chan_reg_key = ua_chan->key;
 	pthread_mutex_lock(&registry->lock);
