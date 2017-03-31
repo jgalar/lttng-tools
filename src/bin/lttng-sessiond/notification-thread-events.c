@@ -1218,7 +1218,7 @@ int send_client_reply(int socket,
 		.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY,
 		.size = sizeof(reply),
 	};
-	char *buffer[sizeof(msg) + sizeof(reply)] = {};
+	char buffer[sizeof(msg) + sizeof(reply)] = {};
 
 	memcpy(buffer, &msg, sizeof(msg));
 	memcpy(buffer + sizeof(msg), &reply, sizeof(reply));
