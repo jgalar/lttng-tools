@@ -25,11 +25,11 @@
 #include <stdint.h>
 
 typedef void (*condition_destroy_cb)(struct lttng_condition *condition);
-typedef bool (*condition_validate_cb)(struct lttng_condition *condition);
-typedef ssize_t (*condition_serialize_cb)(struct lttng_condition *condition,
-		char *buf);
-typedef bool (*condition_equal_cb)(struct lttng_condition *a,
-		struct lttng_condition *b);
+typedef bool (*condition_validate_cb)(const struct lttng_condition *condition);
+typedef ssize_t (*condition_serialize_cb)(
+		const struct lttng_condition *condition, char *buf);
+typedef bool (*condition_equal_cb)(const struct lttng_condition *a,
+		const struct lttng_condition *b);
 
 struct lttng_condition {
 	enum lttng_condition_type type;
@@ -50,7 +50,7 @@ void lttng_condition_init(struct lttng_condition *condition,
 		enum lttng_condition_type type);
 
 LTTNG_HIDDEN
-bool lttng_condition_validate(struct lttng_condition *condition);
+bool lttng_condition_validate(const struct lttng_condition *condition);
 
 /*
  * FIXME Add explicit buffer bound checking using a "len" parameter to
@@ -61,10 +61,11 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_serialize(struct lttng_condition *condition, char *buf);
+ssize_t lttng_condition_serialize(const struct lttng_condition *condition,
+		char *buf);
 
 LTTNG_HIDDEN
-bool lttng_condition_is_equal(struct lttng_condition *a,
-		struct lttng_condition *b);
+bool lttng_condition_is_equal(const struct lttng_condition *a,
+		const struct lttng_condition *b);
 
 #endif /* LTTNG_CONDITION_INTERNAL_H */

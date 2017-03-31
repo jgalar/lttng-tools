@@ -406,7 +406,7 @@ static
 enum lttng_notification_channel_status send_command(
 		struct lttng_notification_channel *channel,
 		enum lttng_notification_channel_message_type type,
-		struct lttng_condition *condition)
+		const struct lttng_condition *condition)
 {
 	int socket;
 	ssize_t command_size, ret;
@@ -470,7 +470,7 @@ end:
 
 enum lttng_notification_channel_status lttng_notification_channel_subscribe(
 		struct lttng_notification_channel *channel,
-		struct lttng_condition *condition)
+		const struct lttng_condition *condition)
 {
 	return send_command(channel,
 			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE,
@@ -479,7 +479,7 @@ enum lttng_notification_channel_status lttng_notification_channel_subscribe(
 
 enum lttng_notification_channel_status lttng_notification_channel_unsubscribe(
 		struct lttng_notification_channel *channel,
-		struct lttng_condition *condition)
+		const struct lttng_condition *condition)
 {
 	return send_command(channel,
 			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE,

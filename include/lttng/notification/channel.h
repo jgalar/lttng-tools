@@ -50,12 +50,12 @@ lttng_notification_channel_get_next_notification(
 extern enum lttng_notification_channel_status
 lttng_notification_channel_subscribe(
 		struct lttng_notification_channel *channel,
-		struct lttng_condition *condition);
+		const struct lttng_condition *condition);
 
 extern enum lttng_notification_channel_status
 lttng_notification_channel_unsubscribe(
 		struct lttng_notification_channel *channel,
-		struct lttng_condition *condition);
+		const struct lttng_condition *condition);
 
 extern void lttng_notification_channel_destroy(
 		struct lttng_notification_channel *channel);

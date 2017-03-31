@@ -64,7 +64,8 @@ void lttng_condition_buffer_usage_destroy(struct lttng_condition *condition)
 }
 
 static
-bool lttng_condition_buffer_usage_validate(struct lttng_condition *condition)
+bool lttng_condition_buffer_usage_validate(
+		const struct lttng_condition *condition)
 {
 	bool valid = false;
 	struct lttng_condition_buffer_usage *usage;
@@ -94,8 +95,8 @@ end:
 }
 
 static
-ssize_t lttng_condition_buffer_usage_serialize(struct lttng_condition *condition,
-		char *buf)
+ssize_t lttng_condition_buffer_usage_serialize(
+		const struct lttng_condition *condition, char *buf)
 {
 	struct lttng_condition_buffer_usage *usage;
 	ssize_t ret, size;
@@ -153,8 +154,8 @@ end:
 }
 
 static
-bool lttng_condition_buffer_usage_is_equal(struct lttng_condition *_a,
-		struct lttng_condition *_b)
+bool lttng_condition_buffer_usage_is_equal(const struct lttng_condition *_a,
+		const struct lttng_condition *_b)
 {
 	bool is_equal = false;
 	struct lttng_condition_buffer_usage *a, *b;

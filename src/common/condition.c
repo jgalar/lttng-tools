@@ -39,7 +39,7 @@ void lttng_condition_destroy(struct lttng_condition *condition)
 }
 
 LTTNG_HIDDEN
-bool lttng_condition_validate(struct lttng_condition *condition)
+bool lttng_condition_validate(const struct lttng_condition *condition)
 {
 	bool valid;
 
@@ -60,7 +60,8 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_serialize(struct lttng_condition *condition, char *buf)
+ssize_t lttng_condition_serialize(const struct lttng_condition *condition,
+		char *buf)
 {
 	ssize_t ret, condition_size;
 	struct lttng_condition_comm condition_comm;
@@ -88,8 +89,8 @@ end:
 }
 
 LTTNG_HIDDEN
-bool lttng_condition_is_equal(struct lttng_condition *a,
-		struct lttng_condition *b)
+bool lttng_condition_is_equal(const struct lttng_condition *a,
+		const struct lttng_condition *b)
 {
 	bool is_equal = false;
 
