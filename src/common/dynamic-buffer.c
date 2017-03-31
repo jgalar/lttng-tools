@@ -90,7 +90,6 @@ int lttng_dynamic_buffer_set_size(struct lttng_dynamic_buffer *buffer,
 		}
 	} else if (new_size > buffer->size) {
 		memset(buffer->data + buffer->size, 0, new_size - buffer->size);
-		buffer->size = new_size;
 	} else {
 		/*
 		 * Shrinking size. There is no need to zero-out the newly
