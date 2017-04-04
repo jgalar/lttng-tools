@@ -42,7 +42,7 @@ file_sync_after_first_event=$(mktemp -u)
 
 start_lttng_sessiond_notap
 create_lttng_session_notap $SESSION_NAME $TRACE_PATH
-enable_ust_lttng_channel_notap $SESSION_NAME $CHANNEL_NAME
+enable_ust_lttng_channel_notap $SESSION_NAME $CHANNEL_NAME --subbuf-size=4096
 enable_ust_lttng_event_notap $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
 
 # Start app in infinite loop

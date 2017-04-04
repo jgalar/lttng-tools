@@ -122,7 +122,7 @@ function test_multi_app_low ()
 
 	# Setup
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
-	enable_ust_lttng_channel_ok $SESSION_NAME $UST_CHANNEL_NAME
+	enable_ust_lttng_channel_ok $SESSION_NAME $UST_CHANNEL_NAME --subbuf-size=4096
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME $UST_CHANNEL_NAME
 
 	for (( i = 0; i < $NR_CLIENT_APP; i++ )); do
