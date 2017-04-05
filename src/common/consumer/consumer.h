@@ -602,6 +602,9 @@ struct lttng_consumer_global_data {
 	struct lttng_ht *stream_per_chan_id_ht;
 };
 
+/* Flag used to temporarily pause data consumption from testpoints. */
+extern int data_consumption_paused;
+
 /*
  * Init consumer data structures.
  */
