@@ -1,9 +1,5 @@
-#ifndef CONSUMERD_TESTPOINT_H
-#define CONSUMERD_TESTPOINT_H
-
 /*
- * Copyright (C) 2012 - Christian Babeux <christian.babeux@efficios.com>
- * Copyright (C) 2014 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License, version 2 only, as
@@ -19,14 +15,12 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#ifndef CONSUMERD_TESTPOINT_H
+#define CONSUMERD_TESTPOINT_H
+
 #include <common/testpoint/testpoint.h>
 
 /* Testpoints, internal use only */
-TESTPOINT_DECL(consumerd_thread_channel);
-TESTPOINT_DECL(consumerd_thread_metadata);
-TESTPOINT_DECL(consumerd_thread_data);
-TESTPOINT_DECL(consumerd_thread_data_poll);
-TESTPOINT_DECL(consumerd_thread_sessiond);
-TESTPOINT_DECL(consumerd_thread_metadata_timer);
+TESTPOINT_DECL(consumerd_data_thread_poll);
 
 #endif /* CONSUMERD_TESTPOINT_H */
