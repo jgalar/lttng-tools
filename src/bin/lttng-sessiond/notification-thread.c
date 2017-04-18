@@ -659,14 +659,22 @@ void *thread_notification(void *data)
 					if (ret) {
 						goto error;
 					}
-				} else if (revents & LPOLLIN) {
-					ret = handle_notification_thread_client(
-							&state, fd);
-					if (ret) {
-						goto error;
-					}
 				} else {
-					DBG("[notification-thread] Unexpected poll events %u for notification socket %i", revents, fd);
+					if (revents & LPOLLIN) {
+						ret = handle_notification_thread_client_in(
+							&state, fd);
+						if (ret) {
+							goto error;
+						}
+					}
+
+					if (revents & LPOLLOUT) {
+						ret = handle_notification_thread_client_out(
+							&state, fd);
+						if (ret) {
+							goto error;
+						}
+					}
 				}
 			}
 		}

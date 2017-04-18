@@ -29,6 +29,7 @@
 #include <common/dynamic-buffer.h>
 #include <common/hashtable/utils.h>
 #include <common/sessiond-comm/sessiond-comm.h>
+#include <common/macros.h>
 #include <lttng/condition/condition.h>
 #include <lttng/action/action.h>
 #include <lttng/notification/notification-internal.h>
@@ -39,6 +40,9 @@
 #include <unistd.h>
 #include <assert.h>
 #include <inttypes.h>
+
+#define CLIENT_POLL_MASK_IN (LPOLLIN | LPOLLERR | LPOLLHUP | LPOLLRDHUP)
+#define CLIENT_POLL_MASK_IN_OUT (CLIENT_POLL_MASK_IN | LPOLLOUT)
 
 struct lttng_trigger_list_element {
 	struct lttng_trigger *trigger;
@@ -83,6 +87,25 @@ struct notification_client {
 	 */
 	struct cds_list_head condition_list;
 	struct cds_lfht_node client_socket_ht_node;
+	struct {
+		/*
+		 * Indicates whether or not a notification addressed to this
+		 * client was dropped because a command reply was already
+		 * buffered.
+		 *
+		 * A notification is dropped whenever the buffer is not empty.
+		 */
+		bool dropped_notification;
+		/*
+		 * Indicates whether or not a command reply is already buffered.
+		 * In this case, it means that the client is not consuming
+		 * command replies before emitting a new one. This could be
+		 * caused by a protocol error or a misbehaving/malicious client.
+		 */
+		bool queued_command_reply;
+		struct lttng_dynamic_buffer in_buffer;
+		struct lttng_dynamic_buffer out_buffer;
+	} communication_state;
 };
 
 struct channel_state_sample {
@@ -95,7 +118,8 @@ struct channel_state_sample {
 static
 int match_client(struct cds_lfht_node *node, const void *key)
 {
-	int socket = (int) key;
+	/* This double-cast is intended to supress pointer-to-cast warning. */
+	int socket = (int) (intptr_t) key;
 	struct notification_client *client;
 
 	client = caa_container_of(node, struct notification_client,
@@ -476,6 +500,8 @@ void notification_client_destroy(struct notification_client *client,
 	if (client->socket >= 0) {
 		(void) lttcomm_close_unix_sock(client->socket);
 	}
+	lttng_dynamic_buffer_reset(&client->communication_state.in_buffer);
+	lttng_dynamic_buffer_reset(&client->communication_state.out_buffer);
 	free(client);
 }
 
@@ -1066,6 +1092,29 @@ unsigned long hash_client_socket(int socket)
 	return hash_key_ulong((void *) (unsigned long) socket, lttng_ht_seed);
 }
 
+static
+int socket_set_non_blocking(int socket)
+{
+	int ret, flags;
+
+	/* Set the pipe as non-blocking. */
+	ret = fcntl(socket, F_GETFL, 0);
+	if (ret == -1) {
+		PERROR("fcntl get socket flags");
+		goto end;
+	}
+	flags = ret;
+
+	ret = fcntl(socket, F_SETFL, flags | O_NONBLOCK);
+	if (ret == -1) {
+		PERROR("fcntl set O_NONBLOCK socket flag");
+		goto end;
+	}
+	DBG("Client socket (fd = %i) set as non-blocking", socket);
+end:
+	return ret;
+}
+
 int handle_notification_thread_client_connect(
 		struct notification_thread_state *state)
 {
@@ -1081,6 +1130,8 @@ int handle_notification_thread_client_connect(
 		goto error;
 	}
 	CDS_INIT_LIST_HEAD(&client->condition_list);
+	lttng_dynamic_buffer_init(&client->communication_state.in_buffer);
+	lttng_dynamic_buffer_init(&client->communication_state.out_buffer);
 
 	ret = lttcomm_accept_unix_sock(state->notification_channel_socket);
 	if (ret < 0) {
@@ -1091,14 +1142,11 @@ int handle_notification_thread_client_connect(
 
 	client->socket = ret;
 
-	/* FIXME set client socket as non-blocking. */
-	/*
-	ret = set_socket_non_blocking(client->socket);
+	ret = socket_set_non_blocking(client->socket);
 	if (ret) {
 		ERR("[notification-thread] Failed to set new notification channel client connection socket as non-blocking");
 		goto error;
 	}
-	*/
 
 	/* FIXME handle creds. */
 	ret = lttcomm_setsockopt_creds_unix_sock(client->socket);
@@ -1207,10 +1255,83 @@ int handle_notification_thread_trigger_unregister_all(
 }
 
 static
-int send_client_reply(int socket,
-		enum lttng_notification_channel_status status)
+int client_flush_outgoing_queue(struct notification_client *client,
+		struct notification_thread_state *state)
 {
 	ssize_t ret;
+	size_t to_send_count;
+
+	assert(client->communication_state.out_buffer.size != 0);
+	to_send_count = client->communication_state.out_buffer.size;
+	DBG("[notification-thread] Flushing client (socket fd = %i) outgoing queue",
+			client->socket);
+
+	ret = lttcomm_send_unix_sock_non_block(client->socket,
+			client->communication_state.out_buffer.data,
+			to_send_count);
+	if ((ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) ||
+			(ret > 0 && ret < to_send_count)) {
+		DBG("[notification-thread] Client (socket fd = %i) outgoing queue could not be completely flushed",
+				client->socket);
+		to_send_count -= max(ret, 0);
+
+		memcpy(client->communication_state.out_buffer.data,
+				client->communication_state.out_buffer.data +
+				client->communication_state.out_buffer.size - to_send_count,
+				to_send_count);
+		ret = lttng_dynamic_buffer_set_size(
+				&client->communication_state.out_buffer,
+				to_send_count);
+		if (ret) {
+			goto error;
+		}
+
+		/*
+		 * We want to be notified whenever there is buffer space
+		 * available to send the rest of the payload.
+		 */
+		ret = lttng_poll_mod(&state->events, client->socket,
+				CLIENT_POLL_MASK_IN_OUT);
+		if (ret) {
+			goto error;
+		}
+	} else if (ret < 0) {
+		/* Generic error, disconnect the client. */
+		ERR("[notification-thread] Failed to send flush outgoing queue, disconnecting client (socket fd = %i)",
+				client->socket);
+		ret = handle_notification_thread_client_disconnect(
+				client->socket, state);
+		if (ret) {
+			goto error;
+		}
+	} else {
+		/* No error and flushed the queue completely. */
+		ret = lttng_dynamic_buffer_set_size(
+				&client->communication_state.out_buffer, 0);
+		if (ret) {
+			goto error;
+		}
+		ret = lttng_poll_mod(&state->events, client->socket,
+				CLIENT_POLL_MASK_IN);
+		if (ret) {
+			goto error;
+		}
+
+		client->communication_state.queued_command_reply = false;
+		client->communication_state.dropped_notification = false;
+	}
+
+	return 0;
+error:
+	return -1;
+}
+
+static
+int client_send_command_reply(struct notification_client *client,
+		struct notification_thread_state *state,
+		enum lttng_notification_channel_status status)
+{
+	int ret;
 	struct lttng_notification_channel_command_reply reply = {
 		.status = (int8_t) status,
 	};
@@ -1218,25 +1339,43 @@ int send_client_reply(int socket,
 		.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY,
 		.size = sizeof(reply),
 	};
-	char buffer[sizeof(msg) + sizeof(reply)] = {};
+	char buffer[sizeof(msg) + sizeof(reply)];
+
+	if (client->communication_state.queued_command_reply) {
+		/* Protocol error. */
+		goto error;
+	}
 
 	memcpy(buffer, &msg, sizeof(msg));
 	memcpy(buffer + sizeof(msg), &reply, sizeof(reply));
 	DBG("[notification-thread] Send command reply (%i)", (int) status);
 
-	ret = lttcomm_send_unix_sock(socket, buffer,
-			sizeof(msg) + sizeof(reply));
-	if (ret < 0) {
-		ERR("[notification-thread] Failed to send command reply");
+	/* Enqueue buffer to outgoing queue and flush it. */
+	ret = lttng_dynamic_buffer_append(
+			&client->communication_state.out_buffer,
+			buffer, sizeof(buffer));
+	if (ret) {
 		goto error;
 	}
+
+	ret = client_flush_outgoing_queue(client, state);
+	if (ret) {
+		goto error;
+	}
+
+	if (client->communication_state.out_buffer.size != 0) {
+		/* Queue could not be emptied. */
+		client->communication_state.queued_command_reply = true;
+	}
+
 	return 0;
 error:
 	return -1;
 }
 
-int handle_notification_thread_client(struct notification_thread_state *state,
-		int socket)
+/* Incoming data from client. */
+int handle_notification_thread_client_in(
+		struct notification_thread_state *state, int socket)
 {
 	int ret = 0;
 	size_t received = 0;
@@ -1252,7 +1391,7 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 	client = get_client_from_socket(socket, state);
 	if (!client) {
 		/* Internal error, abort. */
-		ret = 1;
+		ret = -1;
 		goto error_no_reply;
 	}
 
@@ -1307,6 +1446,7 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 
 	switch ((enum lttng_notification_channel_message_type) msg.type) {
 	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE:
+		/* FIXME The current state should be evaluated on subscription. */
 		ret = notification_thread_client_subscribe(client, condition,
 				state, &status);
 		break;
@@ -1319,20 +1459,41 @@ int handle_notification_thread_client(struct notification_thread_state *state,
 		goto error_disconnect_client;
 	}
 
-	if (send_client_reply(socket, status)) {
+	if (client_send_command_reply(client, state, status)) {
 		ERR("[notification-thread] Failed to send reply to notification channel client");
 		goto error_disconnect_client;
 	}
 
 	lttng_dynamic_buffer_reset(&buffer);
-	ret = 0;
-	return ret;
+	return 0;
 
 error_disconnect_client:
 	ret = handle_notification_thread_client_disconnect(socket, state);
 error_no_reply:
 	lttng_dynamic_buffer_reset(&buffer);
 	lttng_condition_destroy(condition);
+	return ret;
+}
+
+/* Client ready to receive outgoing data. */
+int handle_notification_thread_client_out(
+		struct notification_thread_state *state, int socket)
+{
+	int ret;
+	struct notification_client *client;
+
+	client = get_client_from_socket(socket, state);
+	if (!client) {
+		/* Internal error, abort. */
+		ret = -1;
+		goto end;
+	}
+
+	ret = client_flush_outgoing_queue(client, state);
+	if (ret) {
+		goto end;
+	}
+end:
 	return ret;
 }
 
@@ -1354,13 +1515,27 @@ bool evaluate_buffer_usage_condition(struct lttng_condition *condition,
 	if (use_condition->threshold_bytes.set) {
 		threshold = use_condition->threshold_bytes.value;
 	} else {
-		/* Threshold was expressed as a ratio. */
+		/*
+		 * Threshold was expressed as a ratio.
+		 *
+		 * TODO the threshold (in bytes) of conditions expressed
+		 * as a ratio of total buffer size could be cached to
+		 * forego this double-multiplication or it could be performed
+		 * as fixed-point math.
+		 *
+		 * Note that caching should accomodate the case where the
+		 * condition applies to multiple channels (i.e. don't assume
+		 * that all channels matching my_chann* have the same size...)
+		 */
 		threshold = (uint64_t) (use_condition->threshold_ratio.value *
 				(double) buffer_capacity);
 	}
 
 	condition_type = lttng_condition_get_type(condition);
 	if (condition_type == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW) {
+		DBG("[notification-thread] Low buffer usage condition being evaluated: threshold = %" PRIu64 ", highest usage = %" PRIu64,
+				threshold, sample->highest_usage);
+
 		/*
 		 * The low condition should only be triggered once _all_ of the
 		 * streams in a channel have gone below the "low" threshold.
@@ -1369,6 +1544,9 @@ bool evaluate_buffer_usage_condition(struct lttng_condition *condition,
 			result = true;
 		}
 	} else {
+		DBG("[notification-thread] High buffer usage condition being evaluated: threshold = %" PRIu64 ", highest usage = %" PRIu64,
+				threshold, sample->highest_usage);
+
 		/*
 		 * For high buffer usage scenarios, we want to trigger whenever
 		 * _any_ of the streams has reached the "high" threshold.
@@ -1429,9 +1607,26 @@ end:
 }
 
 static
+int client_enqueue_dropped_notification(struct notification_client *client,
+		struct notification_thread_state *state)
+{
+	int ret;
+	struct lttng_notification_channel_message msg = {
+		.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION_DROPPED,
+		.size = 0,
+	};
+
+	ret = lttng_dynamic_buffer_append(
+			&client->communication_state.out_buffer, &msg,
+			sizeof(msg));
+	return ret;
+}
+
+static
 int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		struct lttng_evaluation *evaluation,
-		struct notification_client_list* client_list)
+		struct notification_client_list* client_list,
+		struct notification_thread_state *state)
 {
 	int ret = 0;
 	struct lttng_dynamic_buffer msg_buffer;
@@ -1483,11 +1678,42 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 
 	cds_list_for_each_entry_safe(client_list_element, tmp,
 			&client_list->list, node) {
-		ret = lttcomm_send_unix_sock(
-				client_list_element->client->socket,
-				msg_buffer.data, msg_buffer.size);
-		if (ret < 0) {
-			ERR("[notification-thread] Failed to send notification to client");
+		struct notification_client *client =
+				client_list_element->client;
+
+		DBG("[notification-thread] Sending notification to client (fd = %i, %zu bytes)",
+				client->socket, msg_buffer.size);
+		if (client->communication_state.out_buffer.size) {
+			/*
+			 * Outgoing data is already buffered for this client;
+			 * drop the notification and enqueue a "dropped
+			 * notification" message if this is the first dropped
+			 * notification since the socket spilled-over to the
+			 * queue.
+			 */
+			DBG("[notification-thread] Dropping notification addressed to client (socket fd = %i)",
+					client->socket);
+			if (!client->communication_state.dropped_notification) {
+				client->communication_state.dropped_notification = true;
+				ret = client_enqueue_dropped_notification(
+						client, state);
+				if (ret) {
+					goto end;
+				}
+			}
+			continue;
+		}
+
+		ret = lttng_dynamic_buffer_append_buffer(
+				&client->communication_state.out_buffer,
+				&msg_buffer);
+		if (ret) {
+			goto end;
+		}
+
+		ret = client_flush_outgoing_queue(client, state);
+		if (ret) {
+			goto end;
 		}
 	}
 	ret = 0;
@@ -1531,10 +1757,6 @@ int handle_notification_thread_channel_sample(
 	latest_sample.highest_usage = sample_msg.highest;
 	latest_sample.lowest_usage = sample_msg.lowest;
 
-	DBG("[notification-thread] Handling channel sample (highest usage = %" PRIu64 ", lowest usage = %" PRIu64")",
-			latest_sample.highest_usage,
-			latest_sample.lowest_usage);
-
 	rcu_read_lock();
 
 	/* Retrieve the channel's informations */
@@ -1559,6 +1781,12 @@ int handle_notification_thread_channel_sample(
 	}
 	channel_info = caa_container_of(node, struct channel_info,
 			channels_ht_node);
+	DBG("[notification-thread] Handling channel sample for channel %s (key = %" PRIu64 ") in session %s (highest usage = %" PRIu64 ", lowest usage = %" PRIu64")",
+			channel_info->channel_name,
+			latest_sample.key.key,
+			channel_info->session_name,
+			latest_sample.highest_usage,
+			latest_sample.lowest_usage);
 
 	/* Retrieve the channel's last sample, if it exists, and update it. */
 	cds_lfht_lookup(state->channel_state_ht,
@@ -1665,7 +1893,7 @@ int handle_notification_thread_channel_sample(
 
 		/* Dispatch evaluation result to all clients. */
 		ret = send_evaluation_to_clients(trigger_list_element->trigger,
-				evaluation, client_list);
+				evaluation, client_list, state);
 		if (ret) {
 			goto end_unlock;
 		}

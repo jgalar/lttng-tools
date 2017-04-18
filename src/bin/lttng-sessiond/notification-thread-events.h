@@ -42,7 +42,12 @@ int handle_notification_thread_client_disconnect_all(
 int handle_notification_thread_trigger_unregister_all(
 		struct notification_thread_state *state);
 
-int handle_notification_thread_client(struct notification_thread_state *state,
+int handle_notification_thread_client_in(
+		struct notification_thread_state *state,
+		int socket);
+
+int handle_notification_thread_client_out(
+		struct notification_thread_state *state,
 		int socket);
 
 int handle_notification_thread_channel_sample(
