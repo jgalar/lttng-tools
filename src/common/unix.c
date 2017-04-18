@@ -261,6 +261,50 @@ end:
 }
 
 /*
+ * Send buf data of size len. Using sendmsg API.
+ * Only use with non-blocking sockets. The difference with the blocking version
+ * of the function is that this one does not retry to send on partial sends,
+ * except if the interruption was caused by a signal (EINTR).
+ *
+ * Return the size of sent data.
+ */
+LTTNG_HIDDEN
+ssize_t lttcomm_send_unix_sock_non_block(int sock, const void *buf, size_t len)
+{
+	struct msghdr msg;
+	struct iovec iov[1];
+	ssize_t ret;
+
+	memset(&msg, 0, sizeof(msg));
+
+	iov[0].iov_base = (void *) buf;
+	iov[0].iov_len = len;
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 1;
+
+retry:
+	ret = sendmsg(sock, &msg, 0);
+	if (ret < 0) {
+		if (errno == EINTR) {
+			goto retry;
+		} else {
+			/*
+			 * Only warn about EPIPE when quiet mode is
+			 * deactivated.
+			 * We consider EPIPE as expected.
+			 */
+			if (errno != EPIPE || !lttng_opt_quiet) {
+				PERROR("sendmsg");
+			}
+			goto end;
+		}
+	}
+	ret = len;
+end:
+	return ret;
+}
+
+/*
  * Shutdown cleanly a unix socket.
  */
 LTTNG_HIDDEN
