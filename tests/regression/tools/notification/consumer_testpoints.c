@@ -16,6 +16,7 @@
  */
 
 #include <common/compat/getenv.h>
+#include <common/consumer/consumer.h>
 #include <common/pipe.h>
 #include <common/error.h>
 #include <unistd.h>
@@ -23,10 +24,13 @@
 #include <lttng/constant.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+#include <assert.h>
+#include <stdio.h>
 
 static char *pause_pipe_path;
 static struct lttng_pipe *pause_pipe;
 static bool *data_consumption_paused;
+static enum lttng_consumer_type (*lttng_consumer_get_type)(void);
 
 static
 void __attribute__((destructor)) pause_pipe_fini(void)
@@ -40,6 +44,7 @@ void __attribute__((destructor)) pause_pipe_fini(void)
 		}
 	}
 
+	free(pause_pipe_path);
 	lttng_pipe_destroy(pause_pipe);
 }
 
@@ -51,17 +56,48 @@ void __attribute__((destructor)) pause_pipe_fini(void)
 int __testpoint_consumerd_thread_data(void)
 {
 	int ret = 0;
+	const char *pause_pipe_path_prefix, *domain;
 
-	pause_pipe_path = lttng_secure_getenv("CONSUMER_PAUSE_PIPE_PATH");
-	if (!pause_pipe_path) {
+	pause_pipe_path_prefix = lttng_secure_getenv(
+			"CONSUMER_PAUSE_PIPE_PATH");
+	if (!pause_pipe_path_prefix) {
 		ret = -1;
 		goto end;
 	}
 
-	DBG("Creating pause pipe at %s", pause_pipe_path);
+	/*
+	 * These symbols are exclusive to the consumerd process, hence we can't
+	 * rely on their presence in the sessiond. Not looking-up these symbols
+	 * dynamically would not allow this shared object to be LD_PRELOAD-ed
+	 * when launching the session daemon.
+	 */
 	data_consumption_paused = dlsym(NULL, "data_consumption_paused");
 	assert(data_consumption_paused);
+	lttng_consumer_get_type = dlsym(NULL, "lttng_consumer_get_type");
+	assert(lttng_consumer_get_type);
 
+	switch (lttng_consumer_get_type()) {
+	case LTTNG_CONSUMER_KERNEL:
+		domain = "kernel";
+		break;
+	case LTTNG_CONSUMER32_UST:
+		domain = "ust32";
+		break;
+	case LTTNG_CONSUMER64_UST:
+		domain = "ust64";
+		break;
+	default:
+		abort();
+	}
+
+	ret = asprintf(&pause_pipe_path, "%s-%s", pause_pipe_path_prefix,
+			domain);
+	if (ret < 1) {
+		ERR("Failed to allocate pause pipe path");
+		goto end;
+	}
+
+	DBG("Creating pause pipe at %s", pause_pipe_path);
 	pause_pipe = lttng_pipe_named_open(pause_pipe_path,
 			S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP, O_NONBLOCK);
 	if (!pause_pipe) {
