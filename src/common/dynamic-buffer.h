@@ -32,6 +32,9 @@ void lttng_dynamic_buffer_init(struct lttng_dynamic_buffer *buffer);
 int lttng_dynamic_buffer_append(struct lttng_dynamic_buffer *buffer,
 		const void *buf, size_t len);
 
+int lttng_dynamic_buffer_append_buffer(struct lttng_dynamic_buffer *dst_buffer,
+		struct lttng_dynamic_buffer *src_buffer);
+
 /*
  * Set the buffer's size to new_size. The capacity of the buffer will
  * be expanded (if necessary) to accomodate new_size. Areas acquired by

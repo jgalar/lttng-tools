@@ -70,6 +70,22 @@ end:
 	return ret;
 }
 
+int lttng_dynamic_buffer_append_buffer(struct lttng_dynamic_buffer *dst_buffer,
+		struct lttng_dynamic_buffer *src_buffer)
+{
+	int ret;
+
+	if (!dst_buffer || !src_buffer) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = lttng_dynamic_buffer_append(dst_buffer, src_buffer->data,
+			src_buffer->size);
+end:
+	return ret;
+}
+
 int lttng_dynamic_buffer_set_size(struct lttng_dynamic_buffer *buffer,
 		size_t new_size)
 {
