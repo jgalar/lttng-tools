@@ -314,7 +314,7 @@ int ust_registry_channel_add(struct ust_registry_session *session,
 }
 static inline
 void ust_registry_channel_del_free(struct ust_registry_session *session,
-		uint64_t key)
+		uint64_t key, bool notif)
 {}
 static inline
 int ust_registry_session_init(struct ust_registry_session **sessionp,

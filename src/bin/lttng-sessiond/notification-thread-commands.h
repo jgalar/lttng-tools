@@ -30,6 +30,7 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_UNREGISTER_TRIGGER,
 	NOTIFICATION_COMMAND_TYPE_ADD_CHANNEL,
 	NOTIFICATION_COMMAND_TYPE_REMOVE_CHANNEL,
+	NOTIFICATION_COMMAND_TYPE_QUIT,
 };
 
 struct channel_key {
@@ -85,5 +86,8 @@ enum lttng_error_code notification_thread_command_add_channel(
 enum lttng_error_code notification_thread_command_remove_channel(
 		struct notification_thread_handle *handle,
 		uint64_t key, enum lttng_domain_type domain);
+
+void notification_thread_command_quit(
+		struct notification_thread_handle *handle);
 
 #endif /* NOTIFICATION_THREAD_COMMANDS_H */

@@ -6289,6 +6289,7 @@ exit_dispatch:
 	}
 
 exit_client:
+	notification_thread_command_quit(notification_thread_handle);
 	ret = pthread_join(notification_thread, &status);
 	if (ret) {
 		errno = ret;

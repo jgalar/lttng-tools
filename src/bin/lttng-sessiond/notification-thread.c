@@ -372,15 +372,14 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	int ret;
 
 	/*
-	 * Create pollset with size 6:
-	 *	- quit pipe,
+	 * Create pollset with size 5:
 	 *	- notification channel socket (listen for new connections),
 	 *	- command queue event fd (internal sessiond commands),
 	 *	- consumerd (32-bit user space) channel monitor pipe,
-	 *	- consumerd (64-but user space) channel monitor pipe,
+	 *	- consumerd (64-bit user space) channel monitor pipe,
 	 *	- consumerd (kernel) channel monitor pipe.
 	 */
-	ret = sessiond_set_thread_pollset(poll_set, 6);
+	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto end;
 	}
@@ -599,12 +598,6 @@ void *thread_notification(void *data)
 
 			DBG("[notification-thread] Handling fd (%i) activity (%u)", fd, revents);
 
-			/* Thread quit pipe has been closed. Killing thread. */
-			if (sessiond_check_thread_quit_pipe(fd, revents)) {
-				DBG("[notification-thread] Quit pipe signaled, exiting.");
-				goto exit;
-			}
-
 			if (fd == state.notification_channel_socket) {
 				if (revents & LPOLLIN) {
 					ret = handle_notification_thread_client_connect(
@@ -623,8 +616,11 @@ void *thread_notification(void *data)
 			} else if (fd == handle->cmd_queue.event_fd) {
 				ret = handle_notification_thread_command(handle,
 						&state);
-				if (ret) {
+				if (ret < 0) {
+					DBG("[notification-thread] Error encountered while servicing command queue");
 					goto error;
+				} else if (ret > 0) {
+					goto exit;
 				}
 			} else if (fd == handle->channel_monitoring_pipes.ust32_consumer) {
 				ret = handle_notification_thread_channel_sample(

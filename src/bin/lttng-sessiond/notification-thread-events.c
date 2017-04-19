@@ -1020,6 +1020,7 @@ end:
 	return 0;
 }
 
+/* Returns 0 on success, 1 on exit requested, negative value on error. */
 int handle_notification_thread_command(
 		struct notification_thread_handle *handle,
 		struct notification_thread_state *state)
@@ -1063,6 +1064,11 @@ int handle_notification_thread_command(
 				cmd->parameters.remove_channel.domain,
 				&cmd->reply_code);
 		break;
+	case NOTIFICATION_COMMAND_TYPE_QUIT:
+		DBG("[notification-thread] Received quit command");
+		cmd->reply_code = LTTNG_OK;
+		ret = 1;
+		goto end;
 	default:
 		ERR("[notification-thread] Unknown internal command received");
 		goto error_unlock;
@@ -1071,11 +1077,11 @@ int handle_notification_thread_command(
 	if (ret) {
 		goto error_unlock;
 	}
-
+end:
 	cds_list_del(&cmd->cmd_list_node);
 	futex_nto1_wake(&cmd->reply_futex);
 	pthread_mutex_unlock(&handle->cmd_queue.lock);
-	return 0;
+	return ret;
 error_unlock:
 	/* Wake-up and return a fatal error to the calling thread. */
 	futex_nto1_wake(&cmd->reply_futex);
@@ -1083,7 +1089,7 @@ error_unlock:
 	cmd->reply_code = LTTNG_ERR_FATAL;
 error:
 	/* Indicate a fatal error to the caller. */
-	return 1;
+	return -1;
 }
 
 static

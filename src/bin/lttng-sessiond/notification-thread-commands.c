@@ -166,3 +166,16 @@ enum lttng_error_code notification_thread_command_remove_channel(
 end:
 	return ret_code;
 }
+
+void notification_thread_command_quit(
+		struct notification_thread_handle *handle)
+{
+	int ret;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_QUIT;
+	ret = run_command_wait(handle, &cmd);
+	assert(!ret && cmd.reply_code == LTTNG_OK);
+}
