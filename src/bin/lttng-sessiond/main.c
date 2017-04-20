@@ -72,6 +72,7 @@
 #include "save.h"
 #include "load-session-thread.h"
 #include "notification-thread.h"
+#include "notification-thread-commands.h"
 #include "syscall.h"
 #include "agent.h"
 #include "ht-cleanup.h"
@@ -722,10 +723,6 @@ static void sessiond_cleanup(void)
 	if (load_info) {
 		load_session_destroy_data(load_info);
 		free(load_info);
-	}
-
-	if (notification_thread_handle) {
-		notification_thread_handle_destroy(notification_thread_handle);
 	}
 
 	/*
@@ -6289,14 +6286,6 @@ exit_dispatch:
 	}
 
 exit_client:
-	notification_thread_command_quit(notification_thread_handle);
-	ret = pthread_join(notification_thread, &status);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join notification thread");
-		retval = -1;
-	}
-
 exit_notification:
 	ret = pthread_join(health_thread, &status);
 	if (ret) {
@@ -6319,8 +6308,6 @@ exit_init_data:
 	 */
 	rcu_thread_online();
 	sessiond_cleanup();
-	rcu_thread_offline();
-	rcu_unregister_thread();
 
 	/*
 	 * Ensure all prior call_rcu are done. call_rcu callbacks may push
@@ -6328,6 +6315,26 @@ exit_init_data:
 	 * the queue is empty before shutting down the clean-up thread.
 	 */
 	rcu_barrier();
+
+	/*
+	 * The teardown of the notification system is performed after the
+	 * session daemon's teardown in order to allow it to be notified
+	 * of the active session and channels at the moment of the teardown.
+	 */
+	if (notification_thread_handle) {
+		notification_thread_command_quit(notification_thread_handle);
+		notification_thread_handle_destroy(notification_thread_handle);
+	}
+
+	ret = pthread_join(notification_thread, &status);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_join notification thread");
+		retval = -1;
+	}
+
+	rcu_thread_offline();
+	rcu_unregister_thread();
 
 	ret = fini_ht_cleanup_thread(&ht_cleanup_thread);
 	if (ret) {

@@ -542,7 +542,7 @@ error:
 }
 
 /*
- * This thread services notification channel clients and received notifications
+ * This thread services notification channel clients and commands received
  * from various lttng-sessiond components over a command queue.
  */
 void *thread_notification(void *data)
@@ -623,21 +623,51 @@ void *thread_notification(void *data)
 					goto exit;
 				}
 			} else if (fd == handle->channel_monitoring_pipes.ust32_consumer) {
+				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+					ret = lttng_poll_del(&state.events, fd);
+					if (ret) {
+						ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
+						goto error;
+					}
+					continue;
+				}
+
 				ret = handle_notification_thread_channel_sample(
 						&state, fd, LTTNG_DOMAIN_UST);
 				if (ret) {
+					ERR("[notification-thread] User space (32-bit) consumer sample handling error occured, exiting thread");
 					goto error;
 				}
 			} else if (fd == handle->channel_monitoring_pipes.ust64_consumer) {
+				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+					ret = lttng_poll_del(&state.events, fd);
+					if (ret) {
+						ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
+						goto error;
+					}
+					continue;
+				}
+
 				ret = handle_notification_thread_channel_sample(
 						&state, fd, LTTNG_DOMAIN_UST);
 				if (ret) {
+					ERR("[notification-thread] User space (64-bit) consumer sample handling error occured, exiting thread");
 					goto error;
 				}
 			} else if (fd == handle->channel_monitoring_pipes.kernel_consumer) {
+				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+					ret = lttng_poll_del(&state.events, fd);
+					if (ret) {
+						ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
+						goto error;
+					}
+					continue;
+				}
+
 				ret = handle_notification_thread_channel_sample(
 						&state, fd, LTTNG_DOMAIN_KERNEL);
 				if (ret) {
+					ERR("[notification-thread] Kernel consumer sample handling error occured, exiting thread");
 					goto error;
 				}
 			} else {
