@@ -672,7 +672,7 @@ void *thread_notification(void *data)
 					/*
 					 * It doesn't matter if a command was
 					 * pending on the client socket at this
-					 * point since it now has now way to
+					 * point since it now has no way to
 					 * receive the notifications to which
 					 * it was subscribing or unsubscribing.
 					 */
