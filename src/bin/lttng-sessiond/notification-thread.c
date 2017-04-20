@@ -541,6 +541,42 @@ error:
 	return -1;
 }
 
+static
+int handle_channel_monitoring_pipe(int fd, uint32_t revents,
+		struct notification_thread_handle *handle,
+		struct notification_thread_state *state)
+{
+	int ret = 0;
+	enum lttng_domain_type domain;
+
+	if (fd == handle->channel_monitoring_pipes.ust32_consumer ||
+			fd == handle->channel_monitoring_pipes.ust64_consumer) {
+		domain = LTTNG_DOMAIN_UST;
+	} else if (fd == handle->channel_monitoring_pipes.kernel_consumer) {
+		domain = LTTNG_DOMAIN_KERNEL;
+	} else {
+		abort();
+	}
+
+	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+		ret = lttng_poll_del(&state->events, fd);
+		if (ret) {
+			ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
+		}
+		goto end;
+	}
+
+	ret = handle_notification_thread_channel_sample(
+			state, fd, domain);
+	if (ret) {
+		ERR("[notification-thread] Consumer sample handling error occured");
+		ret = -1;
+		goto end;
+	}
+end:
+	return ret;
+}
+
 /*
  * This thread services notification channel clients and commands received
  * from various lttng-sessiond components over a command queue.
@@ -622,52 +658,12 @@ void *thread_notification(void *data)
 				} else if (ret > 0) {
 					goto exit;
 				}
-			} else if (fd == handle->channel_monitoring_pipes.ust32_consumer) {
-				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-					ret = lttng_poll_del(&state.events, fd);
-					if (ret) {
-						ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
-						goto error;
-					}
-					continue;
-				}
-
-				ret = handle_notification_thread_channel_sample(
-						&state, fd, LTTNG_DOMAIN_UST);
+			} else if (fd == handle->channel_monitoring_pipes.ust32_consumer ||
+					fd == handle->channel_monitoring_pipes.ust64_consumer ||
+					fd == handle->channel_monitoring_pipes.kernel_consumer) {
+				ret = handle_channel_monitoring_pipe(fd,
+						revents, handle, &state);
 				if (ret) {
-					ERR("[notification-thread] User space (32-bit) consumer sample handling error occured, exiting thread");
-					goto error;
-				}
-			} else if (fd == handle->channel_monitoring_pipes.ust64_consumer) {
-				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-					ret = lttng_poll_del(&state.events, fd);
-					if (ret) {
-						ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
-						goto error;
-					}
-					continue;
-				}
-
-				ret = handle_notification_thread_channel_sample(
-						&state, fd, LTTNG_DOMAIN_UST);
-				if (ret) {
-					ERR("[notification-thread] User space (64-bit) consumer sample handling error occured, exiting thread");
-					goto error;
-				}
-			} else if (fd == handle->channel_monitoring_pipes.kernel_consumer) {
-				if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-					ret = lttng_poll_del(&state.events, fd);
-					if (ret) {
-						ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
-						goto error;
-					}
-					continue;
-				}
-
-				ret = handle_notification_thread_channel_sample(
-						&state, fd, LTTNG_DOMAIN_KERNEL);
-				if (ret) {
-					ERR("[notification-thread] Kernel consumer sample handling error occured, exiting thread");
 					goto error;
 				}
 			} else {
