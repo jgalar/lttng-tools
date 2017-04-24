@@ -20,6 +20,7 @@
 
 #include <lttng/action/action.h>
 #include <common/macros.h>
+#include <common/buffer-view.h>
 #include <stdbool.h>
 
 typedef bool (*action_validate_cb)(struct lttng_action *action);
@@ -44,12 +45,8 @@ bool lttng_action_validate(struct lttng_action *action);
 LTTNG_HIDDEN
 ssize_t lttng_action_serialize(struct lttng_action *action, char *buf);
 
-/*
- * FIXME Add explicit buffer bound checking using a "len" parameter to
- * ensure malformed buffers are caught and rejected.
- */
 LTTNG_HIDDEN
-ssize_t lttng_action_create_from_buffer(const char *buf,
+ssize_t lttng_action_create_from_buffer(const struct lttng_buffer_view *view,
 		struct lttng_action **action);
 
 #endif /* LTTNG_ACTION_INTERNAL_H */

@@ -20,6 +20,7 @@
 
 #include <lttng/condition/evaluation.h>
 #include <common/macros.h>
+#include <common/buffer-view.h>
 #include <stdbool.h>
 
 typedef void (*evaluation_destroy_cb)(struct lttng_evaluation *evaluation);
@@ -38,12 +39,8 @@ struct lttng_evaluation {
 	evaluation_destroy_cb destroy;
 };
 
-/*
- * FIXME Add explicit buffer bound checking using a "len" parameter to
- * ensure malformed buffers are caught and rejected.
- */
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_create_from_buffer(const char *buf,
+ssize_t lttng_evaluation_create_from_buffer(const struct lttng_buffer_view *view,
 		struct lttng_evaluation **evaluation);
 
 LTTNG_HIDDEN

@@ -20,6 +20,7 @@
 
 #include <lttng/condition/condition.h>
 #include <common/macros.h>
+#include <common/buffer-view.h>
 #include <stdbool.h>
 #include <urcu/list.h>
 #include <stdint.h>
@@ -30,6 +31,9 @@ typedef ssize_t (*condition_serialize_cb)(
 		const struct lttng_condition *condition, char *buf);
 typedef bool (*condition_equal_cb)(const struct lttng_condition *a,
 		const struct lttng_condition *b);
+typedef ssize_t (*condition_create_from_buffer_cb)(
+		const struct lttng_buffer_view *view,
+		struct lttng_condition **condition);
 
 struct lttng_condition {
 	enum lttng_condition_type type;
@@ -52,12 +56,9 @@ void lttng_condition_init(struct lttng_condition *condition,
 LTTNG_HIDDEN
 bool lttng_condition_validate(const struct lttng_condition *condition);
 
-/*
- * FIXME Add explicit buffer bound checking using a "len" parameter to
- * ensure malformed buffers are caught and rejected.
- */
 LTTNG_HIDDEN
-ssize_t lttng_condition_create_from_buffer(const char *buf,
+ssize_t lttng_condition_create_from_buffer(
+		const struct lttng_buffer_view *buffer,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN

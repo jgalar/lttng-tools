@@ -20,6 +20,7 @@
 
 #include <lttng/notification/notification.h>
 #include <common/macros.h>
+#include <common/buffer-view.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -59,12 +60,9 @@ LTTNG_HIDDEN
 ssize_t lttng_notification_serialize(struct lttng_notification *notification,
 		char *buf);
 
-/*
- * FIXME Add explicit buffer bound checking using a "len" parameter to
- * ensure malformed buffers are caught and rejected.
- */
 LTTNG_HIDDEN
-ssize_t lttng_notification_create_from_buffer(const char *buf,
+ssize_t lttng_notification_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_notification **notification);
 
 #endif /* LTTNG_NOTIFICATION_INTERNAL_H */

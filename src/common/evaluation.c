@@ -50,33 +50,36 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_create_from_buffer(const char *buf,
+ssize_t lttng_evaluation_create_from_buffer(
+		const struct lttng_buffer_view *src_view,
 		struct lttng_evaluation **evaluation)
 {
 	ssize_t ret, evaluation_size = 0;
-	struct lttng_evaluation_comm *evaluation_comm =
-			(struct lttng_evaluation_comm *) buf;
+	const struct lttng_evaluation_comm *evaluation_comm;
+	const struct lttng_buffer_view evaluation_view =
+			lttng_buffer_view_from_view(src_view,
+			sizeof(*evaluation_comm), -1);
 
-	if (!buf || !evaluation) {
+	if (!src_view || !evaluation) {
 		ret = -1;
 		goto end;
 	}
 
+	evaluation_comm = (const struct lttng_evaluation_comm *) src_view->data;
 	evaluation_size += sizeof(*evaluation_comm);
-	buf += evaluation_size;
 
 	switch ((enum lttng_condition_type) evaluation_comm->type) {
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
-		ret = lttng_evaluation_buffer_usage_low_create_from_buffer(buf,
-				evaluation);
+		ret = lttng_evaluation_buffer_usage_low_create_from_buffer(
+				&evaluation_view, evaluation);
 		if (ret < 0) {
 			goto end;
 		}
 		evaluation_size += ret;
 		break;
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
-		ret = lttng_evaluation_buffer_usage_high_create_from_buffer(buf,
-				evaluation);
+		ret = lttng_evaluation_buffer_usage_high_create_from_buffer(
+				&evaluation_view, evaluation);
 		if (ret < 0) {
 			goto end;
 		}

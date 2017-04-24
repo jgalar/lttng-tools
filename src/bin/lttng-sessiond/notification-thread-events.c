@@ -1389,6 +1389,7 @@ int handle_notification_thread_client_in(
 	struct lttng_notification_channel_message msg;
 	struct lttng_dynamic_buffer buffer;
 	struct lttng_condition *condition = NULL;
+	struct lttng_buffer_view condition_view;
 	enum lttng_notification_channel_status status =
 			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
 
@@ -1442,7 +1443,8 @@ int handle_notification_thread_client_in(
 		received += recv_ret;
 	} while (received < msg.size);
 
-	ret = lttng_condition_create_from_buffer(buffer.data, &condition);
+	condition_view = lttng_buffer_view_from_dynamic_buffer(&buffer, 0, -1);
+	ret = lttng_condition_create_from_buffer(&condition_view, &condition);
 	if (ret < 0 || ret < msg.size) {
 		ERR("[notification-thread] Malformed condition received from client");
 		goto error_disconnect_client;

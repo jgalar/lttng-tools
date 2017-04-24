@@ -22,6 +22,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/evaluation-internal.h>
 #include <lttng/domain.h>
+#include "common/buffer-view.h"
 
 struct lttng_condition_buffer_usage {
 	struct lttng_condition parent;
@@ -75,28 +76,24 @@ struct lttng_evaluation *lttng_evaluation_buffer_usage_create(
 		enum lttng_condition_type type, uint64_t use,
 		uint64_t capacity);
 
-/*
- * Applies to all below:
- *
- * FIXME Add explicit buffer bound checking using a "len" parameter to
- * ensure malformed buffers are caught and rejected.
- */
 LTTNG_HIDDEN
-ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
+ssize_t lttng_condition_buffer_usage_low_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
+ssize_t lttng_condition_buffer_usage_high_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(const char *buf,
+ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_evaluation **evaluation);
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(const char *buf,
+ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_evaluation **evaluation);
-
-
 
 #endif /* LTTNG_CONDITION_BUFFER_USAGE_INTERNAL_H */

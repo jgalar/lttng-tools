@@ -85,19 +85,19 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_action_create_from_buffer(const char *buf,
+ssize_t lttng_action_create_from_buffer(const struct lttng_buffer_view *view,
 		struct lttng_action **_action)
 {
 	ssize_t ret, action_size = sizeof(struct lttng_action_comm);
 	struct lttng_action *action;
-	struct lttng_action_comm *action_comm =
-			(struct lttng_action_comm *) buf;
+	const struct lttng_action_comm *action_comm;
 
-	if (!buf || !_action) {
+	if (!view || !_action) {
 		ret = -1;
 		goto end;
 	}
 
+	action_comm = (const struct lttng_action_comm *) view->data;
 	DBG("Deserializing action from buffer");
 	switch (action_comm->action_type) {
 	case LTTNG_ACTION_TYPE_NOTIFY:

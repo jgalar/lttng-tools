@@ -80,25 +80,30 @@ void lttng_trigger_destroy(struct lttng_trigger *trigger)
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_trigger_create_from_buffer(const char *buf,
+ssize_t lttng_trigger_create_from_buffer(
+		const struct lttng_buffer_view *src_view,
 		struct lttng_trigger **trigger)
 {
 	ssize_t ret, offset = 0, condition_size, action_size;
 	struct lttng_condition *condition = NULL;
 	struct lttng_action *action = NULL;
-	struct lttng_trigger_comm *trigger_comm;
+	const struct lttng_trigger_comm *trigger_comm;
+	struct lttng_buffer_view condition_view;
+	struct lttng_buffer_view action_view;
 
-	if (!buf || !trigger) {
+	if (!src_view || !trigger) {
 		ret = -1;
 		goto end;
 	}
 
 	/* lttng_trigger_comm header */
-	trigger_comm = (struct lttng_trigger_comm *) buf;
+	trigger_comm = (const struct lttng_trigger_comm *) src_view->data;
 	offset += sizeof(*trigger_comm);
 
+	condition_view = lttng_buffer_view_from_view(src_view, offset, -1);
+
 	/* struct lttng_condition */
-	condition_size = lttng_condition_create_from_buffer(buf + offset,
+	condition_size = lttng_condition_create_from_buffer(&condition_view,
 			&condition);
 	if (condition_size < 0) {
 		ret = condition_size;
@@ -107,7 +112,8 @@ ssize_t lttng_trigger_create_from_buffer(const char *buf,
 	offset += condition_size;
 
 	/* struct lttng_action */
-	action_size = lttng_action_create_from_buffer(buf + offset, &action);
+	action_view = lttng_buffer_view_from_view(src_view, offset, -1);
+	action_size = lttng_action_create_from_buffer(&action_view, &action);
 	if (action_size < 0) {
 		ret = action_size;
 		goto end;

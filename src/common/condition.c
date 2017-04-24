@@ -19,6 +19,8 @@
 #include <lttng/condition/buffer-usage-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
+#include <common/dynamic-buffer.h>
+#include <common/buffer-view.h>
 #include <stdbool.h>
 #include <assert.h>
 
@@ -108,38 +110,29 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_create_from_buffer(const char *buf,
+ssize_t lttng_condition_create_from_buffer(
+		const struct lttng_buffer_view *buffer,
 		struct lttng_condition **condition)
 {
 	ssize_t ret, condition_size = 0;
-	struct lttng_condition_comm *condition_comm =
-			(struct lttng_condition_comm *) buf;
+	const struct lttng_condition_comm *condition_comm;
+	condition_create_from_buffer_cb create_from_buffer = NULL;
 
-	if (!buf || !condition) {
+	if (!buffer || !condition) {
 		ret = -1;
 		goto end;
 	}
 
 	DBG("Deserializing condition from buffer");
+	condition_comm = (const struct lttng_condition_comm *) buffer->data;
 	condition_size += sizeof(*condition_comm);
-	buf += condition_size;
 
 	switch ((enum lttng_condition_type) condition_comm->condition_type) {
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
-		ret = lttng_condition_buffer_usage_low_create_from_buffer(buf,
-				condition);
-		if (ret < 0) {
-			goto end;
-		}
-		condition_size += ret;
+		create_from_buffer = lttng_condition_buffer_usage_low_create_from_buffer;
 		break;
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
-		ret = lttng_condition_buffer_usage_high_create_from_buffer(buf,
-				condition);
-		if (ret < 0) {
-			goto end;
-		}
-		condition_size += ret;
+		create_from_buffer = lttng_condition_buffer_usage_high_create_from_buffer;
 		break;
 	default:
 		ERR("Attempted to create condition of unknown type (%i)",
@@ -147,6 +140,22 @@ ssize_t lttng_condition_create_from_buffer(const char *buf,
 		ret = -1;
 		goto end;
 	}
+
+	if (create_from_buffer) {
+		const struct lttng_buffer_view view =
+				lttng_buffer_view_from_view(buffer,
+					sizeof(*condition_comm), -1);
+
+		ret = create_from_buffer(&view, condition);
+		if (ret < 0) {
+			goto end;
+		}
+		condition_size += ret;
+
+	} else {
+		abort();
+	}
+
 	ret = condition_size;
 end:
 	return ret;

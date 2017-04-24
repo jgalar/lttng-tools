@@ -86,39 +86,47 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_notification_create_from_buffer(const char *buf,
+ssize_t lttng_notification_create_from_buffer(
+		const struct lttng_buffer_view *src_view,
 		struct lttng_notification **notification)
 {
-	ssize_t ret, offset = 0, condition_size, evaluation_size;
-	struct lttng_notification_comm *notification_comm;
+	ssize_t ret, notification_size = 0, condition_size, evaluation_size;
+	const struct lttng_notification_comm *notification_comm;
 	struct lttng_condition *condition;
 	struct lttng_evaluation *evaluation;
+	struct lttng_buffer_view condition_view;
+	struct lttng_buffer_view evaluation_view;
 
-	if (!buf || !notification) {
+	if (!src_view || !notification) {
 		ret = -1;
 		goto end;
 	}
 
-	notification_comm = (struct lttng_notification_comm *) buf;
-	offset += sizeof(*notification_comm);
+	notification_comm =
+			(const struct lttng_notification_comm *) src_view->data;
+	notification_size += sizeof(*notification_comm);
 
 	/* struct lttng_condition */
-	condition_size = lttng_condition_create_from_buffer(buf + offset,
+	condition_view = lttng_buffer_view_from_view(src_view,
+			sizeof(*notification_comm), -1);
+	condition_size = lttng_condition_create_from_buffer(&condition_view,
 			&condition);
 	if (condition_size < 0) {
 		ret = condition_size;
 		goto end;
 	}
-	offset += condition_size;
+	notification_size += condition_size;
 
 	/* struct lttng_evaluation */
-	evaluation_size = lttng_evaluation_create_from_buffer(buf + offset,
+	evaluation_view = lttng_buffer_view_from_view(&condition_view,
+			condition_size, -1);
+	evaluation_size = lttng_evaluation_create_from_buffer(&evaluation_view,
 			&evaluation);
 	if (evaluation_size < 0) {
 		ret = evaluation_size;
 		goto end;
 	}
-	offset += evaluation_size;
+	notification_size += evaluation_size;
 
 	/* Unexpected size of inner-elements; the buffer is corrupted. */
 	if ((ssize_t) notification_comm->length !=
@@ -132,7 +140,7 @@ ssize_t lttng_notification_create_from_buffer(const char *buf,
 		ret = -1;
 		goto error;
 	}
-	ret = offset;
+	ret = notification_size;
 	(*notification)->owns_elements = true;
 end:
 	return ret;

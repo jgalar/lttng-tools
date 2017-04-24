@@ -101,16 +101,17 @@ struct lttng_notification *create_notification_from_current_message(
 {
 	ssize_t ret;
 	struct lttng_notification *notification = NULL;
+	struct lttng_buffer_view view;
 
 	if (channel->reception_buffer.size <=
 			sizeof(struct lttng_notification_channel_message)) {
 		goto end;
 	}
 
-	ret = lttng_notification_create_from_buffer(
-			channel->reception_buffer.data +
-			sizeof(struct lttng_notification_channel_message),
-			&notification);
+	view = lttng_buffer_view_from_dynamic_buffer(&channel->reception_buffer,
+			sizeof(struct lttng_notification_channel_message), -1);
+
+	ret = lttng_notification_create_from_buffer(&view, &notification);
 	if (ret != channel->reception_buffer.size -
 			sizeof(struct lttng_notification_channel_message)) {
 		lttng_notification_destroy(notification);

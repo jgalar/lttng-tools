@@ -257,18 +257,36 @@ struct lttng_condition *lttng_condition_buffer_usage_high_create(void)
 
 static
 ssize_t init_condition_from_buffer(struct lttng_condition *condition,
-		const char *buf)
+		const struct lttng_buffer_view *src_view)
 {
 	ssize_t ret, condition_size;
 	enum lttng_condition_status status;
 	enum lttng_domain_type domain_type;
-	struct lttng_condition_buffer_usage_comm *condition_comm =
-			(struct lttng_condition_buffer_usage_comm *) buf;
+	const struct lttng_condition_buffer_usage_comm *condition_comm;
 	const char *session_name, *channel_name;
+	struct lttng_buffer_view names_view;
+
+	if (src_view->size < sizeof(*condition_comm)) {
+		ERR("Failed to initialize from malformed condition buffer: buffer too short to contain header");
+		ret = -1;
+		goto end;
+	}
+
+	condition_comm = (const struct lttng_condition_buffer_usage_comm *) src_view->data;
+	names_view = lttng_buffer_view_from_view(src_view,
+			sizeof(*condition_comm), -1);
 
 	if (condition_comm->session_name_len > LTTNG_NAME_MAX ||
 			condition_comm->channel_name_len > LTTNG_NAME_MAX) {
-		ERR("Failed to initialize from malformed condition buffer: name too long");
+		ERR("Failed to initialize from malformed condition buffer: name exceeds LTTNG_MAX_NAME");
+		ret = -1;
+		goto end;
+	}
+
+	if (names_view.size <
+			(condition_comm->session_name_len +
+			condition_comm->channel_name_len)) {
+		ERR("Failed to initialize from malformed condition buffer: buffer too short to contain element names");
 		ret = -1;
 		goto end;
 	}
@@ -305,8 +323,19 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 		goto end;
 	}
 
-	session_name = buf + sizeof(struct lttng_condition_buffer_usage_comm);
+	session_name = names_view.data;
+	if (*(session_name + condition_comm->session_name_len - 1) != '\0') {
+		ERR("Malformed session name encountered in condition buffer");
+		ret = -1;
+		goto end;
+	}
+
 	channel_name = session_name + condition_comm->session_name_len;
+	if (*(channel_name + condition_comm->channel_name_len - 1) != '\0') {
+		ERR("Malformed channel name encountered in condition buffer");
+		ret = -1;
+		goto end;
+	}
 
 	status = lttng_condition_buffer_usage_set_session_name(condition,
 			session_name);
@@ -329,16 +358,17 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 		goto end;
 	}
 
-	condition_size = sizeof(*condition_comm);
-	condition_size += (ssize_t) condition_comm->session_name_len;
-	condition_size += (ssize_t) condition_comm->channel_name_len;
+	condition_size = sizeof(*condition_comm) +
+			(ssize_t) condition_comm->session_name_len +
+			(ssize_t) condition_comm->channel_name_len;
 	ret = condition_size;
 end:
 	return ret;
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
+ssize_t lttng_condition_buffer_usage_low_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_condition **_condition)
 {
 	ssize_t ret;
@@ -350,7 +380,7 @@ ssize_t lttng_condition_buffer_usage_low_create_from_buffer(const char *buf,
 		goto error;
 	}
 
-	ret = init_condition_from_buffer(condition, buf);
+	ret = init_condition_from_buffer(condition, view);
 	if (ret < 0) {
 		goto error;
 	}
@@ -363,7 +393,8 @@ error:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
+ssize_t lttng_condition_buffer_usage_high_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_condition **_condition)
 {
 	ssize_t ret;
@@ -375,7 +406,7 @@ ssize_t lttng_condition_buffer_usage_high_create_from_buffer(const char *buf,
 		goto error;
 	}
 
-	ret = init_condition_from_buffer(condition, buf);
+	ret = init_condition_from_buffer(condition, view);
 	if (ret < 0) {
 		goto error;
 	}
@@ -389,19 +420,26 @@ error:
 
 static
 struct lttng_evaluation *create_evaluation_from_buffer(
-		enum lttng_condition_type type, const char *buf)
+		enum lttng_condition_type type,
+		const struct lttng_buffer_view *view)
 {
-	struct lttng_evaluation_buffer_usage_comm *comm =
-			(struct lttng_evaluation_buffer_usage_comm *) buf;
-	struct lttng_evaluation *evaluation;
+	const struct lttng_evaluation_buffer_usage_comm *comm =
+			(const struct lttng_evaluation_buffer_usage_comm *) view->data;
+	struct lttng_evaluation *evaluation = NULL;
+
+	if (view->size < sizeof(*comm)) {
+		goto end;
+	}
 
 	evaluation = lttng_evaluation_buffer_usage_create(type,
 			comm->buffer_use, comm->buffer_capacity);
+end:
 	return evaluation;
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(const char *buf,
+ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_evaluation **_evaluation)
 {
 	ssize_t ret;
@@ -413,7 +451,7 @@ ssize_t lttng_evaluation_buffer_usage_low_create_from_buffer(const char *buf,
 	}
 
 	evaluation = create_evaluation_from_buffer(
-			LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW, buf);
+			LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW, view);
 	if (!evaluation) {
 		ret = -1;
 		goto error;
@@ -428,7 +466,8 @@ error:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(const char *buf,
+ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(
+		const struct lttng_buffer_view *view,
 		struct lttng_evaluation **_evaluation)
 {
 	ssize_t ret;
@@ -440,7 +479,7 @@ ssize_t lttng_evaluation_buffer_usage_high_create_from_buffer(const char *buf,
 	}
 
 	evaluation = create_evaluation_from_buffer(
-			LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH, buf);
+			LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH, view);
 	if (!evaluation) {
 		ret = -1;
 		goto error;
