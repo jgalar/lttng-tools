@@ -217,6 +217,48 @@ ssize_t lttcomm_recv_unix_sock(int sock, void *buf, size_t len)
 }
 
 /*
+ * Receive data of size len in put that data into the buf param. Using recvmsg
+ * API. Only use with sockets set in non-blocking mode.
+ *
+ * Return the size of received data.
+ */
+LTTNG_HIDDEN
+ssize_t lttcomm_recv_unix_sock_non_block(int sock, void *buf, size_t len)
+{
+	struct msghdr msg;
+	struct iovec iov[1];
+	ssize_t ret;
+
+	memset(&msg, 0, sizeof(msg));
+
+	iov[0].iov_base = buf;
+	iov[0].iov_len = len;
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 1;
+
+retry:
+	ret = lttng_recvmsg_nosigpipe(sock, &msg);
+	if (ret < 0) {
+		if (errno == EINTR) {
+			goto retry;
+		} else {
+			/*
+			 * Only warn about EPIPE when quiet mode is
+			 * deactivated.
+			 * We consider EPIPE as expected.
+			 */
+			if (errno != EPIPE || !lttng_opt_quiet) {
+				PERROR("recvmsg");
+			}
+			goto end;
+		}
+	}
+	ret = len;
+end:
+	return ret;
+}
+
+/*
  * Send buf data of size len. Using sendmsg API.
  *
  * Return the size of sent data.

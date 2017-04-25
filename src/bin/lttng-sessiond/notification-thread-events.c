@@ -88,24 +88,34 @@ struct notification_client {
 	struct cds_list_head condition_list;
 	struct cds_lfht_node client_socket_ht_node;
 	struct {
-		/*
-		 * Indicates whether or not a notification addressed to this
-		 * client was dropped because a command reply was already
-		 * buffered.
-		 *
-		 * A notification is dropped whenever the buffer is not empty.
-		 */
-		bool dropped_notification;
-		/*
-		 * Indicates whether or not a command reply is already buffered.
-		 * In this case, it means that the client is not consuming
-		 * command replies before emitting a new one. This could be
-		 * caused by a protocol error or a misbehaving/malicious client.
-		 */
-		bool queued_command_reply;
-		struct lttng_dynamic_buffer in_buffer;
-		struct lttng_dynamic_buffer out_buffer;
-	} communication_state;
+		struct {
+			struct lttng_dynamic_buffer buffer;
+			/* Bytes left to receive for the current message. */
+			size_t bytes_to_receive;
+			/* Type of the message being received. */
+			enum lttng_notification_channel_message_type msg_type;
+		} inbound;
+		struct {
+			/*
+			 * Indicates whether or not a notification addressed to
+			 * this client was dropped because a command reply was
+			 * already buffered.
+			 *
+			 * A notification is dropped whenever the buffer is not
+			 * empty.
+			 */
+			bool dropped_notification;
+			/*
+			 * Indicates whether or not a command reply is already
+			 * buffered. In this case, it means that the client is
+			 * not consuming command replies before emitting a new
+			 * one. This could be caused by a protocol error or a
+			 * misbehaving/malicious client.
+			 */
+			bool queued_command_reply;
+			struct lttng_dynamic_buffer buffer;
+		} outbound;
+	} communication;
 };
 
 struct channel_state_sample {
@@ -500,8 +510,8 @@ void notification_client_destroy(struct notification_client *client,
 	if (client->socket >= 0) {
 		(void) lttcomm_close_unix_sock(client->socket);
 	}
-	lttng_dynamic_buffer_reset(&client->communication_state.in_buffer);
-	lttng_dynamic_buffer_reset(&client->communication_state.out_buffer);
+	lttng_dynamic_buffer_reset(&client->communication.inbound.buffer);
+	lttng_dynamic_buffer_reset(&client->communication.outbound.buffer);
 	free(client);
 }
 
@@ -1121,6 +1131,21 @@ end:
 	return ret;
 }
 
+static
+void client_reset_inbound_state(struct notification_client *client)
+{
+	int ret;
+
+	ret = lttng_dynamic_buffer_set_size(
+			&client->communication.inbound.buffer, 0);
+	assert(!ret);
+
+	client->communication.inbound.bytes_to_receive =
+			sizeof(struct lttng_notification_channel_message);
+	client->communication.inbound.msg_type =
+			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN;
+}
+
 int handle_notification_thread_client_connect(
 		struct notification_thread_state *state)
 {
@@ -1136,8 +1161,9 @@ int handle_notification_thread_client_connect(
 		goto error;
 	}
 	CDS_INIT_LIST_HEAD(&client->condition_list);
-	lttng_dynamic_buffer_init(&client->communication_state.in_buffer);
-	lttng_dynamic_buffer_init(&client->communication_state.out_buffer);
+	lttng_dynamic_buffer_init(&client->communication.inbound.buffer);
+	lttng_dynamic_buffer_init(&client->communication.outbound.buffer);
+	client_reset_inbound_state(client);
 
 	ret = lttcomm_accept_unix_sock(state->notification_channel_socket);
 	if (ret < 0) {
@@ -1267,13 +1293,13 @@ int client_flush_outgoing_queue(struct notification_client *client,
 	ssize_t ret;
 	size_t to_send_count;
 
-	assert(client->communication_state.out_buffer.size != 0);
-	to_send_count = client->communication_state.out_buffer.size;
+	assert(client->communication.outbound.buffer.size != 0);
+	to_send_count = client->communication.outbound.buffer.size;
 	DBG("[notification-thread] Flushing client (socket fd = %i) outgoing queue",
 			client->socket);
 
 	ret = lttcomm_send_unix_sock_non_block(client->socket,
-			client->communication_state.out_buffer.data,
+			client->communication.outbound.buffer.data,
 			to_send_count);
 	if ((ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) ||
 			(ret > 0 && ret < to_send_count)) {
@@ -1281,12 +1307,12 @@ int client_flush_outgoing_queue(struct notification_client *client,
 				client->socket);
 		to_send_count -= max(ret, 0);
 
-		memcpy(client->communication_state.out_buffer.data,
-				client->communication_state.out_buffer.data +
-				client->communication_state.out_buffer.size - to_send_count,
+		memcpy(client->communication.outbound.buffer.data,
+				client->communication.outbound.buffer.data +
+				client->communication.outbound.buffer.size - to_send_count,
 				to_send_count);
 		ret = lttng_dynamic_buffer_set_size(
-				&client->communication_state.out_buffer,
+				&client->communication.outbound.buffer,
 				to_send_count);
 		if (ret) {
 			goto error;
@@ -1313,7 +1339,7 @@ int client_flush_outgoing_queue(struct notification_client *client,
 	} else {
 		/* No error and flushed the queue completely. */
 		ret = lttng_dynamic_buffer_set_size(
-				&client->communication_state.out_buffer, 0);
+				&client->communication.outbound.buffer, 0);
 		if (ret) {
 			goto error;
 		}
@@ -1323,8 +1349,8 @@ int client_flush_outgoing_queue(struct notification_client *client,
 			goto error;
 		}
 
-		client->communication_state.queued_command_reply = false;
-		client->communication_state.dropped_notification = false;
+		client->communication.outbound.queued_command_reply = false;
+		client->communication.outbound.dropped_notification = false;
 	}
 
 	return 0;
@@ -1347,7 +1373,7 @@ int client_send_command_reply(struct notification_client *client,
 	};
 	char buffer[sizeof(msg) + sizeof(reply)];
 
-	if (client->communication_state.queued_command_reply) {
+	if (client->communication.outbound.queued_command_reply) {
 		/* Protocol error. */
 		goto error;
 	}
@@ -1358,7 +1384,7 @@ int client_send_command_reply(struct notification_client *client,
 
 	/* Enqueue buffer to outgoing queue and flush it. */
 	ret = lttng_dynamic_buffer_append(
-			&client->communication_state.out_buffer,
+			&client->communication.outbound.buffer,
 			buffer, sizeof(buffer));
 	if (ret) {
 		goto error;
@@ -1369,9 +1395,9 @@ int client_send_command_reply(struct notification_client *client,
 		goto error;
 	}
 
-	if (client->communication_state.out_buffer.size != 0) {
+	if (client->communication.outbound.buffer.size != 0) {
 		/* Queue could not be emptied. */
-		client->communication_state.queued_command_reply = true;
+		client->communication.outbound.queued_command_reply = true;
 	}
 
 	return 0;
@@ -1379,107 +1405,153 @@ error:
 	return -1;
 }
 
+static
+int client_dispatch_message(struct notification_client *client,
+		struct notification_thread_state *state)
+{
+	int ret = 0;
+
+	switch (client->communication.inbound.msg_type) {
+	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN:
+	{
+		const struct lttng_notification_channel_message *msg;
+
+		assert(sizeof(*msg) ==
+				client->communication.inbound.buffer.size);
+		msg = (const struct lttng_notification_channel_message *)
+				client->communication.inbound.buffer.data;
+
+		if (msg->size == 0 || msg->size > DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE) {
+			ERR("[notification-thread] Invalid notification channel message: length = %u", msg->size);
+			ret = -1;
+			goto end;
+		}
+
+		if (msg->type != LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE &&
+				msg->type != LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE) {
+			ERR("[notification-thread] Invalid notification channel message: unexpected message type");
+			ret = -1;
+			goto end;
+		}
+
+		client->communication.inbound.bytes_to_receive = msg->size;
+		client->communication.inbound.msg_type =
+				(enum lttng_notification_channel_message_type) msg->type;
+		ret = lttng_dynamic_buffer_set_size(
+				&client->communication.inbound.buffer, 0);
+		if (ret) {
+			goto end;
+		}
+		break;
+	}
+	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE:
+	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE:
+	{
+		struct lttng_condition *condition;
+		enum lttng_notification_channel_status status =
+				LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
+		const struct lttng_buffer_view condition_view =
+				lttng_buffer_view_from_dynamic_buffer(
+					&client->communication.inbound.buffer,
+					0, -1);
+		size_t expected_condition_size =
+				client->communication.inbound.buffer.size;
+
+		ret = lttng_condition_create_from_buffer(&condition_view,
+				&condition);
+		if (ret != expected_condition_size) {
+			ERR("[notification-thread] Malformed condition received from client");
+			goto end;
+		}
+
+		if (client->communication.inbound.msg_type ==
+				LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE) {
+			/*
+			 * FIXME The current state should be evaluated on
+			 * subscription.
+			 */
+			ret = notification_thread_client_subscribe(client,
+					condition, state, &status);
+		} else {
+			ret = notification_thread_client_unsubscribe(client,
+					condition, state, &status);
+		}
+		if (ret) {
+			goto end;
+		}
+
+		ret = client_send_command_reply(client, state, status);
+		if (ret) {
+			ERR("[notification-thread] Failed to send reply to notification channel client");
+			goto end;
+		}
+
+		/* Set reception state to receive the next message header. */
+		client_reset_inbound_state(client);
+		break;
+	}
+	default:
+		abort();
+	}
+end:
+	return ret;
+}
+
 /* Incoming data from client. */
 int handle_notification_thread_client_in(
 		struct notification_thread_state *state, int socket)
 {
-	int ret = 0;
-	size_t received = 0;
+	int ret;
 	struct notification_client *client;
-	struct lttng_notification_channel_message msg;
-	struct lttng_dynamic_buffer buffer;
-	struct lttng_condition *condition = NULL;
-	struct lttng_buffer_view condition_view;
-	enum lttng_notification_channel_status status =
-			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
-
-	lttng_dynamic_buffer_init(&buffer);
+	ssize_t recv_ret;
+	size_t offset;
 
 	client = get_client_from_socket(socket, state);
 	if (!client) {
 		/* Internal error, abort. */
 		ret = -1;
-		goto error_no_reply;
+		goto end;
 	}
 
-	/* Receive message header. */
-	do {
-		ssize_t recv_ret;
+	offset = client->communication.inbound.buffer.size;
+	ret = lttng_dynamic_buffer_set_size(
+			&client->communication.inbound.buffer,
+			client->communication.inbound.bytes_to_receive);
+	if (ret) {
+		goto end;
+	}
+	recv_ret = lttcomm_recv_unix_sock_non_block(socket,
+			client->communication.inbound.buffer.data + offset,
+			client->communication.inbound.bytes_to_receive);
+	if (recv_ret < 0) {
+		goto error_disconnect_client;
+	}
 
-		recv_ret = lttcomm_recv_unix_sock(socket,
-				((char *) &msg) + received,
-				sizeof(msg) - received);
-		if (recv_ret <= 0) {
-			ERR("[notification-thread] Failed to receive channel command from client (received %zu bytes)", received);
+	client->communication.inbound.bytes_to_receive -= recv_ret;
+	ret = lttng_dynamic_buffer_set_size(
+			&client->communication.inbound.buffer,
+			client->communication.inbound.buffer.size -
+			client->communication.inbound.bytes_to_receive);
+	if (ret) {
+		goto end;
+	}
+
+	if (client->communication.inbound.bytes_to_receive == 0) {
+		ret = client_dispatch_message(client, state);
+		if (ret) {
 			/*
-			 * Protocol error, disconnect the client but don't
-			 * signal an error.
+			 * Only returns an error if this client must be
+			 * disconnected.
 			 */
 			goto error_disconnect_client;
 		}
-		received += recv_ret;
-	} while (received < sizeof(msg));
-
-	if (msg.size > DEFAULT_MAX_NOTIFICATION_CLIENT_MESSAGE_PAYLOAD_SIZE) {
-		goto error_disconnect_client;
+	} else {
+		goto end;
 	}
-	ret = lttng_dynamic_buffer_set_size(&buffer, msg.size);
-	if (ret) {
-		goto error_disconnect_client;
-	}
-
-	/* Receive message body. */
-	received = 0;
-	do {
-		ssize_t recv_ret;
-
-		recv_ret = lttcomm_recv_unix_sock(socket,
-				buffer.data + received,
-				msg.size - received);
-		if (recv_ret <= 0) {
-			ERR("[notification-thread] Failed to receive condition from client");
-			goto error_disconnect_client;
-		}
-		received += recv_ret;
-	} while (received < msg.size);
-
-	condition_view = lttng_buffer_view_from_dynamic_buffer(&buffer, 0, -1);
-	ret = lttng_condition_create_from_buffer(&condition_view, &condition);
-	if (ret < 0 || ret < msg.size) {
-		ERR("[notification-thread] Malformed condition received from client");
-		goto error_disconnect_client;
-	}
-
-	DBG("[notification-thread] Successfully received condition from notification channel client");
-
-	switch ((enum lttng_notification_channel_message_type) msg.type) {
-	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE:
-		/* FIXME The current state should be evaluated on subscription. */
-		ret = notification_thread_client_subscribe(client, condition,
-				state, &status);
-		break;
-	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE:
-		ret = notification_thread_client_unsubscribe(client, condition,
-				state, &status);
-		break;
-	default:
-		ERR("[notification-thread] Unknown command type received from notification channel client");
-		goto error_disconnect_client;
-	}
-
-	if (client_send_command_reply(client, state, status)) {
-		ERR("[notification-thread] Failed to send reply to notification channel client");
-		goto error_disconnect_client;
-	}
-
-	lttng_dynamic_buffer_reset(&buffer);
-	return 0;
-
+end:
+	return ret;
 error_disconnect_client:
 	ret = handle_notification_thread_client_disconnect(socket, state);
-error_no_reply:
-	lttng_dynamic_buffer_reset(&buffer);
-	lttng_condition_destroy(condition);
 	return ret;
 }
 
@@ -1594,6 +1666,7 @@ int evaluate_condition(struct lttng_condition *condition,
 			(previous_sample_result == latest_sample_result)) {
 		/*
 		 * Only trigger on a condition evaluation transition.
+		 *
 		 * NOTE: This edge-triggered logic may not be appropriate for
 		 * future condition types.
 		 */
@@ -1625,7 +1698,7 @@ int client_enqueue_dropped_notification(struct notification_client *client,
 	};
 
 	ret = lttng_dynamic_buffer_append(
-			&client->communication_state.out_buffer, &msg,
+			&client->communication.outbound.buffer, &msg,
 			sizeof(msg));
 	return ret;
 }
@@ -1691,7 +1764,7 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 
 		DBG("[notification-thread] Sending notification to client (fd = %i, %zu bytes)",
 				client->socket, msg_buffer.size);
-		if (client->communication_state.out_buffer.size) {
+		if (client->communication.outbound.buffer.size) {
 			/*
 			 * Outgoing data is already buffered for this client;
 			 * drop the notification and enqueue a "dropped
@@ -1701,8 +1774,8 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 			 */
 			DBG("[notification-thread] Dropping notification addressed to client (socket fd = %i)",
 					client->socket);
-			if (!client->communication_state.dropped_notification) {
-				client->communication_state.dropped_notification = true;
+			if (!client->communication.outbound.dropped_notification) {
+				client->communication.outbound.dropped_notification = true;
 				ret = client_enqueue_dropped_notification(
 						client, state);
 				if (ret) {
@@ -1713,7 +1786,7 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		}
 
 		ret = lttng_dynamic_buffer_append_buffer(
-				&client->communication_state.out_buffer,
+				&client->communication.outbound.buffer,
 				&msg_buffer);
 		if (ret) {
 			goto end;
