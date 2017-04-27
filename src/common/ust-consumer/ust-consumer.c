@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
  *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright (C) 2017 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 only,
@@ -1995,7 +1996,7 @@ void *lttng_ustctl_get_mmap_base(struct lttng_consumer_stream *stream)
 }
 
 /*
- * Take a snapshot for a specific fd
+ * Take a snapshot for a specific stream.
  *
  * Returns 0 on success, < 0 on error
  */
@@ -2008,7 +2009,7 @@ int lttng_ustconsumer_take_snapshot(struct lttng_consumer_stream *stream)
 }
 
 /*
- * Sample consumed and produced positions for a specific fd.
+ * Sample consumed and produced positions for a specific stream.
  *
  * Returns 0 on success, < 0 on error.
  */

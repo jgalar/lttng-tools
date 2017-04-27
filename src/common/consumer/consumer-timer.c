@@ -32,6 +32,12 @@
 #include <common/consumer/consumer-testpoint.h>
 #include <common/ust-consumer/ust-consumer.h>
 
+typedef int (*sample_positions_cb)(struct lttng_consumer_stream *stream);
+typedef int (*get_consumed_cb)(struct lttng_consumer_stream *stream,
+		unsigned long *consumed);
+typedef int (*get_produced_cb)(struct lttng_consumer_stream *stream,
+		unsigned long *produced);
+
 static struct timer_signal_data timer_signal = {
 	.tid = 0,
 	.setup_done = 0,
@@ -622,8 +628,10 @@ int consumer_signal_init(void)
 }
 
 static
-int sample_ust_positions(struct lttng_consumer_channel *channel,
-		uint64_t *_highest_use, uint64_t *_lowest_use)
+int sample_channel_positions(struct lttng_consumer_channel *channel,
+		uint64_t *_highest_use, uint64_t *_lowest_use,
+		sample_positions_cb sample, get_consumed_cb get_consumed,
+		get_produced_cb get_produced)
 {
 	int ret;
 	struct lttng_ht_iter iter;
@@ -647,21 +655,19 @@ int sample_ust_positions(struct lttng_consumer_channel *channel,
 			goto next;
 		}
 
-		ret = lttng_ustconsumer_sample_snapshot_positions(stream);
+		ret = sample(stream);
 		if (ret) {
 			ERR("Failed to take buffer position snapshot in monitor timer (ret = %d)", ret);
 			pthread_mutex_unlock(&stream->lock);
 			goto end;
 		}
-		ret = lttng_ustconsumer_get_consumed_snapshot(stream,
-				&consumed);
+		ret = get_consumed(stream, &consumed);
 		if (ret) {
 			ERR("Failed to get buffer consumed position in monitor timer");
 			pthread_mutex_unlock(&stream->lock);
 			goto end;
 		}
-		ret = lttng_ustconsumer_get_produced_snapshot(stream,
-				&produced);
+		ret = get_produced(stream, &produced);
 		if (ret) {
 			ERR("Failed to get buffer produced position in monitor timer");
 			pthread_mutex_unlock(&stream->lock);
@@ -698,6 +704,9 @@ void monitor_timer(struct lttng_consumer_local_data *ctx,
 	struct lttcomm_consumer_channel_monitor_msg msg = {
 		.key = channel->key,
 	};
+	sample_positions_cb sample;
+	get_consumed_cb get_consumed;
+	get_produced_cb get_produced;
 
 	assert(channel);
 	pthread_mutex_lock(&consumer_data.lock);
@@ -708,19 +717,22 @@ void monitor_timer(struct lttng_consumer_local_data *ctx,
 
 	switch (consumer_data.type) {
 	case LTTNG_CONSUMER_KERNEL:
-		/* TODO */
-		ret = -1;
+		sample = lttng_kconsumer_sample_snapshot_positions;
+		get_consumed = lttng_kconsumer_get_consumed_snapshot;
+		get_produced = lttng_kconsumer_get_produced_snapshot;
 		break;
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
-	{
-		ret = sample_ust_positions(channel, &msg.highest, &msg.lowest);
+		sample = lttng_ustconsumer_sample_snapshot_positions;
+		get_consumed = lttng_ustconsumer_get_consumed_snapshot;
+		get_produced = lttng_ustconsumer_get_produced_snapshot;
 		break;
-	}
 	default:
 		abort();
 	}
 
+	ret = sample_channel_positions(channel, &msg.highest, &msg.lowest,
+			sample, get_consumed, get_produced);
 	if (ret) {
 		goto end;
 	}

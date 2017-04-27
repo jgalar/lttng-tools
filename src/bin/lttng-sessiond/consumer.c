@@ -893,7 +893,8 @@ void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t tracefile_size,
 		uint64_t tracefile_count,
 		unsigned int monitor,
-		unsigned int live_timer_interval)
+		unsigned int live_timer_interval,
+		unsigned int monitor_timer_interval)
 {
 	assert(msg);
 
@@ -914,6 +915,7 @@ void consumer_init_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.channel.tracefile_count = tracefile_count;
 	msg->u.channel.monitor = monitor;
 	msg->u.channel.live_timer_interval = live_timer_interval;
+	msg->u.channel.monitor_timer_interval = monitor_timer_interval;
 
 	strncpy(msg->u.channel.pathname, pathname,
 			sizeof(msg->u.channel.pathname));

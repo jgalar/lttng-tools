@@ -352,6 +352,16 @@ int notification_channel_socket_create(void)
 		goto error;
 	}
 
+	if (getuid() == 0) {
+		ret = chown(sock_path, 0,
+				utils_get_group_id(tracing_group_name));
+		if (ret) {
+			ERR("Failed to set the notification channel socket's group");
+			ret = -1;
+			goto error;
+		}
+	}
+
 	DBG("[notification-thread] Notification channel UNIX socket created (fd = %i)",
 			fd);
 	free(sock_path);

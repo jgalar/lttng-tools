@@ -26,6 +26,8 @@
 
 #include "consumer.h"
 #include "trace-kernel.h"
+#include "lttng-sessiond.h"
+#include "notification-thread-commands.h"
 
 /*
  * Find the channel name for the given kernel session.
@@ -475,6 +477,7 @@ void trace_kernel_destroy_channel(struct ltt_kernel_channel *channel)
 	struct ltt_kernel_event *event, *etmp;
 	struct ltt_kernel_context *ctx, *ctmp;
 	int ret;
+	enum lttng_error_code status;
 
 	assert(channel);
 
@@ -505,6 +508,10 @@ void trace_kernel_destroy_channel(struct ltt_kernel_channel *channel)
 	/* Remove from channel list */
 	cds_list_del(&channel->list);
 
+	status = notification_thread_command_remove_channel(
+			notification_thread_handle,
+			channel->fd, LTTNG_DOMAIN_KERNEL);
+	assert(status == LTTNG_OK);
 	free(channel->channel);
 	free(channel);
 }

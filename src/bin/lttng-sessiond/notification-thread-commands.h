@@ -21,6 +21,7 @@
 #include <lttng/domain.h>
 #include <lttng/lttng-error.h>
 #include <urcu/rculfhash.h>
+#include "notification-thread.h"
 
 struct notification_thread_data;
 struct lttng_trigger;

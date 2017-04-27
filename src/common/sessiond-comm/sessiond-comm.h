@@ -430,6 +430,8 @@ struct lttcomm_consumer_msg {
 			uint32_t monitor;
 			/* timer to check the streams usage in live mode (usec). */
 			unsigned int live_timer_interval;
+			/* timer to sample a channel's positions (usec). */
+			unsigned int monitor_timer_interval;
 		} LTTNG_PACKED channel; /* Only used by Kernel. */
 		struct {
 			uint64_t stream_key;
@@ -460,7 +462,7 @@ struct lttcomm_consumer_msg {
 			int32_t overwrite;			/* 1: overwrite, 0: discard */
 			uint32_t switch_timer_interval;		/* usec */
 			uint32_t read_timer_interval;		/* usec */
-			unsigned int live_timer_interval;		/* usec */
+			unsigned int live_timer_interval;	/* usec */
 			uint32_t monitor_timer_interval;	/* usec */
 			int32_t output;				/* splice, mmap */
 			int32_t type;				/* metadata or per_cpu */

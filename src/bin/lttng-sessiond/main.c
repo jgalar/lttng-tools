@@ -80,7 +80,7 @@
 #define CONSUMERD_FILE	"lttng-consumerd"
 
 const char *progname;
-static const char *tracing_group_name = DEFAULT_TRACING_GROUP;
+const char *tracing_group_name = DEFAULT_TRACING_GROUP;
 static int tracing_group_name_override;
 static char *opt_pidfile;
 static int opt_sig_parent;

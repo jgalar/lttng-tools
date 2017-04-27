@@ -124,6 +124,8 @@ extern const char * const config_section_name;
 /* Is this daemon root or not. */
 extern int is_root;
 
+extern const char *tracing_group_name;
+
 int sessiond_check_thread_quit_pipe(int fd, uint32_t events);
 int sessiond_set_thread_pollset(struct lttng_poll_event *events, size_t size);
 void sessiond_notify_ready(void);

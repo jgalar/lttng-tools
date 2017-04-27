@@ -33,7 +33,6 @@
 #include "buffer-registry.h"
 #include "session.h"
 #include "lttng-sessiond.h"
-#include "notification-thread-commands.h"
 
 /*
  * Return allocated full pathname of the session using the consumer trace path
@@ -96,7 +95,7 @@ error:
 }
 
 /*
- * Send a single channel to the consumer using command ADD_CHANNEL.
+ * Send a single channel to the consumer using command ASK_CHANNEL_CREATION.
  *
  * Consumer socket lock MUST be acquired before calling this.
  */
