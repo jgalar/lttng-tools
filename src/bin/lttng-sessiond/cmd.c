@@ -259,6 +259,10 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 			cds_list_for_each_entry(kchan,
 					&session->kernel_session->channel_list.head, list) {
 				uint64_t discarded_events, lost_packets;
+				struct lttng_channel_extended *extended;
+
+				extended = (struct lttng_channel_extended *)
+						kchan->channel->attr.extended.ptr;
 
 				ret = get_kernel_runtime_stats(session, kchan,
 						&discarded_events, &lost_packets);
@@ -271,6 +275,8 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 				chan_exts[i].discarded_events =
 						discarded_events;
 				chan_exts[i].lost_packets = lost_packets;
+				chan_exts[i].monitor_timer_interval =
+						extended->monitor_timer_interval;
 				i++;
 			}
 		}
@@ -323,6 +329,8 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 			}
 			chan_exts[i].discarded_events = discarded_events;
 			chan_exts[i].lost_packets = lost_packets;
+			chan_exts[i].monitor_timer_interval =
+					uchan->monitor_timer_interval;
 			i++;
 		}
 		rcu_read_unlock();
