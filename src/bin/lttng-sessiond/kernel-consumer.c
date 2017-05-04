@@ -100,6 +100,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 	struct consumer_output *consumer;
 	enum lttng_error_code status;
 	struct ltt_session *session;
+	struct lttng_channel_extended *channel_attr_extended;
 
 	/* Safety net */
 	assert(channel);
@@ -107,6 +108,8 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 	assert(ksession->consumer);
 
 	consumer = ksession->consumer;
+	channel_attr_extended = (struct lttng_channel_extended *)
+			channel->channel->attr.extended.ptr;
 
 	DBG("Kernel consumer adding channel %s to kernel consumer",
 			channel->channel->name);
@@ -140,7 +143,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 			channel->channel->attr.tracefile_count,
 			monitor,
 			channel->channel->attr.live_timer_interval,
-			1000000 /* FIXME Use value provided by the client. */);
+			channel_attr_extended->monitor_timer_interval);
 
 	health_code_update();
 

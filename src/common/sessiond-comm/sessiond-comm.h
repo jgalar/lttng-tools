@@ -29,6 +29,7 @@
 #include <lttng/lttng.h>
 #include <lttng/snapshot-internal.h>
 #include <lttng/save-internal.h>
+#include <lttng/channel-internal.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <common/compat/socket.h>
 #include <common/uri.h>
@@ -273,6 +274,8 @@ struct lttcomm_session_msg {
 		/* Create channel */
 		struct {
 			struct lttng_channel chan LTTNG_PACKED;
+			/* struct lttng_channel_extended is already packed. */
+			struct lttng_channel_extended extended;
 		} LTTNG_PACKED channel;
 		/* Context */
 		struct {
@@ -378,14 +381,6 @@ struct lttcomm_event_extended_header {
 	 * character.
 	 */
 	uint32_t nb_exclusions;
-} LTTNG_PACKED;
-
-/*
- * Channel extended info.
- */
-struct lttcomm_channel_extended {
-	uint64_t discarded_events;
-	uint64_t lost_packets;
 } LTTNG_PACKED;
 
 /*

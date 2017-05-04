@@ -175,7 +175,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			ua_chan->attr.switch_timer_interval,
 			ua_chan->attr.read_timer_interval,
 			ua_sess->live_timer_interval,
-			1000000,  /* FIXME Use value provided by the client. */
+			ua_chan->monitor_timer_interval,
 			output,
 			(int) ua_chan->attr.type,
 			ua_sess->tracing_id,

@@ -181,6 +181,7 @@ struct ltt_kernel_channel *trace_kernel_create_channel(
 		struct lttng_channel *chan)
 {
 	struct ltt_kernel_channel *lkc;
+	struct lttng_channel_extended *extended;
 
 	assert(chan);
 
@@ -193,10 +194,18 @@ struct ltt_kernel_channel *trace_kernel_create_channel(
 	lkc->channel = zmalloc(sizeof(struct lttng_channel));
 	if (lkc->channel == NULL) {
 		PERROR("lttng_channel zmalloc");
-		free(lkc);
+		goto error;
+	}
+
+	extended = zmalloc(sizeof(struct lttng_channel_extended));
+	if (!extended) {
+		PERROR("lttng_channel_channel zmalloc");
 		goto error;
 	}
 	memcpy(lkc->channel, chan, sizeof(struct lttng_channel));
+	memcpy(extended, chan->attr.extended.ptr, sizeof(struct lttng_channel_extended));
+	lkc->channel->attr.extended.ptr = extended;
+	extended = NULL;
 
 	/*
 	 * If we receive an empty string for channel name, it means the
@@ -220,6 +229,11 @@ struct ltt_kernel_channel *trace_kernel_create_channel(
 	return lkc;
 
 error:
+	if (lkc) {
+		free(lkc->channel);
+	}
+	free(extended);
+	free(lkc);
 	return NULL;
 }
 
@@ -512,6 +526,7 @@ void trace_kernel_destroy_channel(struct ltt_kernel_channel *channel)
 			notification_thread_handle,
 			channel->fd, LTTNG_DOMAIN_KERNEL);
 	assert(status == LTTNG_OK);
+	free(channel->channel->attr.extended.ptr);
 	free(channel->channel);
 	free(channel);
 }

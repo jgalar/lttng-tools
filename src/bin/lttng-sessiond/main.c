@@ -3511,8 +3511,11 @@ error_add_context:
 	}
 	case LTTNG_ENABLE_CHANNEL:
 	{
+		cmd_ctx->lsm->u.channel.chan.attr.extended.ptr =
+				(struct lttng_channel_extended *) &cmd_ctx->lsm->u.channel.extended;
 		ret = cmd_enable_channel(cmd_ctx->session, &cmd_ctx->lsm->domain,
-				&cmd_ctx->lsm->u.channel.chan, kernel_poll_pipe[1]);
+				&cmd_ctx->lsm->u.channel.chan,
+				kernel_poll_pipe[1]);
 		break;
 	}
 	case LTTNG_TRACK_PID:

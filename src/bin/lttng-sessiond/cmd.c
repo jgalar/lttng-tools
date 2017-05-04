@@ -34,6 +34,7 @@
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition.h>
 #include <lttng/action/action.h>
+#include <lttng/channel-internal.h>
 
 #include "channel.h"
 #include "consumer.h"
@@ -244,7 +245,7 @@ end:
  */
 static void list_lttng_channels(enum lttng_domain_type domain,
 		struct ltt_session *session, struct lttng_channel *channels,
-		struct lttcomm_channel_extended *chan_exts)
+		struct lttng_channel_extended *chan_exts)
 {
 	int i = 0, ret;
 	struct ltt_kernel_channel *kchan;
@@ -1680,7 +1681,7 @@ int cmd_add_context(struct ltt_session *session, enum lttng_domain_type domain,
 				free(attr);
 				goto error;
 			}
-			free(attr);
+			channel_attr_destroy(attr);
 			chan_ust_created = 1;
 		}
 
@@ -2178,7 +2179,7 @@ error:
 	free(filter_expression);
 	free(filter);
 	free(exclusion);
-	free(attr);
+	channel_attr_destroy(attr);
 	rcu_read_unlock();
 	return ret;
 }
@@ -2947,8 +2948,8 @@ ssize_t cmd_list_channels(enum lttng_domain_type domain,
 
 	if (nb_chan > 0) {
 		const size_t channel_size = sizeof(struct lttng_channel) +
-			sizeof(struct lttcomm_channel_extended);
-		struct lttcomm_channel_extended *channel_exts;
+			sizeof(struct lttng_channel_extended);
+		struct lttng_channel_extended *channel_exts;
 
 		payload_size = nb_chan * channel_size;
 		*channels = zmalloc(payload_size);

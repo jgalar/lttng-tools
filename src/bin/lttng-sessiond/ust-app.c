@@ -1796,6 +1796,7 @@ static void shadow_copy_channel(struct ust_app_channel *ua_chan,
 	ua_chan->attr.overwrite = uchan->attr.overwrite;
 	ua_chan->attr.switch_timer_interval = uchan->attr.switch_timer_interval;
 	ua_chan->attr.read_timer_interval = uchan->attr.read_timer_interval;
+	ua_chan->monitor_timer_interval = uchan->monitor_timer_interval;
 	ua_chan->attr.output = uchan->attr.output;
 	/*
 	 * Note that the attribute channel type is not set since the channel on the
