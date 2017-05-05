@@ -78,8 +78,15 @@ struct notification_client_list {
 
 struct notification_client {
 	int socket;
+	/* Client protocol version. */
+	uint8_t major, minor;
 	uid_t uid;
 	gid_t gid;
+	/*
+	 * Indicates if the credentials and versions of the client has been
+	 * checked.
+	 */
+	bool validated;
 	/*
 	 * Conditions to which the client's notification channel is subscribed.
 	 * List of struct lttng_condition_list_node. The condition member is
@@ -94,6 +101,17 @@ struct notification_client {
 			size_t bytes_to_receive;
 			/* Type of the message being received. */
 			enum lttng_notification_channel_message_type msg_type;
+			/*
+			 * Indicates whether or not credentials are expected
+			 * from the client.
+			 */
+			bool receive_creds;
+			/*
+			 * Indicates whether or not credentials were received
+			 * from the client.
+			 */
+			bool creds_received;
+			lttng_sock_cred creds;
 		} inbound;
 		struct {
 			/*
@@ -1144,6 +1162,9 @@ void client_reset_inbound_state(struct notification_client *client)
 			sizeof(struct lttng_notification_channel_message);
 	client->communication.inbound.msg_type =
 			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN;
+	client->communication.inbound.receive_creds = false;
+	LTTNG_SOCK_SET_UID_CRED(&client->communication.inbound.creds, -1);
+	LTTNG_SOCK_SET_GID_CRED(&client->communication.inbound.creds, -1);
 }
 
 int handle_notification_thread_client_connect(
@@ -1180,15 +1201,12 @@ int handle_notification_thread_client_connect(
 		goto error;
 	}
 
-	/* FIXME handle creds. */
 	ret = lttcomm_setsockopt_creds_unix_sock(client->socket);
 	if (ret < 0) {
 		ERR("[notification-thread] Failed to set socket options on new notification channel client socket");
 		ret = 0;
 		goto error;
 	}
-
-	/* FIXME protocol version handshake. */
 
 	ret = lttng_poll_add(&state->events, client->socket,
 			LPOLLIN | LPOLLERR |
@@ -1411,9 +1429,24 @@ int client_dispatch_message(struct notification_client *client,
 {
 	int ret = 0;
 
+	if (client->communication.inbound.msg_type !=
+			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE &&
+			client->communication.inbound.msg_type !=
+				LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN &&
+			!client->validated) {
+		WARN("[notification-thread] client attempted a command before handshake");
+		ret = -1;
+		goto end;
+	}
+
 	switch (client->communication.inbound.msg_type) {
 	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN:
 	{
+		/*
+		 * Receiving message header. The function will be called again
+		 * once the rest of the message as been received and can be
+		 * interpreted.
+		 */
 		const struct lttng_notification_channel_message *msg;
 
 		assert(sizeof(*msg) ==
@@ -1427,21 +1460,94 @@ int client_dispatch_message(struct notification_client *client,
 			goto end;
 		}
 
-		if (msg->type != LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE &&
-				msg->type != LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE) {
-			ERR("[notification-thread] Invalid notification channel message: unexpected message type");
+		switch (msg->type) {
+		case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE:
+		case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE:
+		case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE:
+			break;
+		default:
 			ret = -1;
+			ERR("[notification-thread] Invalid notification channel message: unexpected message type");
 			goto end;
 		}
 
 		client->communication.inbound.bytes_to_receive = msg->size;
 		client->communication.inbound.msg_type =
 				(enum lttng_notification_channel_message_type) msg->type;
+		if (client->communication.inbound.msg_type ==
+				LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE) {
+			client->communication.inbound.receive_creds = true;
+		}
 		ret = lttng_dynamic_buffer_set_size(
 				&client->communication.inbound.buffer, 0);
 		if (ret) {
 			goto end;
 		}
+		break;
+	}
+	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE:
+	{
+		struct lttng_notification_channel_command_handshake *handshake_client;
+		struct lttng_notification_channel_command_handshake handshake_reply = {
+			.major = LTTNG_NOTIFICATION_CHANNEL_VERSION_MAJOR,
+			.minor = LTTNG_NOTIFICATION_CHANNEL_VERSION_MINOR,
+		};
+		struct lttng_notification_channel_message msg_header = {
+			.type = LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE,
+			.size = sizeof(handshake_reply),
+		};
+		enum lttng_notification_channel_status status =
+				LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
+		char send_buffer[sizeof(msg_header) + sizeof(handshake_reply)];
+
+		memcpy(send_buffer, &msg_header, sizeof(msg_header));
+		memcpy(send_buffer + sizeof(msg_header), &handshake_reply,
+				sizeof(handshake_reply));
+
+		handshake_client =
+				(struct lttng_notification_channel_command_handshake *)
+					client->communication.inbound.buffer.data;
+				client->major = handshake_client->major;
+		client->minor = handshake_client->minor;
+		if (!client->communication.inbound.creds_received) {
+			ERR("[notification-thread] No credentials received from client");
+			ret = -1;
+			goto end;
+		}
+
+		client->uid = LTTNG_SOCK_GET_UID_CRED(
+				&client->communication.inbound.creds);
+		client->gid = LTTNG_SOCK_GET_GID_CRED(
+				&client->communication.inbound.creds);
+		DBG("[notification-thread] Received handshake from client (uid = %u, gid = %u) with version %i.%i",
+				client->uid, client->gid, (int) client->major,
+				(int) client->minor);
+
+		if (handshake_client->major != LTTNG_NOTIFICATION_CHANNEL_VERSION_MAJOR) {
+			status = LTTNG_NOTIFICATION_CHANNEL_STATUS_UNSUPPORTED_VERSION;
+		}
+
+		ret = lttng_dynamic_buffer_append(&client->communication.outbound.buffer,
+				send_buffer, sizeof(send_buffer));
+		if (ret) {
+			ERR("[notification-thread] Failed to send protocol version to notification channel client");
+			goto end;
+		}
+
+		ret = client_flush_outgoing_queue(client, state);
+		if (ret) {
+			goto end;
+		}
+
+		ret = client_send_command_reply(client, state, status);
+		if (ret) {
+			ERR("[notification-thread] Failed to send reply to notification channel client");
+			goto end;
+		}
+
+		/* Set reception state to receive the next message header. */
+		client_reset_inbound_state(client);
+		client->validated = true;
 		break;
 	}
 	case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE:
@@ -1520,9 +1626,21 @@ int handle_notification_thread_client_in(
 	if (ret) {
 		goto end;
 	}
-	recv_ret = lttcomm_recv_unix_sock_non_block(socket,
-			client->communication.inbound.buffer.data + offset,
-			client->communication.inbound.bytes_to_receive);
+
+	if (client->communication.inbound.receive_creds) {
+		recv_ret = lttcomm_recv_creds_unix_sock(socket,
+				client->communication.inbound.buffer.data + offset,
+				client->communication.inbound.bytes_to_receive,
+				&client->communication.inbound.creds);
+		if (recv_ret > 0) {
+			client->communication.inbound.receive_creds = false;
+			client->communication.inbound.creds_received = true;
+		}
+	} else {
+		recv_ret = lttcomm_recv_unix_sock_non_block(socket,
+				client->communication.inbound.buffer.data + offset,
+				client->communication.inbound.bytes_to_receive);
+	}
 	if (recv_ret < 0) {
 		goto error_disconnect_client;
 	}

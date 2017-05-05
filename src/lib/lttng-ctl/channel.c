@@ -27,6 +27,9 @@
 #include <assert.h>
 #include "lttng-ctl-helper.h"
 
+static
+int handshake(struct lttng_notification_channel *channel);
+
 /*
  * Populates the reception buffer with the next complete message.
  * The caller must acquire the client's lock.
@@ -182,7 +185,10 @@ struct lttng_notification_channel *lttng_notification_channel_create(
 set_fd:
 	channel->socket = fd;
 
-	/* FIXME send creds */
+	ret = handshake(channel);
+	if (ret) {
+		goto error;
+	}
 end:
 	free(sock_path);
 	return channel;
@@ -380,6 +386,18 @@ int receive_command_reply(struct lttng_notification_channel *channel,
 				goto end;
 			}
 			break;
+		case LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE:
+		{
+			struct lttng_notification_channel_command_handshake *handshake;
+
+			handshake = (struct lttng_notification_channel_command_handshake *)
+					(channel->reception_buffer.data +
+					sizeof(struct lttng_notification_channel_message));
+			channel->version.major = handshake->major;
+			channel->version.minor = handshake->minor;
+			channel->version.set = true;
+			break;
+		}
 		default:
 			ret = -1;
 			goto end;
@@ -404,7 +422,55 @@ end:
 }
 
 static
-enum lttng_notification_channel_status send_command(
+int handshake(struct lttng_notification_channel *channel)
+{
+	ssize_t ret;
+	enum lttng_notification_channel_status status =
+			LTTNG_NOTIFICATION_CHANNEL_STATUS_OK;
+	struct lttng_notification_channel_command_handshake handshake = {
+		.major = LTTNG_NOTIFICATION_CHANNEL_VERSION_MAJOR,
+		.minor = LTTNG_NOTIFICATION_CHANNEL_VERSION_MINOR,
+	};
+	struct lttng_notification_channel_message msg_header = {
+		.type = LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE,
+		.size = sizeof(handshake),
+	};
+	char send_buffer[sizeof(msg_header) + sizeof(handshake)];
+
+	memcpy(send_buffer, &msg_header, sizeof(msg_header));
+	memcpy(send_buffer + sizeof(msg_header), &handshake, sizeof(handshake));
+
+	pthread_mutex_lock(&channel->lock);
+
+	ret = lttcomm_send_unix_sock(channel->socket, send_buffer,
+			sizeof(send_buffer));
+	if (ret < 0) {
+		goto end_unlock;
+	}
+
+	/* Receive handshake info from the sessiond. */
+	ret = receive_command_reply(channel, &status);
+	if (ret < 0) {
+		goto end_unlock;
+	}
+
+	if (!channel->version.set) {
+		ret = -1;
+		goto end_unlock;
+	}
+
+	if (channel->version.major != LTTNG_NOTIFICATION_CHANNEL_VERSION_MAJOR) {
+		ret = -1;
+		goto end_unlock;
+	}
+
+end_unlock:
+	pthread_mutex_unlock(&channel->lock);
+	return ret;
+}
+
+static
+enum lttng_notification_channel_status send_condition_command(
 		struct lttng_notification_channel *channel,
 		enum lttng_notification_channel_message_type type,
 		const struct lttng_condition *condition)
@@ -422,6 +488,9 @@ enum lttng_notification_channel_status send_command(
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID;
 		goto end;
 	}
+
+	assert(type == LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE ||
+		type == LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE);
 
 	pthread_mutex_lock(&channel->lock);
 	socket = channel->socket;
@@ -473,7 +542,7 @@ enum lttng_notification_channel_status lttng_notification_channel_subscribe(
 		struct lttng_notification_channel *channel,
 		const struct lttng_condition *condition)
 {
-	return send_command(channel,
+	return send_condition_command(channel,
 			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE,
 			condition);
 }
@@ -482,7 +551,7 @@ enum lttng_notification_channel_status lttng_notification_channel_unsubscribe(
 		struct lttng_notification_channel *channel,
 		const struct lttng_condition *condition)
 {
-	return send_command(channel,
+	return send_condition_command(channel,
 			LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE,
 			condition);
 }

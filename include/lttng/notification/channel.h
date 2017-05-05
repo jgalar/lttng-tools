@@ -37,6 +37,7 @@ enum lttng_notification_channel_status {
 	/* Condition unknown. */
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_UNKNOWN_CONDITION = -4,
 	LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID = -5,
+	LTTNG_NOTIFICATION_CHANNEL_STATUS_UNSUPPORTED_VERSION = -6,
 };
 
 extern struct lttng_notification_channel *lttng_notification_channel_create(

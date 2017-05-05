@@ -26,13 +26,17 @@
 #include <pthread.h>
 #include <urcu/list.h>
 
+#define LTTNG_NOTIFICATION_CHANNEL_VERSION_MAJOR 1
+#define LTTNG_NOTIFICATION_CHANNEL_VERSION_MINOR 0
+
 enum lttng_notification_channel_message_type {
 	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNKNOWN = -1,
-	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE = 0,
-	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE = 1,
-	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY = 2,
-	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION = 3,
-	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION_DROPPED = 4,
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_HANDSHAKE = 0,
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_SUBSCRIBE = 1,
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_UNSUBSCRIBE = 2,
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_COMMAND_REPLY = 3,
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION = 4,
+	LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION_DROPPED = 5,
 };
 
 struct lttng_notification_channel_message {
@@ -41,6 +45,11 @@ struct lttng_notification_channel_message {
 	/* Size of the payload following this field. */
 	uint32_t size;
 	char payload[];
+} LTTNG_PACKED;
+
+struct lttng_notification_channel_command_handshake {
+	uint8_t major;
+	uint8_t minor;
 } LTTNG_PACKED;
 
 struct lttng_notification_channel_command_reply {
@@ -80,6 +89,11 @@ struct lttng_notification_channel {
 		struct cds_list_head list;
 	} pending_notifications;
 	struct lttng_dynamic_buffer reception_buffer;
+	/* Sessiond notification protocol version. */
+	struct {
+		bool set;
+		int8_t major, minor;
+	} version;
 };
 
 #endif /* LTTNG_NOTIFICATION_CHANNEL_INTERNAL_H */
