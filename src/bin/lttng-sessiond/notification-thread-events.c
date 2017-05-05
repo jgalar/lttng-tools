@@ -1825,7 +1825,8 @@ static
 int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		struct lttng_evaluation *evaluation,
 		struct notification_client_list* client_list,
-		struct notification_thread_state *state)
+		struct notification_thread_state *state,
+		uid_t channel_uid, gid_t channel_gid)
 {
 	int ret = 0;
 	struct lttng_dynamic_buffer msg_buffer;
@@ -1879,6 +1880,13 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 			&client_list->list, node) {
 		struct notification_client *client =
 				client_list_element->client;
+
+		if (client->uid != channel_uid && client->gid != channel_gid &&
+				client->uid != 0) {
+			/* Client is not allowed to monitor this channel. */
+			DBG("[notification-thread] Skipping client at it does not have the permission to receive notification for this channel");
+			continue;
+		}
 
 		DBG("[notification-thread] Sending notification to client (fd = %i, %zu bytes)",
 				client->socket, msg_buffer.size);
@@ -2092,7 +2100,8 @@ int handle_notification_thread_channel_sample(
 
 		/* Dispatch evaluation result to all clients. */
 		ret = send_evaluation_to_clients(trigger_list_element->trigger,
-				evaluation, client_list, state);
+				evaluation, client_list, state,
+				channel_info->uid, channel_info->gid);
 		if (ret) {
 			goto end_unlock;
 		}
