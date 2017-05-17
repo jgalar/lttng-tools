@@ -25,6 +25,7 @@
 #include <urcu/wfcqueue.h>
 
 #include <common/hashtable/hashtable.h>
+#include <common/waiter.h>
 
 /*
  * Queue used to enqueue relay requests
@@ -32,7 +33,7 @@
 struct relay_conn_queue {
 	struct cds_wfcq_head head;
 	struct cds_wfcq_tail tail;
-	int32_t futex;
+	struct lttng_wait_queue wait_queue;
 };
 
 /*

@@ -384,7 +384,7 @@ int relayd_live_stop(void)
 {
 	/* Stop dispatch thread */
 	CMM_STORE_SHARED(live_dispatch_thread_exit, 1);
-	futex_nto1_wake(&viewer_conn_queue.futex);
+	lttng_wait_queue_wake_all(&viewer_conn_queue.wait_queue);
 	return 0;
 }
 
@@ -591,12 +591,9 @@ restart:
 				cds_wfcq_enqueue(&viewer_conn_queue.head, &viewer_conn_queue.tail,
 						 &new_conn->qnode);
 
-				/*
-				 * Wake the dispatch queue futex.
-				 * Implicit memory barrier with the
-				 * exchange in cds_wfcq_enqueue.
-				 */
-				futex_nto1_wake(&viewer_conn_queue.futex);
+				/* Wake the dispatch queue waiters. */
+				lttng_wait_queue_wake_all(
+						&viewer_conn_queue.wait_queue);
 			} else if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 				ERR("socket poll error");
 				goto error;
@@ -643,6 +640,7 @@ void *thread_dispatcher(void *data)
 	ssize_t ret;
 	struct cds_wfcq_node *node;
 	struct relay_connection *conn = NULL;
+	struct lttng_waiter waiter;
 
 	DBG("[thread] Live viewer relay dispatcher started");
 
@@ -657,8 +655,7 @@ void *thread_dispatcher(void *data)
 	while (!CMM_LOAD_SHARED(live_dispatch_thread_exit)) {
 		health_code_update();
 
-		/* Atomically prepare the queue futex */
-		futex_nto1_prepare(&viewer_conn_queue.futex);
+		lttng_waiter_init(&waiter);
 
 		do {
 			health_code_update();
@@ -692,7 +689,8 @@ void *thread_dispatcher(void *data)
 
 		/* Futex wait on queue. Blocking call on futex() */
 		health_poll_entry();
-		futex_nto1_wait(&viewer_conn_queue.futex);
+		lttng_wait_queue_add(&viewer_conn_queue.wait_queue, &waiter);
+		lttng_waiter_wait(&waiter);
 		health_poll_exit();
 	}
 
