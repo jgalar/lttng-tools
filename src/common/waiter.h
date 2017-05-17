@@ -24,16 +24,16 @@
 #define _LGPL_SOURCE
 
 #include <stdint.h>
-#include <urcu/wfstack.h>
+#include <urcu/lfstack.h>
 #include <stdbool.h>
 #include "macros.h"
 
 struct lttng_wait_queue {
-	struct cds_wfs_stack stack;
+	struct cds_lfs_stack stack;
 };
 
 struct lttng_waiter {
-	struct cds_wfs_node wait_queue_node;
+	struct cds_lfs_node wait_queue_node;
 	int32_t state;
 };
 

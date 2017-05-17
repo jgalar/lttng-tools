@@ -40,20 +40,17 @@ enum waiter_state {
 };
 
 struct wait_queue {
-	struct cds_wfs_stack stack;
+	struct cds_lfs_stack stack;
 };
 
-#define WAIT_QUEUE_HEAD_INIT()	\
-	{ .stack.head = CDS_WFS_END, .stack.lock = PTHREAD_MUTEX_INITIALIZER }
-
 struct waiters {
-	struct cds_wfs_head *head;
+	struct cds_lfs_head *head;
 };
 
 LTTNG_HIDDEN
 void lttng_waiter_init(struct lttng_waiter *waiter)
 {
-	cds_wfs_node_init(&waiter->wait_queue_node);
+	cds_lfs_node_init(&waiter->wait_queue_node);
 	uatomic_set(&waiter->state, WAITER_WAITING);
 	cmm_smp_mb();
 }
@@ -137,7 +134,7 @@ void lttng_waiter_wake_up(struct lttng_waiter *waiter)
 LTTNG_HIDDEN
 void lttng_wait_queue_init(struct lttng_wait_queue *queue)
 {
-	cds_wfs_init(&queue->stack);
+	cds_lfs_init(&queue->stack);
 }
 
 /*
@@ -148,19 +145,19 @@ LTTNG_HIDDEN
 void lttng_wait_queue_add(struct lttng_wait_queue *queue,
 		struct lttng_waiter *waiter)
 {
-	cds_wfs_push(&queue->stack, &waiter->wait_queue_node);
+	cds_lfs_push(&queue->stack, &waiter->wait_queue_node);
 }
 
 LTTNG_HIDDEN
 void lttng_wait_queue_wake_all(struct lttng_wait_queue *queue)
 {
 	struct waiters waiters;
-	struct cds_wfs_node *iter, *iter_n;
+	struct cds_lfs_node *iter, *iter_n;
 
-	waiters.head = __cds_wfs_pop_all(&queue->stack);
+	waiters.head = __cds_lfs_pop_all(&queue->stack);
 	DBG("Waking all waiters enqueued in wait queue");
 	/* Wake all waiters in our stack head */
-	cds_wfs_for_each_blocking_safe(waiters.head, iter, iter_n) {
+	cds_lfs_for_each_safe(waiters.head, iter, iter_n) {
 		struct lttng_waiter *waiter = container_of(iter,
 				struct lttng_waiter, wait_queue_node);
 
@@ -175,5 +172,5 @@ void lttng_wait_queue_wake_all(struct lttng_wait_queue *queue)
 LTTNG_HIDDEN
 void lttng_wait_queue_fini(struct lttng_wait_queue *queue)
 {
-	cds_wfs_destroy(&queue->stack);
+	cds_lfs_destroy(&queue->stack);
 }
