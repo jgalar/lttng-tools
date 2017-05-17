@@ -25,6 +25,7 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/compat/poll.h>
 #include <common/compat/socket.h>
+#include <common/waiter.h>
 
 #include "session.h"
 #include "ust-app.h"
@@ -62,10 +63,11 @@ struct ust_command {
 
 /*
  * Queue used to enqueue UST registration request (ust_command) and synchronized
- * by a futex with a scheme N wakers / 1 waiters. See futex.c/.h
+ * by an lttng_wait_queue, intended to be used with multiple wakers and a
+ * single waiter.
  */
 struct ust_cmd_queue {
-	int32_t futex;
+	struct lttng_wait_queue wait_queue;
 	struct cds_wfcq_head head;
 	struct cds_wfcq_tail tail;
 };

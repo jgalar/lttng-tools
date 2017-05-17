@@ -493,7 +493,7 @@ static void stop_threads(void)
 
 	/* Dispatch thread */
 	CMM_STORE_SHARED(dispatch_thread_exit, 1);
-	futex_nto1_wake(&ust_cmd_queue.futex);
+	lttng_wait_queue_wake_all(&ust_cmd_queue.wait_queue);
 }
 
 /*
@@ -1916,6 +1916,7 @@ static void *thread_dispatch_ust_registration(void *data)
 	struct cds_wfcq_node *node;
 	struct ust_command *ust_cmd = NULL;
 	struct ust_reg_wait_node *wait_node = NULL, *tmp_wait_node;
+	struct lttng_waiter waiter;
 	struct ust_reg_wait_queue wait_queue = {
 		.count = 0,
 	};
@@ -1938,7 +1939,7 @@ static void *thread_dispatch_ust_registration(void *data)
 		health_code_update();
 
 		/* Atomically prepare the queue futex */
-		futex_nto1_prepare(&ust_cmd_queue.futex);
+		lttng_waiter_init(&waiter);
 
 		do {
 			struct ust_app *app = NULL;
@@ -2117,7 +2118,8 @@ static void *thread_dispatch_ust_registration(void *data)
 
 		health_poll_entry();
 		/* Futex wait on queue. Blocking call on futex() */
-		futex_nto1_wait(&ust_cmd_queue.futex);
+		lttng_wait_queue_add(&ust_cmd_queue.wait_queue, &waiter);
+		lttng_waiter_wait(&waiter);
 		health_poll_exit();
 	}
 	/* Normal exit, no error */
@@ -2338,7 +2340,7 @@ static void *thread_registration_apps(void *data)
 					 * Wake the registration queue futex. Implicit memory
 					 * barrier with the exchange in cds_wfcq_enqueue.
 					 */
-					futex_nto1_wake(&ust_cmd_queue.futex);
+					lttng_wait_queue_wake_all(&ust_cmd_queue.wait_queue);
 				} else if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 					ERR("Register apps socket poll error");
 					goto error;
@@ -5624,6 +5626,10 @@ int main(int argc, char **argv)
 
 	rcu_register_thread();
 
+	/* Init UST command queue. */
+	lttng_wait_queue_init(&ust_cmd_queue.wait_queue);
+	cds_wfcq_init(&ust_cmd_queue.head, &ust_cmd_queue.tail);
+
 	if (set_signal_handler()) {
 		retval = -1;
 		goto exit_set_signal_handler;
@@ -6055,9 +6061,6 @@ int main(int argc, char **argv)
 	buffer_reg_init_uid_registry();
 	buffer_reg_init_pid_registry();
 
-	/* Init UST command queue. */
-	cds_wfcq_init(&ust_cmd_queue.head, &ust_cmd_queue.tail);
-
 	/*
 	 * Get session list pointer. This pointer MUST NOT be free'd. This list
 	 * is statically declared in session.c
@@ -6365,7 +6368,7 @@ exit_create_run_as_worker_cleanup:
 
 exit_options:
 	sessiond_cleanup_options();
-
+	lttng_wait_queue_fini(&ust_cmd_queue.wait_queue);
 exit_set_signal_handler:
 	if (!retval) {
 		exit(EXIT_SUCCESS);
