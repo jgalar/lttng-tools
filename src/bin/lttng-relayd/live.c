@@ -2131,7 +2131,7 @@ int relayd_live_join(void)
 	}
 
 	cleanup_relayd_live();
-
+	lttng_wait_queue_fini(&viewer_conn_queue.wait_queue);
 	return retval;
 }
 
@@ -2143,6 +2143,10 @@ int relayd_live_create(struct lttng_uri *uri)
 	int ret = 0, retval = 0;
 	void *status;
 	int is_root;
+
+	/* Init relay command queue. */
+	cds_wfcq_init(&viewer_conn_queue.head, &viewer_conn_queue.tail);
+	lttng_wait_queue_init(&viewer_conn_queue.wait_queue);
 
 	if (!uri) {
 		retval = -1;
@@ -2166,9 +2170,6 @@ int relayd_live_create(struct lttng_uri *uri)
 		retval = -1;
 		goto exit_init_data;
 	}
-
-	/* Init relay command queue. */
-	cds_wfcq_init(&viewer_conn_queue.head, &viewer_conn_queue.tail);
 
 	/* Set up max poll set size */
 	if (lttng_poll_set_max_size()) {
@@ -2236,6 +2237,6 @@ exit_dispatcher_thread:
 
 exit_init_data:
 	cleanup_relayd_live();
-
+	lttng_wait_queue_fini(&viewer_conn_queue.wait_queue);
 	return retval;
 }

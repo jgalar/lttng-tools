@@ -2802,6 +2802,10 @@ int main(int argc, char **argv)
 		goto exit_health_app_create;
 	}
 
+	/* Init relay command queue. */
+	cds_wfcq_init(&relay_conn_queue.head, &relay_conn_queue.tail);
+	lttng_wait_queue_init(&relay_conn_queue.wait_queue);
+
 	/* Create thread quit pipe */
 	if (init_thread_quit_pipe()) {
 		retval = -1;
@@ -2813,9 +2817,6 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto exit_init_data;
 	}
-
-	/* Init relay command queue. */
-	cds_wfcq_init(&relay_conn_queue.head, &relay_conn_queue.tail);
 
 	/* Initialize communication library */
 	lttcomm_init();
@@ -2943,6 +2944,7 @@ exit_health_quit_pipe:
 
 exit_init_data:
 	health_app_destroy(health_relayd);
+	lttng_wait_queue_fini(&relay_conn_queue.wait_queue);
 exit_health_app_create:
 exit_options:
 	/*
