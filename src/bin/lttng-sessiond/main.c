@@ -600,8 +600,7 @@ static void wait_consumer(struct consumer_data *consumer_data)
 	ret = waitpid(consumer_data->pid, &status, 0);
 	if (ret == -1) {
 		PERROR("consumerd waitpid pid: %d", consumer_data->pid)
-	}
-	if (!WIFEXITED(status)) {
+	} else	if (!WIFEXITED(status)) {
 		ERR("consumerd termination with error: %d",
 				WEXITSTATUS(ret));
 	}
@@ -1935,11 +1934,15 @@ static void *thread_dispatch_ust_registration(void *data)
 
 	DBG("[thread] Dispatch UST command started");
 
-	while (!CMM_LOAD_SHARED(dispatch_thread_exit)) {
+	for (;;) {
 		health_code_update();
 
 		/* Atomically prepare the queue futex */
 		futex_nto1_prepare(&ust_cmd_queue.futex);
+
+		if (CMM_LOAD_SHARED(dispatch_thread_exit)) {
+			break;
+		}
 
 		do {
 			struct ust_app *app = NULL;
@@ -5619,6 +5622,7 @@ int main(int argc, char **argv)
 	struct lttng_pipe *ust32_channel_monitor_pipe = NULL,
 			*ust64_channel_monitor_pipe = NULL,
 			*kernel_channel_monitor_pipe = NULL;
+	bool notification_thread_running = false;
 
 	init_kernel_workarounds();
 
@@ -6130,6 +6134,7 @@ int main(int argc, char **argv)
 		stop_threads();
 		goto exit_notification;
 	}
+	notification_thread_running = true;
 
 	/* Create thread to manage the client socket */
 	ret = pthread_create(&client_thread, default_pthread_attr(),
@@ -6333,15 +6338,17 @@ exit_init_data:
 	 * of the active session and channels at the moment of the teardown.
 	 */
 	if (notification_thread_handle) {
-		notification_thread_command_quit(notification_thread_handle);
+		if (notification_thread_running) {
+			notification_thread_command_quit(
+					notification_thread_handle);
+			ret = pthread_join(notification_thread, &status);
+			if (ret) {
+				errno = ret;
+				PERROR("pthread_join notification thread");
+				retval = -1;
+			}
+		}
 		notification_thread_handle_destroy(notification_thread_handle);
-	}
-
-	ret = pthread_join(notification_thread, &status);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join notification thread");
-		retval = -1;
 	}
 
 	rcu_thread_offline();

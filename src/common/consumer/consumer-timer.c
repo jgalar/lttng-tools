@@ -394,7 +394,7 @@ void consumer_timer_signal_thread_qs(unsigned int signr)
 		if (ret == -1) {
 			PERROR("sigpending");
 		}
-		if (!sigismember(&pending_set, LTTNG_CONSUMER_SIG_SWITCH)) {
+		if (!sigismember(&pending_set, signr)) {
 			break;
 		}
 		caa_cpu_relax();
@@ -709,10 +709,9 @@ void monitor_timer(struct lttng_consumer_local_data *ctx,
 	get_produced_cb get_produced;
 
 	assert(channel);
-	pthread_mutex_lock(&consumer_data.lock);
 
 	if (channel_monitor_pipe < 0) {
-		goto end;
+		return;
 	}
 
 	switch (consumer_data.type) {
@@ -734,7 +733,7 @@ void monitor_timer(struct lttng_consumer_local_data *ctx,
 	ret = sample_channel_positions(channel, &msg.highest, &msg.lowest,
 			sample, get_consumed, get_produced);
 	if (ret) {
-		goto end;
+		return;
 	}
 
 	/*
@@ -759,8 +758,6 @@ void monitor_timer(struct lttng_consumer_local_data *ctx,
 				", (highest = %" PRIu64 ", lowest = %"PRIu64")",
 				channel->key, msg.highest, msg.lowest);
 	}
-end:
-	pthread_mutex_unlock(&consumer_data.lock);
 }
 
 int consumer_timer_thread_get_channel_monitor_pipe(void)

@@ -40,6 +40,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <fcntl.h>
 
 #define CLIENT_POLL_MASK_IN (LPOLLIN | LPOLLERR | LPOLLHUP | LPOLLRDHUP)
 #define CLIENT_POLL_MASK_IN_OUT (CLIENT_POLL_MASK_IN | LPOLLOUT)
@@ -957,6 +958,7 @@ error:
 	return ret;
 }
 
+static
 int handle_notification_thread_command_unregister_trigger(
 		struct notification_thread_state *state,
 		struct lttng_trigger *trigger,
@@ -1108,12 +1110,12 @@ int handle_notification_thread_command(
 	}
 end:
 	cds_list_del(&cmd->cmd_list_node);
-	futex_nto1_wake(&cmd->reply_futex);
+	lttng_waiter_wake_up(&cmd->reply_waiter);
 	pthread_mutex_unlock(&handle->cmd_queue.lock);
 	return ret;
 error_unlock:
 	/* Wake-up and return a fatal error to the calling thread. */
-	futex_nto1_wake(&cmd->reply_futex);
+	lttng_waiter_wake_up(&cmd->reply_waiter);
 	pthread_mutex_unlock(&handle->cmd_queue.lock);
 	cmd->reply_code = LTTNG_ERR_FATAL;
 error:
@@ -1949,9 +1951,7 @@ int handle_notification_thread_channel_sample(
 	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
 	 * ensuring that read/write of sampling messages are atomic.
 	 */
-	do {
-		ret = read(pipe, &sample_msg, sizeof(sample_msg));
-	} while (ret == -1 && errno == EINTR);
+	ret = lttng_read(pipe, &sample_msg, sizeof(sample_msg));
 	if (ret != sizeof(sample_msg)) {
 		ERR("[notification-thread] Failed to read from monitoring pipe (fd = %i)",
 				pipe);

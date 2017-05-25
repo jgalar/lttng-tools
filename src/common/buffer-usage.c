@@ -231,7 +231,7 @@ struct lttng_condition *lttng_condition_buffer_usage_create(
 
 	condition = zmalloc(sizeof(struct lttng_condition_buffer_usage));
 	if (!condition) {
-		goto end;
+		return NULL;
 	}
 
 	lttng_condition_init(&condition->parent, type);
@@ -239,7 +239,6 @@ struct lttng_condition *lttng_condition_buffer_usage_create(
 	condition->parent.serialize = lttng_condition_buffer_usage_serialize;
 	condition->parent.equal = lttng_condition_buffer_usage_is_equal;
 	condition->parent.destroy = lttng_condition_buffer_usage_destroy;
-end:
 	return &condition->parent;
 }
 
