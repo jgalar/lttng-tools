@@ -1,5 +1,3 @@
-AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src
-
 AUTOMAKE_OPTIONS = subdir-objects
 
 SUBDIRS = string-utils
@@ -58,8 +56,6 @@ if BUILD_LIB_CONSUMER
 SUBDIRS += consumer
 endif
 
-AM_CFLAGS = -fno-strict-aliasing
-
 noinst_HEADERS = lttng-kernel.h defaults.h macros.h error.h futex.h \
 				 uri.h utils.h lttng-kernel-old.h \
 				 align.h bitfield.h bug.h time.h
@@ -82,13 +78,8 @@ libcommon_la_SOURCES = error.h error.c utils.c utils.h runas.c runas.h \
                        waiter.h waiter.c
 
 libcommon_la_LIBADD = \
-		$(top_builddir)/src/common/config/libconfig.la
-if LTTNG_BUILD_WITH_LIBUUID
-libcommon_la_LIBADD += -luuid
-endif
-if LTTNG_BUILD_WITH_LIBC_UUID
-libcommon_la_LIBADD += -lc
-endif
+		$(top_builddir)/src/common/config/libconfig.la \
+		$(UUID_LIBS)
 
 all-local:
 	@if [ x"$(srcdir)" != x"$(builddir)" ]; then \

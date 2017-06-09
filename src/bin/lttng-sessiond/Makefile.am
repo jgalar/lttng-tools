@@ -1,12 +1,9 @@
-AM_CPPFLAGS = -I$(top_srcdir)/include -I$(top_srcdir)/src \
-			  -DINSTALL_BIN_PATH=\""$(lttnglibexecdir)"\" \
-			  -DINSTALL_LIB_PATH=\""$(libdir)"\"
+AM_CPPFLAGS +=-DINSTALL_BIN_PATH=\""$(lttnglibexecdir)"\" \
+	-DINSTALL_LIB_PATH=\""$(libdir)"\"
 
 if EMBED_HELP
 AM_CPPFLAGS += -I$(top_builddir)/doc/man
 endif
-
-AM_CFLAGS = -fno-strict-aliasing
 
 bin_PROGRAMS = lttng-sessiond
 
@@ -49,7 +46,7 @@ endif
 lttng_sessiond_SOURCES += lttng-sessiond.h main.c
 
 # link on liblttngctl for check if sessiond is already alive.
-lttng_sessiond_LDADD = -lurcu-common -lurcu \
+lttng_sessiond_LDADD = -lurcu-common -lurcu $(KMOD_LIBS) \
 		$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la \
 		$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la \
 		$(top_builddir)/src/common/kernel-ctl/libkernel-ctl.la \
