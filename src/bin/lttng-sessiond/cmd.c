@@ -34,6 +34,7 @@
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition.h>
 #include <lttng/action/action.h>
+#include <lttng/channel.h>
 #include <lttng/channel-internal.h>
 #include <common/string-utils/string-utils.h>
 
@@ -243,11 +244,11 @@ end:
 /*
  * Fill lttng_channel array of all channels.
  */
-static void list_lttng_channels(enum lttng_domain_type domain,
+static ssize_t list_lttng_channels(enum lttng_domain_type domain,
 		struct ltt_session *session, struct lttng_channel *channels,
 		struct lttng_channel_extended *chan_exts)
 {
-	int i = 0, ret;
+	int i = 0, ret = 0;
 	struct ltt_kernel_channel *kchan;
 
 	DBG("Listing channels for session %s", session->name);
@@ -277,6 +278,7 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 				chan_exts[i].lost_packets = lost_packets;
 				chan_exts[i].monitor_timer_interval =
 						extended->monitor_timer_interval;
+				chan_exts[i].blocking_timeout = 0;
 				i++;
 			}
 		}
@@ -322,6 +324,11 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 				break;
 			}
 
+			chan_exts[i].monitor_timer_interval =
+					uchan->monitor_timer_interval;
+			chan_exts[i].blocking_timeout =
+				uchan->attr.u.s.blocking_timeout;
+
 			ret = get_ust_runtime_stats(session, uchan,
 					&discarded_events, &lost_packets);
 			if (ret < 0) {
@@ -329,8 +336,6 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 			}
 			chan_exts[i].discarded_events = discarded_events;
 			chan_exts[i].lost_packets = lost_packets;
-			chan_exts[i].monitor_timer_interval =
-					uchan->monitor_timer_interval;
 			i++;
 		}
 		rcu_read_unlock();
@@ -341,7 +346,11 @@ static void list_lttng_channels(enum lttng_domain_type domain,
 	}
 
 end:
-	return;
+	if (ret < 0) {
+		return -LTTNG_ERR_FATAL;
+	} else {
+		return LTTNG_OK;
+	}
 }
 
 static void increment_extended_len(const char *filter_expression,
@@ -1347,6 +1356,30 @@ int cmd_enable_channel(struct ltt_session *session,
 	if (session->live_timer > 0) {
 		attr->attr.live_timer_interval = session->live_timer;
 		attr->attr.switch_timer_interval = 0;
+	}
+
+	/* Check for feature support */
+	switch (domain->type) {
+	case LTTNG_DOMAIN_KERNEL:
+	{
+		if (kernel_supports_ring_buffer_snapshot_sample_positions(kernel_tracer_fd) != 1) {
+			/* Sampling position of buffer is not supported */
+			WARN("Kernel tracer does not support buffer monitoring. "
+					"Setting the monitor interval timer to 0 "
+					"(disabled) for channel '%s' of session '%s'",
+					attr-> name, session->name);
+			lttng_channel_set_monitor_timer_interval(attr, 0);
+		}
+		break;
+	}
+	case LTTNG_DOMAIN_UST:
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+		break;
+	default:
+		ret = LTTNG_ERR_UNKNOWN_DOMAIN;
+		goto error;
 	}
 
 	switch (domain->type) {
@@ -2936,7 +2969,12 @@ ssize_t cmd_list_channels(enum lttng_domain_type domain,
 
 		channel_exts = ((void *) *channels) +
 				(nb_chan * sizeof(struct lttng_channel));
-		list_lttng_channels(domain, session, *channels, channel_exts);
+		ret = list_lttng_channels(domain, session, *channels, channel_exts);
+		if (ret != LTTNG_OK) {
+			free(*channels);
+			*channels = NULL;
+			goto end;
+		}
 	} else {
 		*channels = NULL;
 	}
