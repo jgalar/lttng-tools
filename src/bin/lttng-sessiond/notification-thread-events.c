@@ -461,6 +461,7 @@ int evaluate_new_condition(struct lttng_trigger *trigger,
 				channel_state_ht_node);
 	} else {
 		/* Nothing to evaluate, no sample was ever taken. Normal exit */
+		DBG("[notification-thread] No channel sample associated with newly subscribed-to condition");
 		ret = 0;
 		goto end;
 	}
@@ -468,11 +469,13 @@ int evaluate_new_condition(struct lttng_trigger *trigger,
 	ret = evaluate_condition(condition, &evaluation, state, NULL,
 			last_sample, channel_info->capacity);
 	if (ret) {
+		WARN("[notification-thread] Fatal error occured while evaluating a newly subscribed-to condition");
 		goto end;
 	}
 
 	if (!evaluation) {
 		/* Evaluation yielded nothing. Normal exit. */
+		DBG("[notification-thread] Newly subscribed-to condition evaluated to false, nothing to report to client");
 		ret = 0;
 		goto end;
 	}
@@ -490,6 +493,7 @@ int evaluate_new_condition(struct lttng_trigger *trigger,
 	cds_list_add(&client_list_element.node, &client_list.list);
 
 	/* Send evaluation result to the newly-subscribed client. */
+	DBG("[notification-thread] Newly subscribed-to condition evaluated to true, notifying client");
 	ret = send_evaluation_to_clients(trigger, evaluation, &client_list,
 			state, channel_info->uid, channel_info->gid);
 
