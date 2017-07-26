@@ -430,6 +430,15 @@ struct lttng_consumer_stream {
 	uint64_t rotate_position;
 
 	/*
+	 * Read-only copies of channel values. We cannot safely access the
+	 * channel from a stream, so we need to have a local copy of these
+	 * fields in the stream object. These fields should be removed from
+	 * the stream objects when we introduce refcounting.
+	 */
+	char channel_ro_pathname[PATH_MAX];
+	uint64_t channel_ro_tracefile_size;
+
+	/*
 	 * If rotate_ready is set to 1, rotate the stream the next time data
 	 * need to be extracted, regardless of the rotate_position. This is
 	 * used if all the metadata has been consumed when we rotate. In this
@@ -690,6 +699,13 @@ void lttng_consumer_cleanup(void);
  */
 int lttng_consumer_poll_socket(struct pollfd *kconsumer_sockpoll);
 
+/*
+ * Copy the fields from the channel that need to be accessed in read-only
+ * directly from the stream.
+ */
+void consumer_stream_copy_ro_channel_values(struct lttng_consumer_stream *stream,
+		struct lttng_consumer_channel *channel);
+
 struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 		uint64_t stream_key,
 		enum lttng_consumer_stream_state state,
@@ -753,8 +769,11 @@ ssize_t lttng_consumer_on_read_subbuffer_splice(
 		struct lttng_consumer_stream *stream, unsigned long len,
 		unsigned long padding,
 		struct ctf_packet_index *index);
+int lttng_consumer_sample_snapshot_positions(struct lttng_consumer_stream *stream);
 int lttng_consumer_take_snapshot(struct lttng_consumer_stream *stream);
 int lttng_consumer_get_produced_snapshot(struct lttng_consumer_stream *stream,
+		unsigned long *pos);
+int lttng_consumer_get_consumed_snapshot(struct lttng_consumer_stream *stream,
 		unsigned long *pos);
 int lttng_ustconsumer_get_wakeup_fd(struct lttng_consumer_stream *stream);
 int lttng_ustconsumer_close_wakeup_fd(struct lttng_consumer_stream *stream);
@@ -789,5 +808,12 @@ void consumer_del_stream_for_data(struct lttng_consumer_stream *stream);
 int consumer_add_metadata_stream(struct lttng_consumer_stream *stream);
 void consumer_del_stream_for_metadata(struct lttng_consumer_stream *stream);
 int consumer_create_index_file(struct lttng_consumer_stream *stream);
+int lttng_consumer_rotate_channel(uint64_t key, char *path,
+		uint64_t relayd_id, uint32_t metadata,
+		struct lttng_consumer_local_data *ctx);
+int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
+		struct lttng_consumer_stream *stream);
+int lttng_consumer_rotate_ready_streams(uint64_t key,
+		struct lttng_consumer_local_data *ctx);
 
 #endif /* LIB_CONSUMER_H */

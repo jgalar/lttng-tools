@@ -425,283 +425,6 @@ error:
 }
 
 /*
- * When a channel has finished the rotation of all its streams, inform the
- * session daemon.
- */
-static
-int rotate_notify_sessiond(struct lttng_consumer_local_data *ctx,
-		uint64_t key)
-{
-	int ret;
-
-	do {
-		ret = write(ctx->channel_rotate_pipe, &key, sizeof(key));
-	} while (ret == -1 && errno == EINTR);
-	if (ret == -1) {
-		PERROR("write to the channel rotate pipe");
-	} else {
-		DBG("Sent channel rotation notification for channel key %"
-				PRIu64, key);
-	}
-
-	return ret;
-}
-
-/*
- * Performs the stream rotation for the rotate session feature if needed.
- * It must be called with the stream and channel locks held.
- *
- * Return 0 on success, a negative number of error.
- */
-static
-int stream_rotation(struct lttng_consumer_local_data *ctx,
-		struct lttng_consumer_stream *stream)
-{
-	int ret;
-	unsigned long consumed_pos;
-
-	if (!stream->rotate_position && !stream->rotate_ready) {
-		ret = 0;
-		goto end;
-	}
-
-	/*
-	 * If we don't have the rotate_ready flag, check the consumed position
-	 * to determine if we need to rotate.
-	 */
-	if (!stream->rotate_ready) {
-		ret = lttng_kconsumer_sample_snapshot_positions(stream);
-		if (ret < 0) {
-			ERR("Taking kernel snapshot positions");
-			goto error;
-		}
-
-		ret = lttng_kconsumer_get_consumed_snapshot(stream, &consumed_pos);
-		if (ret < 0) {
-			ERR("Produced kernel snapshot position");
-			goto error;
-		}
-
-		fprintf(stderr, "packet %lu, pos %lu\n", stream->key, consumed_pos);
-		/* Rotate position not reached yet. */
-		if (consumed_pos < stream->rotate_position) {
-			ret = 0;
-			goto end;
-		}
-		fprintf(stderr, "Rotate position %lu (expected %lu) reached for stream %lu\n",
-				consumed_pos, stream->rotate_position, stream->key);
-	} else {
-		fprintf(stderr, "Rotate position reached for stream %lu\n",
-				stream->key);
-	}
-
-	ret = close(stream->out_fd);
-	if (ret < 0) {
-		PERROR("Closing tracefile");
-		goto error;
-	}
-
-	fprintf(stderr, "Rotating stream %lu to %s/%s\n", stream->key,
-			stream->chan->pathname, stream->name);
-	ret = utils_create_stream_file(stream->chan->pathname, stream->name,
-			stream->chan->tracefile_size, stream->tracefile_count_current,
-			stream->uid, stream->gid, NULL);
-	if (ret < 0) {
-		goto error;
-	}
-	stream->out_fd = ret;
-	stream->tracefile_size_current = 0;
-
-	if (!stream->metadata_flag) {
-		struct lttng_index_file *index_file;
-
-		lttng_index_file_put(stream->index_file);
-
-		index_file = lttng_index_file_create(stream->chan->pathname,
-				stream->name, stream->uid, stream->gid,
-				stream->chan->tracefile_size,
-				stream->tracefile_count_current,
-				CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
-		if (!index_file) {
-			goto error;
-		}
-		stream->index_file = index_file;
-		stream->out_fd_offset = 0;
-	} else {
-		/*
-		 * Reset the position of what has been read from the metadata
-		 * cache to 0 so we can dump it again.
-		 */
-		ret = kernctl_metadata_cache_dump(stream->wait_fd);
-		if (ret < 0) {
-			ERR("Failed to dump the metadata cache after rotation");
-			goto error;
-		}
-	}
-
-	stream->rotate_position = 0;
-	stream->rotate_ready = 0;
-
-	if (--stream->chan->nr_stream_rotate_pending == 0) {
-		rotate_notify_sessiond(ctx, stream->chan->key);
-		fprintf(stderr, "SENT %lu\n", stream->chan->key);
-	}
-
-	ret = 0;
-	goto end;
-
-error:
-	ret = -1;
-end:
-	return ret;
-}
-
-/*
- * Sample the rotate position for all the streams of a channel.
- *
- * Returns 0 on success, < 0 on error
- */
-static
-int lttng_kconsumer_rotate_channel(uint64_t key, char *path,
-		uint64_t relayd_id, uint32_t metadata,
-		struct lttng_consumer_local_data *ctx)
-{
-	int ret;
-	struct lttng_consumer_channel *channel;
-	struct lttng_consumer_stream *stream;
-	struct lttng_ht_iter iter;
-	struct lttng_ht *ht = consumer_data.stream_per_chan_id_ht;
-
-	DBG("Kernel consumer sample rotate position for channel %" PRIu64, key);
-
-	rcu_read_lock();
-
-	channel = consumer_find_channel(key);
-	if (!channel) {
-		ERR("No channel found for key %" PRIu64, key);
-		ret = -1;
-		goto end;
-	}
-	pthread_mutex_lock(&channel->lock);
-	snprintf(channel->pathname, PATH_MAX, "%s", path);
-
-	cds_lfht_for_each_entry_duplicate(ht->ht,
-			ht->hash_fct(&channel->key, lttng_ht_seed),
-			ht->match_fct, &channel->key, &iter.iter,
-			stream, node_channel_id.node) {
-		health_code_update();
-
-		/*
-		 * Lock stream because we are about to change its state.
-		 */
-		pthread_mutex_lock(&stream->lock);
-		ret = lttng_kconsumer_sample_snapshot_positions(stream);
-		if (ret < 0) {
-			ERR("Taking kernel snapshot positions");
-			goto end_unlock;
-		} else {
-			uint64_t consumed_pos;
-
-			ret = lttng_kconsumer_get_produced_snapshot(stream,
-					&stream->rotate_position);
-			if (ret < 0) {
-				ERR("Produced kernel snapshot position");
-				goto end_unlock;
-			}
-			fprintf(stderr, "Stream %lu should rotate after %lu to %s\n",
-					stream->key, stream->rotate_position,
-					channel->pathname);
-			lttng_kconsumer_get_consumed_snapshot(stream,
-					&consumed_pos);
-			fprintf(stderr, "consumed %lu\n", consumed_pos);
-			if (consumed_pos == stream->rotate_position) {
-				stream->rotate_ready = 1;
-				fprintf(stderr, "Stream %lu ready to rotate to %s\n",
-						stream->key, channel->pathname);
-			}
-		}
-		channel->nr_stream_rotate_pending++;
-
-		ret = kernctl_buffer_flush(stream->wait_fd);
-		if (ret < 0) {
-			ERR("Failed to flush kernel stream");
-			goto end_unlock;
-		}
-
-		pthread_mutex_unlock(&stream->lock);
-	}
-
-	ret = 0;
-	goto end_unlock_channel;
-
-end_unlock:
-	pthread_mutex_unlock(&stream->lock);
-end_unlock_channel:
-	pthread_mutex_unlock(&channel->lock);
-end:
-	rcu_read_unlock();
-	return ret;
-}
-
-/*
- * Rotate all the ready streams.
- *
- * This is especially important for low throughput streams that have already
- * been consumed, we cannot wait for their next packet to perform the
- * rotation.
- *
- * Returns 0 on success, < 0 on error
- */
-static
-int lttng_kconsumer_rotate_ready_streams(uint64_t key,
-		struct lttng_consumer_local_data *ctx)
-{
-	int ret;
-	struct lttng_consumer_channel *channel;
-	struct lttng_consumer_stream *stream;
-	struct lttng_ht_iter iter;
-	struct lttng_ht *ht = consumer_data.stream_per_chan_id_ht;
-
-	rcu_read_lock();
-
-	channel = consumer_find_channel(key);
-	if (!channel) {
-		ERR("No channel found for key %" PRIu64, key);
-		ret = -1;
-		goto end;
-	}
-	cds_lfht_for_each_entry_duplicate(ht->ht,
-			ht->hash_fct(&channel->key, lttng_ht_seed),
-			ht->match_fct, &channel->key, &iter.iter,
-			stream, node_channel_id.node) {
-		health_code_update();
-
-		/*
-		 * Lock stream because we are about to change its state.
-		 */
-		pthread_mutex_lock(&stream->lock);
-		if (stream->rotate_ready == 0) {
-			pthread_mutex_unlock(&stream->lock);
-			continue;
-		}
-		ret = stream_rotation(ctx, stream);
-		if (ret < 0) {
-			pthread_mutex_unlock(&stream->lock);
-			ERR("Stream rotation error");
-			goto end;
-		}
-
-		pthread_mutex_unlock(&stream->lock);
-	}
-
-	ret = 0;
-
-end:
-	rcu_read_unlock();
-	return ret;
-}
-
-/*
  * Receive command from session daemon and process it.
  *
  * Return 1 on success else a negative value or 0.
@@ -935,6 +658,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		new_stream->chan = channel;
 		new_stream->wait_fd = fd;
+		consumer_stream_copy_ro_channel_values(new_stream, channel);
 		switch (channel->output) {
 		case CONSUMER_CHANNEL_SPLICE:
 			new_stream->output = LTTNG_EVENT_SPLICE;
@@ -1410,7 +1134,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	}
 	case LTTNG_CONSUMER_ROTATE_CHANNEL:
 	{
-		ret = lttng_kconsumer_rotate_channel(msg.u.rotate_channel.key,
+		ret = lttng_consumer_rotate_channel(msg.u.rotate_channel.key,
 				msg.u.rotate_channel.pathname,
 				msg.u.rotate_channel.relayd_id,
 				msg.u.rotate_channel.metadata,
@@ -1435,7 +1159,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		 * handle this, but it needs to be after the
 		 * consumer_send_status_msg() call.
 		 */
-		ret = lttng_kconsumer_rotate_ready_streams(
+		ret = lttng_consumer_rotate_ready_streams(
 				msg.u.rotate_channel.key, ctx);
 		if (ret < 0) {
 			ERR("Rotate channel failed");
@@ -1903,7 +1627,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 
 end:
 	pthread_mutex_lock(&stream->chan->lock);
-	rotation_ret = stream_rotation(ctx, stream);
+	rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 	if (rotation_ret < 0) {
 		pthread_mutex_unlock(&stream->chan->lock);
 		ERR("Stream rotation error");
