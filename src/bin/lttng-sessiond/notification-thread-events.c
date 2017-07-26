@@ -167,6 +167,7 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		struct notification_client_list *client_list,
 		struct notification_thread_state *state,
 		uid_t channel_uid, gid_t channel_gid);
+
 static
 int match_client(struct cds_lfht_node *node, const void *key)
 {
@@ -322,6 +323,16 @@ unsigned long lttng_condition_hash(struct lttng_condition *condition)
 }
 
 static
+unsigned long hash_channel_key(struct channel_key *key)
+{
+	unsigned long key_hash = hash_key_u64(&key->key, lttng_ht_seed);
+	unsigned long domain_hash = hash_key_ulong(
+		(void *) (unsigned long) key->domain, lttng_ht_seed);
+
+	return key_hash ^ domain_hash;
+}
+
+static
 void channel_info_destroy(struct channel_info *channel_info)
 {
 	if (!channel_info) {
@@ -370,8 +381,9 @@ error:
 	return NULL;
 }
 
+/* This function must be called with the RCU read lock held. */
 static
-int handle_evaluation_on_subscription(struct lttng_trigger *trigger,
+int evaluate_new_condition(struct lttng_trigger *trigger,
 		struct lttng_condition *condition,
 		struct notification_client *client,
 		struct notification_thread_state *state)
@@ -384,17 +396,19 @@ int handle_evaluation_on_subscription(struct lttng_trigger *trigger,
 	struct channel_state_sample *last_sample = NULL;
 	struct lttng_channel_trigger_list *channel_trigger_list = NULL;
 	struct lttng_evaluation *evaluation = NULL;
-	struct notification_client_list *client_list = NULL;
-	struct notification_client_list_element *client_list_element, *tmp = NULL;
+	struct notification_client_list client_list = { 0 };
+	struct notification_client_list_element client_list_element = { 0 };
 
 	assert(trigger);
 	assert(condition);
 	assert(client);
 	assert(state);
 
-	/* Find the channel associated with the trigger */
-	cds_lfht_for_each_entry(state->channel_triggers_ht, &iter, channel_trigger_list , channel_triggers_ht_node) {
+	/* Find the channel associated with the trigger. */
+	cds_lfht_for_each_entry(state->channel_triggers_ht, &iter,
+			channel_trigger_list , channel_triggers_ht_node) {
 		struct lttng_trigger_list_element *element;
+
 		cds_list_for_each_entry(element, &channel_trigger_list->list, node) {
 			struct lttng_condition *current_condition =
 				lttng_trigger_get_condition(
@@ -405,25 +419,25 @@ int handle_evaluation_on_subscription(struct lttng_trigger *trigger,
 						current_condition)) {
 				continue;
 			}
-			/* Found the trigger, save the channel key */
+
+			/* Found the trigger, save the channel key. */
 			channel_key = &channel_trigger_list->channel_key;
 			break;
-
 		}
 		if (channel_key) {
-			/* The channel key was found stop iteration */
+			/* The channel key was found stop iteration. */
 			break;
 		}
 	}
 
-
 	if (!channel_key){
-		/* No channel found. Normal exit */
+		/* No channel found; normal exit. */
+		DBG("[notification-thread] No channel associated with newly subscribed-to condition");
 		ret = 0;
 		goto end;
 	}
 
-	/* Fetch channel info for the given channel */
+	/* Fetch channel info for the matching channel. */
 	cds_lfht_lookup(state->channels_ht,
 			hash_channel_key(channel_key),
 			match_channel_info,
@@ -434,7 +448,7 @@ int handle_evaluation_on_subscription(struct lttng_trigger *trigger,
 	channel_info = caa_container_of(node, struct channel_info,
 			channels_ht_node);
 
-	/* Retrieve the channel's last sample, if it exists, */
+	/* Retrieve the channel's last sample, if it exists. */
 	cds_lfht_lookup(state->channel_state_ht,
 			hash_channel_key(channel_key),
 			match_channel_state_sample,
@@ -458,49 +472,29 @@ int handle_evaluation_on_subscription(struct lttng_trigger *trigger,
 	}
 
 	if (!evaluation) {
-		/* Evaluation yield nothing. Normal exit */
+		/* Evaluation yielded nothing. Normal exit. */
+		ret = 0;
 		goto end;
 	}
 
-	/* Create temporary client list with the client currently subscribing*/
-	client_list = zmalloc(sizeof(*client_list));
-	if (!client_list) {
-		ret = LTTNG_ERR_NOMEM;
-		goto end;
-	}
+	/*
+	 * Create a temporary client list with the client currently
+	 * subscribing.
+	 */
+	cds_lfht_node_init(&client_list.notification_trigger_ht_node);
+	CDS_INIT_LIST_HEAD(&client_list.list);
+	client_list.trigger = trigger;
 
-	cds_lfht_node_init(&client_list->notification_trigger_ht_node);
-	CDS_INIT_LIST_HEAD(&client_list->list);
-	client_list->trigger = trigger;
+	CDS_INIT_LIST_HEAD(&client_list_element.node);
+	client_list_element.client = client;
+	cds_list_add(&client_list_element.node, &client_list.list);
 
-	client_list_element = zmalloc(sizeof(*client_list_element));
-	if (!client_list_element) {
-		ret = LTTNG_ERR_NOMEM;
-		goto error_free_client_list;
-	}
+	/* Send evaluation result to the newly-subscribed client. */
+	ret = send_evaluation_to_clients(trigger, evaluation, &client_list,
+			state, channel_info->uid, channel_info->gid);
 
-	CDS_INIT_LIST_HEAD(&client_list_element->node);
-	client_list_element->client = client;
-	cds_list_add(&client_list_element->node, &client_list->list);
-
-	/* Send evaluation */
-	send_evaluation_to_clients(trigger,
-		evaluation,
-		client_list,
-		state,
-		channel_info->uid, channel_info->gid);
-
-error_free_client_list:
-	if (client_list) {
-		cds_list_for_each_entry_safe(client_list_element, tmp,
-				&client_list->list, node) {
-			free(client_list_element);
-		}
-		free(client_list);
-	}
 end:
 	return ret;
-
 }
 
 static
@@ -563,10 +557,11 @@ int notification_thread_client_subscribe(struct notification_client *client,
 
 	client_list = caa_container_of(node, struct notification_client_list,
 			notification_trigger_ht_node);
-
-	if (handle_evaluation_on_subscription(client_list->trigger, condition, client, state)) {
-		/* Continue normally */
-		WARN("[notification-thread] evaluation on client subscription failed");
+	if (evaluate_new_condition(client_list->trigger, condition, client,
+			state)) {
+		WARN("[notification-thread] Evaluation of a condition on client subscription failed, aborting.");
+		ret = -1;
+		goto end_unlock;
 	}
 
 	/*
@@ -792,13 +787,6 @@ bool trigger_applies_to_client(struct lttng_trigger *trigger,
 		}
 	}
 	return applies;
-}
-
-static
-unsigned long hash_channel_key(struct channel_key *key)
-{
-	return hash_key_u64(&key->key, lttng_ht_seed) ^ hash_key_ulong(
-		(void *) (unsigned long) key->domain, lttng_ht_seed);
 }
 
 static
