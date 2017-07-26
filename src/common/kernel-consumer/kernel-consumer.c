@@ -527,6 +527,16 @@ int stream_rotation(struct lttng_consumer_local_data *ctx,
 		}
 		stream->index_file = index_file;
 		stream->out_fd_offset = 0;
+	} else {
+		/*
+		 * Reset the position of what has been read from the metadata
+		 * cache to 0 so we can dump it again.
+		 */
+		ret = kernctl_metadata_cache_dump(stream->wait_fd);
+		if (ret < 0) {
+			ERR("Failed to dump the metadata cache after rotation");
+			goto error;
+		}
 	}
 
 	stream->rotate_position = 0;

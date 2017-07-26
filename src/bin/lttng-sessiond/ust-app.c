@@ -6440,8 +6440,6 @@ int ust_app_rotate_session(struct ltt_session *session)
 			if (ret < 0) {
 				goto error;
 			}
-
-			/* TODO: regenerate metadata here instead of at the end ? */
 		}
 		break;
 	}
@@ -6522,13 +6520,6 @@ int ust_app_rotate_session(struct ltt_session *session)
 			if (ret < 0) {
 				goto error;
 			}
-
-			/*
-			ret = regenerate_per_pid_metadata(usess, app, registry);
-			if (ret < 0) {
-				goto error;
-			}
-			*/
 		}
 		break;
 	}

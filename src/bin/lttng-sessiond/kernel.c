@@ -1202,11 +1202,6 @@ int kernel_rotate_session(struct ltt_session *session)
 		}
 		pthread_mutex_unlock(socket->lock);
 	}
-	ret = kernctl_session_metadata_cache_dump(ksess->fd);
-	if (ret < 0) {
-		ERR("Dump the kernel metadata cache");
-		goto error;
-	}
 
 	ret = LTTNG_OK;
 
