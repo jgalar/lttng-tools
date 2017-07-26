@@ -3312,10 +3312,76 @@ error_testpoint:
 	return NULL;
 }
 
+static
+int rotate_notify_sessiond(struct lttng_consumer_local_data *ctx,
+		uint64_t key)
+{
+	int ret;
+
+	do {
+		ret = write(ctx->channel_rotate_pipe, &key, sizeof(key));
+	} while (ret == -1 && errno == EINTR);
+	if (ret == -1) {
+		PERROR("write to the channel rotate pipe");
+	} else {
+		DBG("Sent channel rotation notification for channel key %"
+				PRIu64, key);
+	}
+
+	return ret;
+}
+
+/*
+ * Perform operations that need to be done after a stream has
+ * rotated and released the stream lock.
+ *
+ * Multiple rotations cannot occur simultaneously, so we know the state of the
+ * "rotated" stream flag cannot change.
+ *
+ * This MUST be called WITHOUT the stream lock held.
+ */
+static
+int consumer_post_rotation(struct lttng_consumer_stream *stream,
+		struct lttng_consumer_local_data *ctx)
+{
+	int ret = 0;
+
+	if (!stream->rotated) {
+		goto end;
+	}
+
+	pthread_mutex_lock(&stream->chan->lock);
+	switch (consumer_data.type) {
+	case LTTNG_CONSUMER_KERNEL:
+		break;
+	case LTTNG_CONSUMER32_UST:
+	case LTTNG_CONSUMER64_UST:
+		/*
+		 * Wakeup the metadata thread so it dumps the metadata cache
+		 * to file again.
+		 */
+		consumer_metadata_wakeup_pipe(stream->chan);
+		break;
+	default:
+		ERR("Unknown consumer_data type");
+		abort();
+	}
+
+	if (--stream->chan->nr_stream_rotate_pending == 0) {
+		ret = rotate_notify_sessiond(ctx, stream->chan->key);
+	}
+	pthread_mutex_unlock(&stream->chan->lock);
+	stream->rotated = 0;
+
+end:
+	return ret;
+}
+
 ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx)
 {
 	ssize_t ret;
+	int rotate_ret;
 
 	pthread_mutex_lock(&stream->lock);
 	if (stream->metadata_flag) {
@@ -3342,6 +3408,13 @@ ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		pthread_mutex_unlock(&stream->metadata_rdv_lock);
 	}
 	pthread_mutex_unlock(&stream->lock);
+
+	rotate_ret = consumer_post_rotation(stream, ctx);
+	if (rotate_ret < 0) {
+		ERR("Failed after a rotation");
+		ret = -1;
+	}
+
 	return ret;
 }
 
@@ -3828,7 +3901,7 @@ unsigned long consumer_get_consume_start_pos(unsigned long consumed_pos,
 }
 
 static
-int flush_buffer(struct lttng_consumer_stream *stream, int producer_active)
+int consumer_flush_buffer(struct lttng_consumer_stream *stream, int producer_active)
 {
 	int ret = 0;
 
@@ -3891,6 +3964,7 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		 * Lock stream because we are about to change its state.
 		 */
 		pthread_mutex_lock(&stream->lock);
+		memcpy(stream->channel_ro_pathname, channel->pathname, PATH_MAX);
 		ret = lttng_consumer_sample_snapshot_positions(stream);
 		if (ret < 0) {
 			ERR("Taking kernel snapshot positions");
@@ -3918,7 +3992,7 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		}
 		channel->nr_stream_rotate_pending++;
 
-		ret = flush_buffer(stream, 1);
+		ret = consumer_flush_buffer(stream, 1);
 		if (ret < 0) {
 			ERR("Failed to flush stream");
 			goto end_unlock;
@@ -3936,25 +4010,6 @@ end_unlock_channel:
 	pthread_mutex_unlock(&channel->lock);
 end:
 	rcu_read_unlock();
-	return ret;
-}
-
-static
-int rotate_notify_sessiond(struct lttng_consumer_local_data *ctx,
-		uint64_t key)
-{
-	int ret;
-
-	do {
-		ret = write(ctx->channel_rotate_pipe, &key, sizeof(key));
-	} while (ret == -1 && errno == EINTR);
-	if (ret == -1) {
-		PERROR("write to the channel rotate pipe");
-	} else {
-		DBG("Sent channel rotation notification for channel key %"
-				PRIu64, key);
-	}
-
 	return ret;
 }
 
@@ -4012,9 +4067,9 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 	}
 
 	fprintf(stderr, "Rotating stream %lu to %s/%s\n", stream->key,
-			stream->chan->pathname, stream->name);
-	ret = utils_create_stream_file(stream->chan->pathname, stream->name,
-			stream->chan->tracefile_size, stream->tracefile_count_current,
+			stream->channel_ro_pathname, stream->name);
+	ret = utils_create_stream_file(stream->channel_ro_pathname, stream->name,
+			stream->channel_ro_tracefile_size, stream->tracefile_count_current,
 			stream->uid, stream->gid, NULL);
 	if (ret < 0) {
 		goto error;
@@ -4027,9 +4082,9 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 
 		lttng_index_file_put(stream->index_file);
 
-		index_file = lttng_index_file_create(stream->chan->pathname,
+		index_file = lttng_index_file_create(stream->channel_ro_pathname,
 				stream->name, stream->uid, stream->gid,
-				stream->chan->tracefile_size,
+				stream->channel_ro_tracefile_size,
 				stream->tracefile_count_current,
 				CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
 		if (!index_file) {
@@ -4046,7 +4101,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 			 */
 			ret = kernctl_metadata_cache_dump(stream->wait_fd);
 			if (ret < 0) {
-				ERR("Failed to dump the metadata cache after rotation");
+				ERR("Failed to dump the kernel metadata cache after rotation");
 				goto error;
 			}
 			break;
@@ -4057,12 +4112,6 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 			 * will write from the beginning on the next push.
 			 */
 			stream->ust_metadata_pushed = 0;
-			/*
-			 * Wakeup the metadata thread so it dumps the metadata cache
-			 * to file again.
-			 * FIXME: post-pone that after we have released the stream lock.
-			 */
-			consumer_metadata_wakeup_pipe(stream->chan);
 			break;
 		default:
 			ERR("Unknown consumer_data type");
@@ -4072,11 +4121,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 
 	stream->rotate_position = 0;
 	stream->rotate_ready = 0;
-
-	if (--stream->chan->nr_stream_rotate_pending == 0) {
-		rotate_notify_sessiond(ctx, stream->chan->key);
-		fprintf(stderr, "SENT %lu\n", stream->chan->key);
-	}
+	stream->rotated = 1;
 
 	ret = 0;
 	goto end;
@@ -4135,6 +4180,11 @@ int lttng_consumer_rotate_ready_streams(uint64_t key,
 		}
 
 		pthread_mutex_unlock(&stream->lock);
+		ret = consumer_post_rotation(stream, ctx);
+		if (ret < 0) {
+			ERR("Failed after a rotation");
+			goto end;
+		}
 	}
 
 	ret = 0;

@@ -1428,7 +1428,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		DBG("Reserving sub buffer failed (everything is normal, "
 				"it is due to concurrency)");
 		ret = err;
-		goto end;
+		goto error;
 	}
 
 	/* Get the full subbuffer size including padding */
@@ -1444,10 +1444,10 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 				PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 			}
 			ret = err;
-			goto end;
+			goto error;
 		}
 		ret = err;
-		goto end;
+		goto error;
 	}
 
 	if (!stream->metadata_flag) {
@@ -1462,9 +1462,9 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
-			goto end;
+			goto error;
 		}
 		ret = update_stream_stats(stream);
 		if (ret < 0) {
@@ -1477,9 +1477,9 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
-			goto end;
+			goto error;
 		}
 	} else {
 		write_index = 0;
@@ -1494,9 +1494,9 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
-			goto end;
+			goto error;
 		}
 	}
 
@@ -1541,10 +1541,10 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 					PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 				}
 				ret = err;
-				goto end;
+				goto error;
 			}
 			ret = err;
-			goto end;
+			goto error;
 		}
 
 		/* Make sure the tracer is not gone mad on us! */
@@ -1587,12 +1587,12 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 			PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
 		}
 		ret = err;
-		goto end;
+		goto error;
 	}
 
 	/* Write index if needed. */
 	if (!write_index) {
-		goto end;
+		goto rotate;
 	}
 
 	if (stream->chan->live_timer_interval && !stream->metadata_flag) {
@@ -1616,24 +1616,23 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 			pthread_mutex_unlock(&stream->metadata_timer_lock);
 		}
 		if (err < 0) {
-			goto end;
+			goto error;
 		}
 	}
 
 	err = consumer_stream_write_index(stream, &index);
 	if (err < 0) {
-		goto end;
+		goto error;
 	}
 
-end:
-	pthread_mutex_lock(&stream->chan->lock);
+rotate:
 	rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 	if (rotation_ret < 0) {
-		pthread_mutex_unlock(&stream->chan->lock);
 		ERR("Stream rotation error");
-		goto end;
+		goto error;
 	}
-	pthread_mutex_unlock(&stream->chan->lock);
+
+error:
 	return ret;
 }
 

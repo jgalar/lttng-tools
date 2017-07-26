@@ -2589,7 +2589,7 @@ int lttng_ustconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		readlen = lttng_read(stream->wait_fd, &dummy, 1);
 		if (readlen < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
 			ret = readlen;
-			goto end;
+			goto error;
 		}
 	}
 
@@ -2604,7 +2604,7 @@ retry:
 		if (stream->metadata_flag) {
 			ret = commit_one_metadata_packet(stream);
 			if (ret <= 0) {
-				goto end;
+				goto error;
 			}
 			ustctl_flush_buffer(stream->ustream, 1);
 			goto retry;
@@ -2619,7 +2619,7 @@ retry:
 		 */
 		DBG("Reserving sub buffer failed (everything is normal, "
 				"it is due to concurrency) [ret: %d]", err);
-		goto end;
+		goto error;
 	}
 	assert(stream->chan->output == CONSUMER_CHANNEL_MMAP);
 
@@ -2629,7 +2629,7 @@ retry:
 		if (ret < 0) {
 			err = ustctl_put_subbuf(ustream);
 			assert(err == 0);
-			goto end;
+			goto error;
 		}
 
 		/* Update the stream's sequence and discarded events count. */
@@ -2638,7 +2638,7 @@ retry:
 			PERROR("kernctl_get_events_discarded");
 			err = ustctl_put_subbuf(ustream);
 			assert(err == 0);
-			goto end;
+			goto error;
 		}
 	} else {
 		write_index = 0;
@@ -2687,13 +2687,13 @@ retry:
 	if (!stream->metadata_flag) {
 		ret = notify_if_more_data(stream, ctx);
 		if (ret < 0) {
-			goto end;
+			goto error;
 		}
 	}
 
 	/* Write index if needed. */
 	if (!write_index) {
-		goto end;
+		goto rotate;
 	}
 
 	if (stream->chan->live_timer_interval && !stream->metadata_flag) {
@@ -2718,28 +2718,24 @@ retry:
 		}
 
 		if (err < 0) {
-			goto end;
+			goto error;
 		}
 	}
 
 	assert(!stream->metadata_flag);
 	err = consumer_stream_write_index(stream, &index);
 	if (err < 0) {
-		goto end;
+		goto error;
 	}
 
-end:
-	/* FIXME: do we need this lock, it causes deadlocks when called
-	 * at the same time with lttng_ustconsumer_rotate_channel ? */
-//	pthread_mutex_lock(&stream->chan->lock);
+rotate:
 	rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 	if (rotation_ret < 0) {
-//		pthread_mutex_unlock(&stream->chan->lock);
 		ret = -1;
 		ERR("Stream rotation error");
-		goto end;
+		goto error;
 	}
-//	pthread_mutex_unlock(&stream->chan->lock);
+error:
 	return ret;
 }
 
