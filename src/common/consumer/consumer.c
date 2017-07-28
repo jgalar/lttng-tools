@@ -3357,10 +3357,13 @@ int consumer_post_rotation(struct lttng_consumer_stream *stream,
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
 		/*
-		 * Wakeup the metadata thread so it dumps the metadata cache
-		 * to file again.
+		 * The ust_metadata_pushed counter has been reset to 0, so now
+		 * we can wakeup the metadata thread so it dumps the metadata
+		 * cache to the new file.
 		 */
-		consumer_metadata_wakeup_pipe(stream->chan);
+		if (stream->metadata_flag) {
+			consumer_metadata_wakeup_pipe(stream->chan);
+		}
 		break;
 	default:
 		ERR("Unknown consumer_data type");
