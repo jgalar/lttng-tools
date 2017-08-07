@@ -750,7 +750,8 @@ void consumer_del_channel(struct lttng_consumer_channel *channel);
 
 /* lttng-relayd consumer command */
 struct consumer_relayd_sock_pair *consumer_find_relayd(uint64_t key);
-int consumer_send_relayd_stream(struct lttng_consumer_stream *stream, char *path);
+int consumer_send_relayd_stream(struct lttng_consumer_stream *stream, char *path,
+		enum lttng_domain_type domain);
 int consumer_send_relayd_streams_sent(uint64_t net_seq_idx);
 void close_relayd_stream(struct lttng_consumer_stream *stream);
 struct lttng_consumer_channel *consumer_find_channel(uint64_t key);

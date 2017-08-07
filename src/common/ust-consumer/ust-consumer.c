@@ -567,7 +567,8 @@ static int send_sessiond_channel(int sock,
 			health_code_update();
 
 			/* Try to send the stream to the relayd if one is available. */
-			ret = consumer_send_relayd_stream(stream, stream->chan->pathname);
+			ret = consumer_send_relayd_stream(stream, stream->chan->pathname,
+					LTTNG_DOMAIN_UST);
 			if (ret < 0) {
 				/*
 				 * Flag that the relayd was the problem here probably due to a
@@ -905,7 +906,7 @@ static int setup_metadata(struct lttng_consumer_local_data *ctx, uint64_t key)
 	/* Send metadata stream to relayd if needed. */
 	if (metadata->metadata_stream->net_seq_idx != (uint64_t) -1ULL) {
 		ret = consumer_send_relayd_stream(metadata->metadata_stream,
-				metadata->pathname);
+				metadata->pathname, LTTNG_DOMAIN_UST);
 		if (ret < 0) {
 			ret = LTTCOMM_CONSUMERD_ERROR_METADATA;
 			goto error;
@@ -1004,7 +1005,8 @@ static int snapshot_metadata(uint64_t key, char *path, uint64_t relayd_id,
 
 	if (relayd_id != (uint64_t) -1ULL) {
 		metadata_stream->net_seq_idx = relayd_id;
-		ret = consumer_send_relayd_stream(metadata_stream, path);
+		ret = consumer_send_relayd_stream(metadata_stream, path,
+				LTTNG_DOMAIN_UST);
 		if (ret < 0) {
 			goto error_stream;
 		}
@@ -1083,7 +1085,8 @@ static int snapshot_channel(uint64_t key, char *path, uint64_t relayd_id,
 		stream->net_seq_idx = relayd_id;
 
 		if (use_relayd) {
-			ret = consumer_send_relayd_stream(stream, path);
+			ret = consumer_send_relayd_stream(stream, path,
+					LTTNG_DOMAIN_UST);
 			if (ret < 0) {
 				goto error_unlock;
 			}

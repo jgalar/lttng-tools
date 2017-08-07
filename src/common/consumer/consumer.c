@@ -789,7 +789,7 @@ error:
  * Returns 0 on success, < 0 on error
  */
 int consumer_send_relayd_stream(struct lttng_consumer_stream *stream,
-		char *path)
+		char *path, enum lttng_domain_type domain)
 {
 	int ret = 0;
 	struct consumer_relayd_sock_pair *relayd;
@@ -806,7 +806,8 @@ int consumer_send_relayd_stream(struct lttng_consumer_stream *stream,
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 		ret = relayd_add_stream(&relayd->control_sock, stream->name,
 				path, &stream->relayd_stream_id,
-				stream->chan->tracefile_size, stream->chan->tracefile_count);
+				stream->chan->tracefile_size, stream->chan->tracefile_count,
+				domain);
 		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (ret < 0) {
 			goto end;

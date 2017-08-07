@@ -80,6 +80,18 @@ struct lttcomm_relayd_add_stream_2_2 {
 } LTTNG_PACKED;
 
 /*
+ * Used to add a stream on the relay daemon.
+ * Protocol version 2.11
+ */
+struct lttcomm_relayd_add_stream_2_11 {
+	char channel_name[DEFAULT_STREAM_NAME_LEN];
+	char pathname[LTTNG_PATH_MAX];
+	uint32_t domain; /* enum lttng_domain_type */
+	uint64_t tracefile_size;
+	uint64_t tracefile_count;
+} LTTNG_PACKED;
+
+/*
  * Answer from an add stream command.
  */
 struct lttcomm_relayd_status_stream {

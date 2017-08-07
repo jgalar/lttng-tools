@@ -170,7 +170,8 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 		stream->net_seq_idx = relayd_id;
 		channel->relayd_id = relayd_id;
 		if (relayd_id != (uint64_t) -1ULL) {
-			ret = consumer_send_relayd_stream(stream, path);
+			ret = consumer_send_relayd_stream(stream, path,
+					LTTNG_DOMAIN_KERNEL);
 			if (ret < 0) {
 				ERR("sending stream to relayd");
 				goto end_unlock;
@@ -367,7 +368,8 @@ int lttng_kconsumer_snapshot_metadata(uint64_t key, char *path,
 	}
 
 	if (use_relayd) {
-		ret = consumer_send_relayd_stream(metadata_stream, path);
+		ret = consumer_send_relayd_stream(metadata_stream, path,
+				LTTNG_DOMAIN_KERNEL);
 		if (ret < 0) {
 			goto error;
 		}
@@ -723,7 +725,8 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		/* Send stream to relayd if the stream has an ID. */
 		if (new_stream->net_seq_idx != (uint64_t) -1ULL) {
 			ret = consumer_send_relayd_stream(new_stream,
-					new_stream->chan->pathname);
+					new_stream->chan->pathname,
+					LTTNG_DOMAIN_KERNEL);
 			if (ret < 0) {
 				consumer_stream_free(new_stream);
 				goto end_nosignal;

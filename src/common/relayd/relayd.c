@@ -237,11 +237,13 @@ error:
  */
 int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_name,
 		const char *pathname, uint64_t *stream_id,
-		uint64_t tracefile_size, uint64_t tracefile_count)
+		uint64_t tracefile_size, uint64_t tracefile_count,
+		enum lttng_domain_type domain)
 {
 	int ret;
 	struct lttcomm_relayd_add_stream msg;
 	struct lttcomm_relayd_add_stream_2_2 msg_2_2;
+	struct lttcomm_relayd_add_stream_2_11 msg_2_11;
 	struct lttcomm_relayd_status_stream reply;
 
 	/* Code flow error. Safety net. */
@@ -252,7 +254,8 @@ int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_nam
 	DBG("Relayd adding stream for channel name %s", channel_name);
 
 	/* Compat with relayd 2.1 */
-	if (rsock->minor == 1) {
+	switch (rsock->minor) {
+	case 1:
 		memset(&msg, 0, sizeof(msg));
 		if (lttng_strncpy(msg.channel_name, channel_name,
 				sizeof(msg.channel_name))) {
@@ -270,7 +273,16 @@ int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_nam
 		if (ret < 0) {
 			goto error;
 		}
-	} else {
+		break;
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+	case 7:
+	case 8:
+	case 9:
+	case 10:
 		memset(&msg_2_2, 0, sizeof(msg_2_2));
 		/* Compat with relayd 2.2+ */
 		if (lttng_strncpy(msg_2_2.channel_name, channel_name,
@@ -291,6 +303,31 @@ int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_nam
 		if (ret < 0) {
 			goto error;
 		}
+		break;
+	case 11:
+	default:
+		memset(&msg_2_11, 0, sizeof(msg_2_11));
+		/* Compat with relayd 2.11+ */
+		if (lttng_strncpy(msg_2_11.channel_name, channel_name,
+				sizeof(msg_2_11.channel_name))) {
+			ret = -1;
+			goto error;
+		}
+		if (lttng_strncpy(msg_2_11.pathname, pathname,
+				sizeof(msg_2_11.pathname))) {
+			ret = -1;
+			goto error;
+		}
+		msg_2_11.tracefile_size = htobe64(tracefile_size);
+		msg_2_11.tracefile_count = htobe64(tracefile_count);
+		msg_2_11.domain = htobe32(domain);
+
+		/* Send command */
+		ret = send_command(rsock, RELAYD_ADD_STREAM, (void *) &msg_2_11, sizeof(msg_2_11), 0);
+		if (ret < 0) {
+			goto error;
+		}
+		break;
 	}
 
 	/* Waiting for reply */

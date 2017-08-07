@@ -106,6 +106,11 @@ struct relay_session {
 	 */
 	struct cds_list_head viewer_session_node;
 	struct rcu_head rcu_node;	/* For call_rcu teardown. */
+	/*
+	 * Domains in this session.
+	 */
+	unsigned int ust_session:1;
+	unsigned int kernel_session:1;
 };
 
 struct relay_session *session_create(const char *session_name,

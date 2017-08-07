@@ -1189,9 +1189,22 @@ static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
 			&channel_name);
 		break;
 	case 2: /* LTTng sessiond 2.2. Allocates path_name and channel_name. */
-	default:
+	case 3: /* LTTng sessiond 2.3. Allocates path_name and channel_name. */
+	case 4: /* LTTng sessiond 2.4. Allocates path_name and channel_name. */
+	case 5: /* LTTng sessiond 2.5. Allocates path_name and channel_name. */
+	case 6: /* LTTng sessiond 2.6. Allocates path_name and channel_name. */
+	case 7: /* LTTng sessiond 2.7. Allocates path_name and channel_name. */
+	case 8: /* LTTng sessiond 2.8. Allocates path_name and channel_name. */
+	case 9: /* LTTng sessiond 2.9. Allocates path_name and channel_name. */
+	case 10: /* LTTng sessiond 2.10. Allocates path_name and channel_name. */
 		ret = cmd_recv_stream_2_2(conn, &path_name,
 			&channel_name, &tracefile_size, &tracefile_count);
+		break;
+	case 11: /* LTTng sessiond 2.11. Allocates path_name and channel_name. */
+	default:
+		ret = cmd_recv_stream_2_11(conn, &path_name,
+			&channel_name, &tracefile_size, &tracefile_count,
+			session);
 		break;
 	}
 	if (ret < 0) {

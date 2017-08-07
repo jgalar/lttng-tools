@@ -1,5 +1,5 @@
-#ifndef RELAYD_CMD_H
-#define RELAYD_CMD_H
+#ifndef RELAYD_CMD_2_11_H
+#define RELAYD_CMD_2_11_H
 
 /*
  * Copyright (C) 2013 - Julien Desfossez <jdesfossez@efficios.com>
@@ -20,10 +20,11 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include "cmd-generic.h"
-#include "cmd-2-1.h"
-#include "cmd-2-2.h"
-#include "cmd-2-4.h"
-#include "cmd-2-11.h"
+#include "lttng-relayd.h"
 
-#endif /* RELAYD_CMD_H */
+int cmd_recv_stream_2_11(struct relay_connection *conn,
+		char **path_name, char **channel_name,
+		uint64_t *tracefile_size, uint64_t *tracefile_count,
+		struct relay_session *session);
+
+#endif /* RELAYD_CMD_2_11_H */
