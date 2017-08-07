@@ -96,7 +96,6 @@ struct lttng_index_file *lttng_index_file_create(char *path_name,
 	size_ret = lttng_write(fd, &hdr, sizeof(hdr));
 	if (size_ret < sizeof(hdr)) {
 		PERROR("write index header");
-		ret = -1;
 		goto error;
 	}
 	index_file->fd = fd;
@@ -223,11 +222,7 @@ struct lttng_index_file *lttng_index_file_open(const char *path_name,
 	DBG("Index opening file %s in read only", fullpath);
 	read_fd = open(fullpath, O_RDONLY);
 	if (read_fd < 0) {
-		if (errno == ENOENT) {
-			ret = -ENOENT;
-		} else {
-			PERROR("opening index in read-only");
-		}
+		PERROR("opening index in read-only");
 		goto error;
 	}
 
@@ -271,7 +266,6 @@ error_close:
 			PERROR("close read fd %d", read_fd);
 		}
 	}
-	ret = -1;
 
 error:
 	free(index_file);

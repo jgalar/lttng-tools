@@ -3360,7 +3360,7 @@ error:
  * This will create a relayd socket pair and add it to the relayd hash table.
  * The caller MUST acquire a RCU read side lock before calling it.
  */
-int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
+ void consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		struct lttng_consumer_local_data *ctx, int sock,
 		struct pollfd *consumer_sockpoll,
 		struct lttcomm_relayd_sock *relayd_sock, uint64_t sessiond_id,
@@ -3382,7 +3382,6 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		/* Not found. Allocate one. */
 		relayd = consumer_allocate_relayd_sock_pair(net_seq_idx);
 		if (relayd == NULL) {
-			ret = -ENOMEM;
 			ret_code = LTTCOMM_CONSUMERD_ENOMEM;
 			goto error;
 		} else {
@@ -3415,14 +3414,12 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 	if (ret) {
 		/* Needing to exit in the middle of a command: error. */
 		lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_POLL_ERROR);
-		ret = -EINTR;
 		goto error_nosignal;
 	}
 
 	/* Get relayd socket from session daemon */
 	ret = lttcomm_recv_fds_unix_sock(sock, &fd, 1);
 	if (ret != sizeof(fd)) {
-		ret = -1;
 		fd = -1;	/* Just in case it gets set with an invalid value. */
 
 		/*
@@ -3496,7 +3493,6 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 		break;
 	default:
 		ERR("Unknown relayd socket type (%d)", sock_type);
-		ret = -1;
 		ret_code = LTTCOMM_CONSUMERD_FATAL;
 		goto error;
 	}
@@ -3520,7 +3516,7 @@ int consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
 	add_relayd(relayd);
 
 	/* All good! */
-	return 0;
+	return;
 
 error:
 	if (consumer_send_status_msg(sock, ret_code) < 0) {
@@ -3538,8 +3534,6 @@ error_nosignal:
 	if (relayd_created) {
 		free(relayd);
 	}
-
-	return ret;
 }
 
 /*

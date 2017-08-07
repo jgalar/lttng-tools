@@ -34,6 +34,8 @@
 
 /*
  * Add kernel context to all channel.
+ *
+ * Assumes the ownership of kctx.
  */
 static int add_kctx_all_channels(struct ltt_kernel_session *ksession,
 		struct ltt_kernel_context *kctx)
@@ -48,7 +50,18 @@ static int add_kctx_all_channels(struct ltt_kernel_session *ksession,
 
 	/* Go over all channels */
 	cds_list_for_each_entry(kchan, &ksession->channel_list.head, list) {
-		ret = kernel_add_channel_context(kchan, kctx);
+		struct ltt_kernel_context *kctx_copy;
+
+		kctx_copy = trace_kernel_copy_context(kctx);
+		if (!kctx_copy) {
+			PERROR("zmalloc ltt_kernel_context");
+			ret = -LTTNG_ERR_NOMEM;
+			goto error;
+		}
+
+		/* Ownership of kctx_copy is transferred to the callee. */
+		ret = kernel_add_channel_context(kchan, kctx_copy);
+		kctx_copy = NULL;
 		if (ret != 0) {
 			goto error;
 		}
@@ -57,11 +70,14 @@ static int add_kctx_all_channels(struct ltt_kernel_session *ksession,
 	ret = LTTNG_OK;
 
 error:
+	trace_kernel_destroy_context(kctx);
 	return ret;
 }
 
 /*
  * Add kernel context to a specific channel.
+ *
+ * Assumes the ownership of kctx.
  */
 static int add_kctx_to_channel(struct ltt_kernel_context *kctx,
 		struct ltt_kernel_channel *kchan)
@@ -73,7 +89,9 @@ static int add_kctx_to_channel(struct ltt_kernel_context *kctx,
 
 	DBG("Add kernel context to channel '%s'", kchan->channel->name);
 
+	/* Ownership of kctx is transferred to the callee. */
 	ret = kernel_add_channel_context(kchan, kctx);
+	kctx = NULL;
 	if (ret != 0) {
 		goto error;
 	}
@@ -101,7 +119,7 @@ static int add_uctx_to_channel(struct ltt_ust_session *usess,
 	/* Check if context is duplicate */
 	cds_list_for_each_entry(uctx, &uchan->ctx_list, list) {
 		if (trace_ust_match_context(uctx, ctx)) {
-			ret = -EEXIST;
+			ret = LTTNG_ERR_UST_CONTEXT_EXIST;
 			goto duplicate;
 		}
 	}
@@ -122,7 +140,7 @@ static int add_uctx_to_channel(struct ltt_ust_session *usess,
 		if (!agt) {
 			agt = agent_create(domain);
 			if (!agt) {
-				ret = LTTNG_ERR_NOMEM;
+				ret = -LTTNG_ERR_NOMEM;
 				goto error;
 			}
 			agent_add(agt, usess->agents);
@@ -147,7 +165,7 @@ static int add_uctx_to_channel(struct ltt_ust_session *usess,
 	/* Create ltt UST context */
 	uctx = trace_ust_create_context(ctx);
 	if (uctx == NULL) {
-		ret = -EINVAL;
+		ret = LTTNG_ERR_UST_CONTEXT_INVAL;
 		goto error;
 	}
 
@@ -189,7 +207,7 @@ int context_kernel_add(struct ltt_kernel_session *ksession,
 
 	kctx = trace_kernel_create_context(NULL);
 	if (!kctx) {
-		ret = LTTNG_ERR_NOMEM;
+		ret = -LTTNG_ERR_NOMEM;
 		goto error;
 	}
 
@@ -254,6 +272,8 @@ int context_kernel_add(struct ltt_kernel_session *ksession,
 
 	if (*channel_name == '\0') {
 		ret = add_kctx_all_channels(ksession, kctx);
+		/* Ownership of kctx is transferred to the callee. */
+		kctx = NULL;
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -266,12 +286,14 @@ int context_kernel_add(struct ltt_kernel_session *ksession,
 		}
 
 		ret = add_kctx_to_channel(kctx, kchan);
+		/* Ownership of kctx is transferred to the callee. */
+		kctx = NULL;
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
 	}
 
-	return LTTNG_OK;
+	ret = LTTNG_OK;
 
 error:
 	if (kctx) {
@@ -317,7 +339,7 @@ int context_ust_add(struct ltt_ust_session *usess,
 		/* Add ctx all events, all channels */
 		cds_lfht_for_each_entry(chan_ht->ht, &iter.iter, uchan, node.node) {
 			ret = add_uctx_to_channel(usess, domain, uchan, ctx);
-			if (ret < 0) {
+			if (ret) {
 				ERR("Failed to add context to channel %s",
 						uchan->name);
 				continue;
@@ -327,10 +349,10 @@ int context_ust_add(struct ltt_ust_session *usess,
 	}
 
 	switch (ret) {
-	case -EEXIST:
-		ret = LTTNG_ERR_UST_CONTEXT_EXIST;
+	case LTTNG_ERR_UST_CONTEXT_EXIST:
 		break;
 	case -ENOMEM:
+	case -LTTNG_ERR_NOMEM:
 		ret = LTTNG_ERR_FATAL;
 		break;
 	case -EINVAL:
@@ -340,7 +362,11 @@ int context_ust_add(struct ltt_ust_session *usess,
 		ret = LTTNG_ERR_UNKNOWN_DOMAIN;
 		break;
 	default:
-		ret = LTTNG_OK;
+		if (ret != 0 && ret != LTTNG_OK) {
+			ret = ret > 0 ? ret : LTTNG_ERR_UNK;
+		} else {
+			ret = LTTNG_OK;
+		}
 		break;
 	}
 

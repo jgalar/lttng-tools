@@ -465,10 +465,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	case LTTNG_CONSUMER_ADD_RELAYD_SOCKET:
 	{
 		/* Session daemon status message are handled in the following call. */
-		ret = consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
+		consumer_add_relayd_socket(msg.u.relayd_sock.net_index,
 				msg.u.relayd_sock.type, ctx, sock, consumer_sockpoll,
 				&msg.u.relayd_sock.sock, msg.u.relayd_sock.session_id,
-				 msg.u.relayd_sock.relayd_session_id);
+				msg.u.relayd_sock.relayd_session_id);
 		goto end_nosignal;
 	}
 	case LTTNG_CONSUMER_ADD_CHANNEL:
@@ -1166,7 +1166,6 @@ static int get_index_values(struct ctf_packet_index *index, int infd)
 		if (ret == -ENOTTY) {
 			/* Command not implemented by lttng-modules. */
 			index->stream_instance_id = -1ULL;
-			ret = 0;
 		} else {
 			PERROR("kernctl_get_instance_id");
 			goto error;
@@ -1238,7 +1237,6 @@ int update_stream_stats(struct lttng_consumer_stream *stream)
 		if (ret == -ENOTTY) {
 			/* Command not implemented by lttng-modules. */
 			seq = -1ULL;
-			ret = 0;
 		} else {
 			PERROR("kernctl_get_sequence_number");
 			goto end;

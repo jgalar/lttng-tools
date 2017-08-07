@@ -2592,10 +2592,10 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 			} else {
 				DBG("Could not find any valid consumerd executable");
 				ret = -EINVAL;
-				break;
+				goto error;
 			}
 			DBG("Using kernel consumer at: %s",  consumer_to_use);
-			ret = execl(consumer_to_use,
+			(void) execl(consumer_to_use,
 				"lttng-consumerd", verbosity, "-k",
 				"--consumerd-cmd-sock", consumer_data->cmd_unix_sock_path,
 				"--consumerd-err-sock", consumer_data->err_unix_sock_path,
@@ -2635,7 +2635,7 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 				}
 			}
 			DBG("Using 64-bit UST consumer at: %s",  consumerd64_bin);
-			ret = execl(consumerd64_bin, "lttng-consumerd", verbosity, "-u",
+			(void) execl(consumerd64_bin, "lttng-consumerd", verbosity, "-u",
 					"--consumerd-cmd-sock", consumer_data->cmd_unix_sock_path,
 					"--consumerd-err-sock", consumer_data->err_unix_sock_path,
 					"--group", tracing_group_name,
@@ -2678,7 +2678,7 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 				}
 			}
 			DBG("Using 32-bit UST consumer at: %s",  consumerd32_bin);
-			ret = execl(consumerd32_bin, "lttng-consumerd", verbosity, "-u",
+			(void) execl(consumerd32_bin, "lttng-consumerd", verbosity, "-u",
 					"--consumerd-cmd-sock", consumer_data->cmd_unix_sock_path,
 					"--consumerd-err-sock", consumer_data->err_unix_sock_path,
 					"--group", tracing_group_name,
@@ -2782,7 +2782,6 @@ static int init_kernel_tracer(void)
 	kernel_tracer_fd = open(module_proc_lttng, O_RDWR);
 	if (kernel_tracer_fd < 0) {
 		DBG("Failed to open %s", module_proc_lttng);
-		ret = -1;
 		goto error_open;
 	}
 
@@ -5408,13 +5407,10 @@ static int set_consumer_sockets(struct consumer_data *consumer_data,
 	DBG2("Creating consumer directory: %s", path);
 
 	ret = mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP);
-	if (ret < 0) {
-		if (errno != EEXIST) {
-			PERROR("mkdir");
-			ERR("Failed to create %s", path);
-			goto error;
-		}
-		ret = -1;
+	if (ret < 0 && errno != EEXIST) {
+		PERROR("mkdir");
+		ERR("Failed to create %s", path);
+		goto error;
 	}
 	if (is_root) {
 		ret = chown(path, 0, utils_get_group_id(tracing_group_name));
