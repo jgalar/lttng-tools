@@ -1633,6 +1633,7 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 				msg.u.rotate_channel.pathname);
 
 		/* Create directory. Ignore if exist. */
+		/* FIXME: not sure this is useful */
 		ret = run_as_mkdir_recursive(msg.u.rotate_channel.pathname,
 				S_IRWXU | S_IRWXG, uid, gid);
 		if (ret < 0) {
@@ -1645,6 +1646,54 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 
 	health_code_update();
 	fprintf(stderr, "send %d\n", LTTNG_CONSUMER_ROTATE_CHANNEL);
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		goto error;
+	}
+
+error:
+	health_code_update();
+	return ret;
+}
+
+int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
+		struct consumer_output *output, char *current_path, char *new_path,
+		uint32_t create, uid_t uid, gid_t gid)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg;
+
+	assert(socket);
+
+	DBG("Consumer rotate rename session %" PRIu64, session_id);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.cmd_type = LTTNG_CONSUMER_ROTATE_RENAME;
+	msg.u.rotate_rename.session_id = session_id;
+	msg.u.rotate_rename.create = create;
+	msg.u.rotate_rename.uid = uid;
+	msg.u.rotate_rename.gid = gid;
+
+	if (output->type == CONSUMER_DST_NET) {
+		ERR("TODO");
+		ret = -1;
+		msg.u.rotate_rename.relayd_id = output->net_seq_index;
+		goto error;
+	} else {
+		msg.u.rotate_rename.relayd_id = (uint64_t) -1ULL;
+		snprintf(msg.u.rotate_rename.current_path, PATH_MAX, "%s",
+				current_path);
+		snprintf(msg.u.rotate_rename.new_path, PATH_MAX, "%s",
+				new_path);
+		fprintf(stderr, "rotate rename from %s to %s\n", current_path,
+				new_path);
+	}
+
+	health_code_update();
+	fprintf(stderr, "send %d to the consumer\n",
+			LTTNG_CONSUMER_ROTATE_RENAME);
+
+	ret = 0;
 	ret = consumer_send_msg(socket, &msg);
 	if (ret < 0) {
 		goto error;

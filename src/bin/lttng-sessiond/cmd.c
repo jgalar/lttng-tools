@@ -51,6 +51,7 @@
 #include "buffer-registry.h"
 #include "notification-thread.h"
 #include "notification-thread-commands.h"
+#include "rotate.h"
 #include "rotation-thread.h"
 
 #include "cmd.h"
@@ -2749,6 +2750,22 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 	usess = session->ust_session;
 	ksess = session->kernel_session;
 
+	if (session->rotate_count > 0) {
+		session->rotate_count++;
+		/*
+		 * The currently active tracing path is now the folder we
+		 * want to rename.
+		 */
+		snprintf(session->rotation_chunk.current_rotate_path,
+				PATH_MAX, "%s",
+				session->rotation_chunk.active_tracing_path);
+		ret = rename_complete_chunk(session,
+				session->session_last_stop_ts);
+		if (ret < 0) {
+			ERR("Renaming session on destroy");
+		}
+	}
+
 	/* Clean kernel session teardown */
 	kernel_destroy_session(ksess);
 
@@ -2765,22 +2782,6 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 
 		/* Clean up the rest. */
 		trace_ust_destroy_session(usess);
-	}
-
-	if (session->rotate_count > 0) {
-		session->rotate_count++;
-		/*
-		 * The currently active tracing path is now the folder we
-		 * want to rename.
-		 */
-		snprintf(session->rotation_chunk.current_rotate_path,
-				PATH_MAX, "%s",
-				session->rotation_chunk.active_tracing_path);
-		ret = rename_complete_chunk(session,
-				session->session_last_stop_ts);
-		if (ret < 0) {
-			ERR("Renaming session on destroy");
-		}
 	}
 
 	/*
@@ -4132,7 +4133,8 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 }
 
 static
-int rename_first_chunk(struct consumer_output *consumer, char *datetime)
+int rename_first_chunk(struct ltt_session *session,
+		struct consumer_output *consumer, char *datetime)
 {
 	int ret;
 	char *tmppath = NULL, *tmppath2 = NULL;
@@ -4159,7 +4161,7 @@ int rename_first_chunk(struct consumer_output *consumer, char *datetime)
 	 * Move the per-domain folder inside the first rotation
 	 * folder.
 	 */
-	ret = rename(tmppath, tmppath2);
+	ret = session_rename_chunk(session, tmppath, tmppath2, 1);
 	if (ret < 0) {
 		PERROR("Rename first trace directory");
 		ret = -LTTNG_ERR_ROTATE_NO_DATA;
@@ -4213,6 +4215,7 @@ int cmd_rotate_session(struct ltt_session *session,
 	if (session->rotate_count == 0) {
 		timeinfo = localtime(&session->session_start_ts);
 		strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+		/* Either one of the two sessions is enough to get the root path. */
 		if (session->kernel_session) {
 			snprintf(session->rotation_chunk.current_rotate_path,
 					PATH_MAX, "%s/%s-",
@@ -4241,14 +4244,16 @@ int cmd_rotate_session(struct ltt_session *session,
 			}
 		}
 		if (session->kernel_session) {
-			ret = rename_first_chunk(session->kernel_session->consumer,
+			ret = rename_first_chunk(session,
+					session->kernel_session->consumer,
 					datetime);
 			if (ret < 0) {
 				goto error;
 			}
 		}
 		if (session->ust_session) {
-			ret = rename_first_chunk(session->ust_session->consumer,
+			ret = rename_first_chunk(session,
+					session->ust_session->consumer,
 					datetime);
 			if (ret < 0) {
 				goto error;
@@ -4367,8 +4372,6 @@ int cmd_rotate_pending(struct ltt_session *session,
 
 	goto end;
 
-error:
-	(*pending_return)->status = LTTNG_ROTATE_ERROR;
 end:
 	return ret;
 }

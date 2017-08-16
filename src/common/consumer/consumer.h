@@ -64,6 +64,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE,
 	LTTNG_CONSUMER_SET_CHANNEL_ROTATE_PIPE,
 	LTTNG_CONSUMER_ROTATE_CHANNEL,
+	LTTNG_CONSUMER_ROTATE_RENAME,
 };
 
 /* State of each fd in consumer */
@@ -821,5 +822,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_ready_streams(uint64_t key,
 		struct lttng_consumer_local_data *ctx);
+int lttng_consumer_rotate_rename(char *current_path, char *new_path,
+		uint32_t create, uid_t uid, gid_t gid);
 
 #endif /* LIB_CONSUMER_H */

@@ -4196,3 +4196,26 @@ end:
 	rcu_read_unlock();
 	return ret;
 }
+
+int lttng_consumer_rotate_rename(char *current_path, char *new_path,
+		uint32_t create, uid_t uid, gid_t gid)
+{
+	int ret;
+
+	if (create) {
+		ret = utils_mkdir_recursive(new_path, S_IRWXU | S_IRWXG,
+				uid, gid);
+		if (ret < 0) {
+			ERR("Create directory on rotate");
+			goto end;
+		}
+
+	}
+	ret = rename(current_path, new_path);
+	if (ret < 0) {
+		PERROR("Rename completed rotation chunk");
+	}
+
+end:
+	return ret;
+}

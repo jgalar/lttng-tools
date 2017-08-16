@@ -547,6 +547,15 @@ struct lttcomm_consumer_msg {
 			uint64_t relayd_id; /* Relayd id if apply. */
 			uint64_t key;
 		} LTTNG_PACKED rotate_channel;
+		struct {
+			char current_path[PATH_MAX];
+			char new_path[PATH_MAX];
+			uint64_t relayd_id; /* Relayd id if apply. */
+			uint64_t session_id;
+			uint32_t create; /* Create new_path before move. */
+			uint32_t uid;
+			uint32_t gid;
+		} LTTNG_PACKED rotate_rename;
 	} u;
 } LTTNG_PACKED;
 

@@ -27,8 +27,6 @@
 #include <common/hashtable/hashtable.h>
 #include <pthread.h>
 
-struct cds_lfht *channel_pending_rotate_ht;
-
 struct rotation_channel_key {
 	uint64_t key;
 	enum lttng_domain_type domain;
@@ -73,11 +71,7 @@ void rotation_thread_quit(struct rotation_thread_handle *handle);
 
 int rotate_add_channel_pending(uint64_t key, enum lttng_domain_type domain,
 		struct ltt_session *session);
-void rotate_del_channel_pending(uint64_t key, enum lttng_domain_type domain);
 
 void *thread_rotation(void *data);
-
-/* FIXME: TMP */
-int rename_complete_chunk(struct ltt_session *session, time_t ts);
 
 #endif /* ROTATION_THREAD_H */

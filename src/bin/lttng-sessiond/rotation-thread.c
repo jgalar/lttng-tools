@@ -35,6 +35,7 @@
 #include "rotation-thread.h"
 #include "lttng-sessiond.h"
 #include "health-sessiond.h"
+#include "rotate.h"
 #include "cmd.h"
 
 #include <urcu.h>
@@ -44,49 +45,10 @@
 struct cds_lfht *channel_pending_rotate_ht;
 
 static
-unsigned long hash_channel_key(struct rotation_channel_key *key)
-{
-	return hash_key_u64(&key->key, lttng_ht_seed) ^ hash_key_ulong(
-		(void *) (unsigned long) key->domain, lttng_ht_seed);
-}
-
-static
 void channel_rotation_info_destroy(struct rotation_channel_info *channel_info)
 {
 	assert(channel_info);
 	free(channel_info);
-}
-
-int rotate_add_channel_pending(uint64_t key, enum lttng_domain_type domain,
-		struct ltt_session *session)
-{
-	int ret;
-	struct rotation_channel_info *new_info;
-	struct rotation_channel_key channel_key = { .key = key,
-		.domain = domain };
-
-	new_info = zmalloc(sizeof(struct rotation_channel_info));
-	if (!new_info) {
-		goto error;
-	}
-
-	new_info->channel_key.key = key;
-	new_info->channel_key.domain = domain;
-	new_info->session = session;
-	cds_lfht_node_init(&new_info->rotate_channels_ht_node);
-
-	session->nr_chan_rotate_pending++;
-	cds_lfht_add(channel_pending_rotate_ht,
-			hash_channel_key(&channel_key),
-			&new_info->rotate_channels_ht_node);
-
-	ret = 0;
-	goto end;
-
-error:
-	ret = -1;
-end:
-	return ret;
 }
 
 static
@@ -296,49 +258,6 @@ int init_thread_state(struct rotation_thread_handle *handle,
 
 end:
 	return 0;
-}
-
-int rename_complete_chunk(struct ltt_session *session, time_t ts)
-{
-	struct tm *timeinfo;
-	char datetime[16];
-	char *tmppath = NULL;
-	int ret;
-
-	timeinfo = localtime(&ts);
-	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
-
-	tmppath = zmalloc(PATH_MAX * sizeof(char));
-	if (!tmppath) {
-		ERR("Alloc tmppath");
-		ret = -1;
-		goto end;
-	}
-
-	snprintf(tmppath, PATH_MAX, "%s%s-%" PRIu64,
-			session->rotation_chunk.current_rotate_path,
-			datetime, session->rotate_count);
-
-	fprintf(stderr, "rename %s to %s\n", session->rotation_chunk.current_rotate_path,
-			tmppath);
-	ret = rename(session->rotation_chunk.current_rotate_path,
-			tmppath);
-	if (ret < 0) {
-		PERROR("Rename completed rotation chunk");
-		goto end;
-	}
-	/*
-	 * Store the path where the readable chunk is. This path is valid
-	 * and can be queried by the client with rotate_pending until the next
-	 * rotation is started.
-	 */
-	snprintf(session->rotation_chunk.current_rotate_path, PATH_MAX,
-			"%s", tmppath);
-	session->rotate_pending = 0;
-
-end:
-	free(tmppath);
-	return ret;
 }
 
 static
