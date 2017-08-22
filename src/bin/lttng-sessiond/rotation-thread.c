@@ -282,7 +282,8 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 		ret = lttng_poll_del(&state->events, fd);
 		if (ret) {
-			ERR("[rotation-thread] Failed to remove consumer rotation pipe from poll set");
+			ERR("[rotation-thread] Failed to remove consumer "
+					"rotation pipe from poll set");
 		}
 		goto end;
 	}

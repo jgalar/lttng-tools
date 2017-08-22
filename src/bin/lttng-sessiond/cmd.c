@@ -2402,8 +2402,8 @@ int cmd_start_trace(struct ltt_session *session)
 	 * an eventual session rotation call.
 	 */
 	if (!session->has_been_started) {
-		session->session_start_ts = time(NULL);
-		if (session->session_start_ts == (time_t) -1) {
+		session->current_chunk_start_ts = time(NULL);
+		if (session->current_chunk_start_ts == (time_t) -1) {
 			PERROR("Get start time");
 			ret = LTTNG_ERR_FATAL;
 			goto error;
@@ -4132,51 +4132,6 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 	return 0;
 }
 
-static
-int rename_first_chunk(struct ltt_session *session,
-		struct consumer_output *consumer, char *datetime)
-{
-	int ret;
-	char *tmppath = NULL, *tmppath2 = NULL;
-
-	tmppath = zmalloc(PATH_MAX * sizeof(char));
-	if (!tmppath) {
-		ret = -LTTNG_ERR_NOMEM;
-		goto error;
-	}
-	tmppath2 = zmalloc(PATH_MAX * sizeof(char));
-	if (!tmppath2) {
-		ret = -LTTNG_ERR_NOMEM;
-		goto error;
-	}
-
-	/* Current domain path: <session>/kernel */
-	snprintf(tmppath, PATH_MAX, "%s/%s",
-			consumer->dst.session_root_path, consumer->subdir);
-	/* New domain path: <session>/<start-date>-/kernel */
-	snprintf(tmppath2, PATH_MAX, "%s/%s-/%s",
-			consumer->dst.session_root_path, datetime,
-			consumer->subdir);
-	/*
-	 * Move the per-domain folder inside the first rotation
-	 * folder.
-	 */
-	ret = session_rename_chunk(session, tmppath, tmppath2, 1);
-	if (ret < 0) {
-		PERROR("Rename first trace directory");
-		ret = -LTTNG_ERR_ROTATE_NO_DATA;
-		goto error;
-	}
-
-	ret = 0;
-
-error:
-	free(tmppath);
-	free(tmppath2);
-
-	return ret;
-}
-
 /*
  * Command LTTNG_ROTATE_SESSION from the lttng-ctl library.
  *
@@ -4213,51 +4168,17 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	/* Special case for the first rotation. */
 	if (session->rotate_count == 0) {
-		timeinfo = localtime(&session->session_start_ts);
-		strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
 		/* Either one of the two sessions is enough to get the root path. */
 		if (session->kernel_session) {
 			snprintf(session->rotation_chunk.current_rotate_path,
-					PATH_MAX, "%s/%s-",
-					session->kernel_session->consumer->dst.session_root_path,
-					datetime);
+					PATH_MAX, "%s",
+					session->kernel_session->consumer->dst.session_root_path);
 		} else if (session->ust_session) {
 			snprintf(session->rotation_chunk.current_rotate_path,
-					PATH_MAX, "%s/%s-",
-					session->ust_session->consumer->dst.session_root_path,
-					datetime);
+					PATH_MAX, "%s",
+					session->ust_session->consumer->dst.session_root_path);
 		} else {
 			assert(0);
-		}
-
-		/*
-		 * Create the first rotation folder to move the existing
-		 * kernel/ust folders into.
-		 */
-		ret = run_as_mkdir_recursive(session->rotation_chunk.current_rotate_path,
-				S_IRWXU | S_IRWXG, session->uid, session->gid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				ret = -LTTNG_ERR_ROTATE_NOT_AVAILABLE;
-				goto error;
-			}
-		}
-		if (session->kernel_session) {
-			ret = rename_first_chunk(session,
-					session->kernel_session->consumer,
-					datetime);
-			if (ret < 0) {
-				goto error;
-			}
-		}
-		if (session->ust_session) {
-			ret = rename_first_chunk(session,
-					session->ust_session->consumer,
-					datetime);
-			if (ret < 0) {
-				goto error;
-			}
 		}
 	} else {
 		/*
@@ -4280,6 +4201,8 @@ int cmd_rotate_session(struct ltt_session *session,
 		ret = -LTTNG_ERR_ROTATE_NOT_AVAILABLE;
 		goto error;
 	}
+	session->last_chunk_start_ts = session->current_chunk_start_ts;
+	session->current_chunk_start_ts = now;
 
 	timeinfo = localtime(&now);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);

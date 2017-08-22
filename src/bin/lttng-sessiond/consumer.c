@@ -1608,22 +1608,13 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	msg.u.rotate_channel.key = key;
 	msg.u.rotate_channel.metadata = metadata;
 
+
 	if (output->type == CONSUMER_DST_NET) {
-		ERR("TODO");
-		ret = -1;
-		goto error;
-		/*
-		msg.u.rotate_channel.relayd_id = output->consumer->net_seq_index;
-		ret = snprintf(msg.u.rotate_channel.pathname,
-				sizeof(msg.u.rotate_channel.pathname),
-				"%s/%s-%s-%" PRIu64 "%s", output->consumer->subdir,
-				output->name, output->datetime, output->nb_rotate,
-				session_path);
-		if (ret < 0) {
-			ret = -LTTNG_ERR_NOMEM;
-			goto error;
-		}
-		*/
+		fprintf(stderr, "SUBDIR: %s\n", output->subdir);
+		msg.u.rotate_channel.relayd_id = output->net_seq_index;
+		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s/%s/%s",
+				output->subdir,
+				output->chunk_path, tmp);
 	} else {
 		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s/%s/%s",
@@ -1632,16 +1623,6 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		fprintf(stderr, "rotate to %s\n",
 				msg.u.rotate_channel.pathname);
 
-		/* Create directory. Ignore if exist. */
-		/* FIXME: not sure this is useful */
-		ret = run_as_mkdir_recursive(msg.u.rotate_channel.pathname,
-				S_IRWXU | S_IRWXG, uid, gid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				goto error;
-			}
-		}
 	}
 
 	health_code_update();
@@ -1675,6 +1656,8 @@ int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 	msg.u.rotate_rename.gid = gid;
 
 	if (output->type == CONSUMER_DST_NET) {
+		fprintf(stderr, "SUBDIR: %s\n", output->subdir);
+		fprintf(stderr, "SUBDIR: %s\n", output->dst.net.control.subdir);
 		ERR("TODO");
 		ret = -1;
 		msg.u.rotate_rename.relayd_id = output->net_seq_index;

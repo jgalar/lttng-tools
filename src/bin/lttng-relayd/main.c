@@ -1102,6 +1102,7 @@ static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
 		goto send_reply;
 	}
 
+	fprintf(stderr, "name: %s\n", session_name);
 	session = session_create(session_name, hostname, live_timer,
 			snapshot, conn->major, conn->minor);
 	if (!session) {

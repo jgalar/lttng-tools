@@ -66,8 +66,6 @@ struct ltt_session_chunk {
 	 * session rotation.
 	 */
 	char active_tracing_path[PATH_MAX];
-	time_t rotate_start_time;
-	time_t rotate_end_time;
 };
 
 /*
@@ -148,10 +146,19 @@ struct ltt_session {
 	unsigned int nr_chan_rotate_pending;
 	struct ltt_session_chunk rotation_chunk;
 	/*
-	 * Store the timestamp when the session started for an eventual
-	 * session rotation call.
+	 * The timestamp of the beginning of the previous chunk. For the
+	 * first chunk, this is the "lttng start" timestamp. For the
+	 * subsequent ones, this copies the current_chunk_start_ts value when
+	 * a new rotation starts. This value is used to set the name of a
+	 * complete chunk directory, ex: "last_chunk_start_ts-now()".
 	 */
-	time_t session_start_ts;
+	time_t last_chunk_start_ts;
+	/*
+	 * This is the timestamp when a new chunk starts. When a new rotation
+	 * starts, we copy this value to last_chunk_start_ts and override it
+	 * with the current timestamp.
+	 */
+	time_t current_chunk_start_ts;
 	time_t session_last_stop_ts;
 	time_t last_begin_rotation_ts;
 };

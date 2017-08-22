@@ -3961,37 +3961,46 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
 			ht->match_fct, &channel->key, &iter.iter,
 			stream, node_channel_id.node) {
+		uint64_t consumed_pos;
+
 		health_code_update();
 
 		/*
 		 * Lock stream because we are about to change its state.
 		 */
 		pthread_mutex_lock(&stream->lock);
+		ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
+				stream->uid, stream->gid);
+		if (ret < 0) {
+			if (errno != EEXIST) {
+				ERR("Trace directory creation error");
+				goto end_unlock;
+			}
+		}
+
 		memcpy(stream->channel_ro_pathname, channel->pathname, PATH_MAX);
 		ret = lttng_consumer_sample_snapshot_positions(stream);
 		if (ret < 0) {
 			ERR("Taking kernel snapshot positions");
 			goto end_unlock;
-		} else {
-			uint64_t consumed_pos;
+		}
 
-			ret = lttng_consumer_get_produced_snapshot(stream,
-					&stream->rotate_position);
-			if (ret < 0) {
-				ERR("Produced kernel snapshot position");
-				goto end_unlock;
-			}
-			fprintf(stderr, "Stream %lu should rotate after %lu to %s\n",
-					stream->key, stream->rotate_position,
-					channel->pathname);
-			lttng_consumer_get_consumed_snapshot(stream,
-					&consumed_pos);
-			fprintf(stderr, "consumed %lu\n", consumed_pos);
-			if (consumed_pos == stream->rotate_position) {
-				stream->rotate_ready = 1;
-				fprintf(stderr, "Stream %lu ready to rotate to %s\n",
-						stream->key, channel->pathname);
-			}
+		ret = lttng_consumer_get_produced_snapshot(stream,
+				&stream->rotate_position);
+		if (ret < 0) {
+			ERR("Produced kernel snapshot position");
+			goto end_unlock;
+		}
+		fprintf(stderr, "Stream %lu should rotate after %lu to %s\n",
+				stream->key, stream->rotate_position,
+				channel->pathname);
+		lttng_consumer_get_consumed_snapshot(stream,
+				&consumed_pos);
+		fprintf(stderr, "consumed %lu\n", consumed_pos);
+		if (consumed_pos == stream->rotate_position) {
+			stream->rotate_ready = 1;
+			fprintf(stderr, "Stream %lu ready to rotate to %s\n",
+					stream->key, channel->pathname);
 		}
 		channel->nr_stream_rotate_pending++;
 

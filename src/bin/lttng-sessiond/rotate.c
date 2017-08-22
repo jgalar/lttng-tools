@@ -139,37 +139,138 @@ end:
 	return ret;
 }
 
+static
+int rename_first_chunk(struct ltt_session *session,
+		struct consumer_output *consumer, char *new_path)
+{
+	int ret;
+	char *tmppath = NULL, *tmppath2 = NULL;
+
+	tmppath = zmalloc(PATH_MAX * sizeof(char));
+	if (!tmppath) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+	tmppath2 = zmalloc(PATH_MAX * sizeof(char));
+	if (!tmppath2) {
+		ret = -LTTNG_ERR_NOMEM;
+		goto error;
+	}
+
+	/* Current domain path: <session>/kernel */
+	snprintf(tmppath, PATH_MAX, "%s/%s",
+			consumer->dst.session_root_path, consumer->subdir);
+	/* New domain path: <session>/<start-date>-<end-date>-<rotate-count>/kernel */
+	snprintf(tmppath2, PATH_MAX, "%s/%s",
+			new_path, consumer->subdir);
+	/*
+	 * Move the per-domain folder inside the first rotation
+	 * folder.
+	 */
+	ret = session_rename_chunk(session, tmppath, tmppath2, 1);
+	if (ret < 0) {
+		PERROR("Rename first trace directory");
+		ret = -LTTNG_ERR_ROTATE_NO_DATA;
+		goto error;
+	}
+
+	ret = 0;
+
+error:
+	free(tmppath);
+	free(tmppath2);
+
+	return ret;
+}
+
 int rename_complete_chunk(struct ltt_session *session, time_t ts)
 {
 	struct tm *timeinfo;
 	char datetime[16];
-	char *tmppath = NULL;
+	char *new_path = NULL;
 	int ret;
+
+	/*
+	 * TODO 2: on first rotate, the current_rotate_path is the session root
+	 * path, so move the kernel/ and ust/ folders inside the
+	 * "session->last_chunk_start_ts-now()"
+	 */
 
 	timeinfo = localtime(&ts);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
 
-	tmppath = zmalloc(PATH_MAX * sizeof(char));
-	if (!tmppath) {
-		ERR("Alloc tmppath");
+	new_path = zmalloc(PATH_MAX * sizeof(char));
+	if (!new_path) {
+		ERR("Alloc new_path");
 		ret = -1;
 		goto end;
 	}
 
-	snprintf(tmppath, PATH_MAX, "%s%s-%" PRIu64,
-			session->rotation_chunk.current_rotate_path,
-			datetime, session->rotate_count);
+	fprintf(stderr, "COUNT: %d\n", session->rotate_count);
 
-	fprintf(stderr, "rename %s to %s\n", session->rotation_chunk.current_rotate_path,
-			tmppath);
+	if (session->rotate_count == 1) {
+		char start_time[16];
 
-	ret = session_rename_chunk(session,
-			session->rotation_chunk.current_rotate_path,
-			tmppath, 0);
-	if (ret) {
-		ERR("Session rename");
-		ret = -1;
-		goto end;
+		timeinfo = localtime(&session->last_chunk_start_ts);
+		strftime(start_time, sizeof(start_time), "%Y%m%d-%H%M%S", timeinfo);
+
+		/*
+		 * On the first rotation, the current_rotate_path is the
+		 * session_root_path, so we need to create the chunk folder
+		 * and move the domain-specific folders inside it.
+		 */
+		snprintf(new_path, PATH_MAX, "%s/%s-%s-%" PRIu64,
+				session->rotation_chunk.current_rotate_path,
+				start_time,
+				datetime, session->rotate_count);
+
+		if (session->kernel_session) {
+			fprintf(stderr, "rename %s/kernel to %s\n",
+					session->rotation_chunk.current_rotate_path,
+					new_path);
+			ret = rename_first_chunk(session,
+					session->kernel_session->consumer,
+					new_path);
+			if (ret) {
+				ERR("Rename kernel session");
+				ret = -1;
+				goto end;
+			}
+		}
+		if (session->ust_session) {
+			fprintf(stderr, "rename %s/kernel to %s\n",
+					session->rotation_chunk.current_rotate_path,
+					new_path);
+			ret = rename_first_chunk(session,
+					session->ust_session->consumer,
+					new_path);
+			if (ret) {
+				ERR("Rename ust session");
+				ret = -1;
+				goto end;
+			}
+		}
+	} else {
+		/*
+		 * After the first rotation, all the trace data is already in
+		 * its own chunk folder, we just need to append the suffix.
+		 */
+		snprintf(new_path, PATH_MAX, "%s%s-%" PRIu64,
+				session->rotation_chunk.current_rotate_path,
+				datetime, session->rotate_count);
+
+		fprintf(stderr, "rename %s to %s\n",
+				session->rotation_chunk.current_rotate_path,
+				new_path);
+
+		ret = session_rename_chunk(session,
+				session->rotation_chunk.current_rotate_path,
+				new_path, 0);
+		if (ret) {
+			ERR("Session rename");
+			ret = -1;
+			goto end;
+		}
 	}
 
 	/*
@@ -178,11 +279,11 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 	 * rotation is started.
 	 */
 	snprintf(session->rotation_chunk.current_rotate_path, PATH_MAX,
-			"%s", tmppath);
+			"%s", new_path);
 	session->rotate_pending = 0;
 
 end:
-	free(tmppath);
+	free(new_path);
 	return ret;
 }
 
