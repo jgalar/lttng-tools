@@ -188,14 +188,23 @@ int lttng_rotate_session_pending(
 	}
 
 	rotate_handle->status = pending_return->status;
-	if (pending_return->status == LTTNG_ROTATE_COMPLETED) {
+	switch(pending_return->status) {
+	/* Not pending anymore */
+	case LTTNG_ROTATE_COMPLETED:
 		snprintf(rotate_handle->output_path, PATH_MAX, "%s",
 				pending_return->output_path);
+	case LTTNG_ROTATE_EXPIRED:
+	case LTTNG_ROTATE_EMPTY:
 		ret = 0;
-	} else if (pending_return->status == LTTNG_ROTATE_STARTED) {
+		break;
+	/* Still pending */
+	case LTTNG_ROTATE_STARTED:
 		ret = 1;
-	} else {
+		break;
+	/* Error */
+	default:
 		ret = -1;
+		break;
 	}
 
 end:

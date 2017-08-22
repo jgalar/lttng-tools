@@ -136,6 +136,7 @@ struct ltt_session {
 	 */
 	uint64_t rotate_count;
 	unsigned int rotate_pending:1;
+	enum lttng_rotate_status rotate_status;
 	/*
 	 * Number of channels waiting for a rotate.
 	 * When this number reaches 0, we can handle the rename of the chunk

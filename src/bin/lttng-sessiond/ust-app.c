@@ -6286,7 +6286,7 @@ int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess)
  */
 int ust_app_rotate_session(struct ltt_session *session)
 {
-	int ret = 0;
+	int ret = 0, nr_channels = 0, nr_app = 0;
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	struct ltt_ust_session *usess = session->ust_session;
@@ -6312,6 +6312,7 @@ int ust_app_rotate_session(struct ltt_session *session)
 			struct buffer_reg_channel *reg_chan;
 			struct consumer_socket *socket;
 
+			nr_channels++;
 			/* Get consumer socket to use to push the metadata.*/
 			socket = consumer_find_socket_by_bitness(reg->bits_per_long,
 					usess->consumer);
@@ -6390,6 +6391,7 @@ int ust_app_rotate_session(struct ltt_session *session)
 				/* Session not associated with this app. */
 				continue;
 			}
+			nr_app++;
 			ret = snprintf(pathname, PATH_MAX, DEFAULT_UST_TRACE_DIR "/%s",
 					ua_sess->path);
 			if (ret < 0) {
@@ -6459,6 +6461,11 @@ int ust_app_rotate_session(struct ltt_session *session)
 	default:
 		assert(0);
 		break;
+	}
+
+	if (nr_app == 0 && nr_channels == 0) {
+		session->rotate_pending = 0;
+		session->rotate_status = LTTNG_ROTATE_EMPTY;
 	}
 
 	ret = LTTNG_OK;

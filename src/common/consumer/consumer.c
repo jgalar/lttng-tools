@@ -3956,6 +3956,13 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 	}
 	pthread_mutex_lock(&channel->lock);
 	snprintf(channel->pathname, PATH_MAX, "%s", path);
+	ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
+			channel->uid, channel->gid);
+	if (ret < 0) {
+		ERR("Trace directory creation error");
+		ret = -1;
+		goto end_unlock_channel;
+	}
 
 	cds_lfht_for_each_entry_duplicate(ht->ht,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
@@ -3969,14 +3976,6 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		 * Lock stream because we are about to change its state.
 		 */
 		pthread_mutex_lock(&stream->lock);
-		ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
-				stream->uid, stream->gid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				goto end_unlock;
-			}
-		}
 
 		memcpy(stream->channel_ro_pathname, channel->pathname, PATH_MAX);
 		ret = lttng_consumer_sample_snapshot_positions(stream);
@@ -4221,9 +4220,16 @@ int lttng_consumer_rotate_rename(char *current_path, char *new_path,
 
 	}
 	ret = rename(current_path, new_path);
-	if (ret < 0) {
+	/*
+	 * If a domain has not yet created its channel, the domain-specific
+	 * folder might not exist, but this is not an error.
+	 */
+	if (ret < 0 && errno != ENOENT) {
 		PERROR("Rename completed rotation chunk");
+		goto end;
 	}
+
+	ret = 0;
 
 end:
 	return ret;

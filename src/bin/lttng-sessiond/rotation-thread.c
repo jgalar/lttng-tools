@@ -313,6 +313,7 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 		time_t now = time(NULL);
 
 		if (now == (time_t) -1) {
+			channel_info->session->rotate_status = LTTNG_ROTATE_ERROR;
 			ret = LTTNG_ERR_ROTATE_NOT_AVAILABLE;
 			goto end;
 		}

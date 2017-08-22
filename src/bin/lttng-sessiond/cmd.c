@@ -4192,6 +4192,7 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	session->rotate_count++;
 	session->rotate_pending = 1;
+	session->rotate_status = LTTNG_ROTATE_STARTED;
 
 	/*
 	 * Create the path name for the next chunk.
@@ -4279,7 +4280,13 @@ int cmd_rotate_pending(struct ltt_session *session,
 		goto end;
 	}
 
-	if (session->rotate_pending) {
+	if (session->rotate_status == LTTNG_ROTATE_ERROR) {
+		DBG("An error occurred during rotation");
+		(*pending_return)->status = LTTNG_ROTATE_ERROR;
+	} else if (session->rotate_status == LTTNG_ROTATE_EMPTY) {
+		DBG("Nothing to rotate");
+		(*pending_return)->status = LTTNG_ROTATE_EMPTY;
+	} else if (session->rotate_pending) {
 		DBG("Session %s, rotate_id %" PRIu64 " still pending",
 				session->name, session->rotate_count);
 		(*pending_return)->status = LTTNG_ROTATE_STARTED;

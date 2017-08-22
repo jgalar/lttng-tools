@@ -169,7 +169,7 @@ int rename_first_chunk(struct ltt_session *session,
 	 */
 	ret = session_rename_chunk(session, tmppath, tmppath2, 1);
 	if (ret < 0) {
-		PERROR("Rename first trace directory");
+		ERR("Rename first trace directory");
 		ret = -LTTNG_ERR_ROTATE_NO_DATA;
 		goto error;
 	}
@@ -201,12 +201,11 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 
 	new_path = zmalloc(PATH_MAX * sizeof(char));
 	if (!new_path) {
+		session->rotate_status = LTTNG_ROTATE_ERROR;
 		ERR("Alloc new_path");
 		ret = -1;
 		goto end;
 	}
-
-	fprintf(stderr, "COUNT: %d\n", session->rotate_count);
 
 	if (session->rotate_count == 1) {
 		char start_time[16];
@@ -233,8 +232,15 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 					new_path);
 			if (ret) {
 				ERR("Rename kernel session");
-				ret = -1;
-				goto end;
+				/*
+				 * This is not a fatal error for the rotation
+				 * thread, we just need to inform the client
+				 * that a problem occurred with the rotation.
+				 * Returning 0, same for the other errors
+				 * below.
+				 */
+				ret = 0;
+				goto error;
 			}
 		}
 		if (session->ust_session) {
@@ -246,8 +252,8 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 					new_path);
 			if (ret) {
 				ERR("Rename ust session");
-				ret = -1;
-				goto end;
+				ret = 0;
+				goto error;
 			}
 		}
 	} else {
@@ -268,8 +274,8 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 				new_path, 0);
 		if (ret) {
 			ERR("Session rename");
-			ret = -1;
-			goto end;
+			ret = 0;
+			goto error;
 		}
 	}
 
@@ -282,6 +288,10 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 			"%s", new_path);
 	session->rotate_pending = 0;
 
+	goto end;
+
+error:
+	session->rotate_status = LTTNG_ROTATE_ERROR;
 end:
 	free(new_path);
 	return ret;
