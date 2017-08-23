@@ -3961,8 +3961,10 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 	if (ret < 0) {
 		ERR("Trace directory creation error");
 		ret = -1;
-		goto end_unlock_channel;
+		pthread_mutex_unlock(&channel->lock);
+		goto end;
 	}
+	pthread_mutex_unlock(&channel->lock);
 
 	cds_lfht_for_each_entry_duplicate(ht->ht,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
@@ -4013,12 +4015,10 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 	}
 
 	ret = 0;
-	goto end_unlock_channel;
+	goto end;
 
 end_unlock:
 	pthread_mutex_unlock(&stream->lock);
-end_unlock_channel:
-	pthread_mutex_unlock(&channel->lock);
 end:
 	rcu_read_unlock();
 	return ret;
