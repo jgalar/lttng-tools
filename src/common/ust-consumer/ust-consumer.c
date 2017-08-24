@@ -2580,7 +2580,7 @@ int lttng_ustconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx)
 {
 	unsigned long len, subbuf_size, padding;
-	int err, write_index = 1, rotation_ret;
+	int err, write_index = 1, rotation_ret, rotate_ready;
 	long ret = 0;
 	struct ustctl_consumer_stream *ustream;
 	struct ctf_packet_index index;
@@ -2679,6 +2679,16 @@ retry:
 	assert(len >= subbuf_size);
 
 	padding = len - subbuf_size;
+
+	rotate_ready = lttng_consumer_stream_is_rotate_ready(stream, len);
+	if (rotate_ready < 0) {
+		ERR("Failed to check if stream is ready for rotation");
+		ret = -1;
+		err = ustctl_put_subbuf(ustream);
+		assert(err == 0);
+		goto error;
+	}
+
 	/* write the subbuffer to the tracefile */
 	ret = lttng_consumer_on_read_subbuffer_mmap(ctx, stream, subbuf_size, padding, &index);
 	/*
@@ -2752,11 +2762,13 @@ retry:
 	}
 
 rotate:
-	rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
-	if (rotation_ret < 0) {
-		ret = -1;
-		ERR("Stream rotation error");
-		goto error;
+	if (rotate_ready) {
+		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
+		if (rotation_ret < 0) {
+			ret = -1;
+			ERR("Stream rotation error");
+			goto error;
+		}
 	}
 error:
 	return ret;

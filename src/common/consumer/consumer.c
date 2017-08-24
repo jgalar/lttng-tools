@@ -4025,13 +4025,18 @@ end:
 }
 
 /*
- * Performs the stream rotation for the rotate session feature if needed.
- * It must be called with the stream and channel locks held.
+ * Check if a stream is ready to be rotated after extracting it.
  *
- * Return 0 on success, a negative number of error.
+ * When we are called between get_next_subbuf and put_next_subbuf, the len
+ * parameter is the subbuf size of the current subbuffer being extracted. This
+ * len is with padding, so it is normal to see that the current position is
+ * farther than the expected rotate position.
+ *
+ * Return 1 if it is ready for rotation, 0 if it is not, a negative value on
+ * error.
  */
-int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
-		struct lttng_consumer_stream *stream)
+int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream,
+		unsigned long len)
 {
 	int ret;
 	unsigned long consumed_pos;
@@ -4049,27 +4054,45 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		ret = lttng_consumer_sample_snapshot_positions(stream);
 		if (ret < 0) {
 			ERR("Taking kernel snapshot positions");
-			goto error;
+			goto end;
 		}
 
 		ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos);
 		if (ret < 0) {
 			ERR("Produced kernel snapshot position");
-			goto error;
+			goto end;
 		}
 
 		fprintf(stderr, "packet %lu, pos %lu\n", stream->key, consumed_pos);
 		/* Rotate position not reached yet. */
-		if (consumed_pos < stream->rotate_position) {
+		if ((consumed_pos + len) < stream->rotate_position) {
 			ret = 0;
 			goto end;
 		}
 		fprintf(stderr, "Rotate position %lu (expected %lu) reached for stream %lu\n",
-				consumed_pos, stream->rotate_position, stream->key);
+				consumed_pos + len, stream->rotate_position,
+				stream->key);
+		ret = 1;
 	} else {
 		fprintf(stderr, "Rotate position reached for stream %lu\n",
 				stream->key);
+		ret = 1;
 	}
+
+end:
+	return ret;
+}
+
+/*
+ * Performs the stream rotation for the rotate session feature if needed.
+ * It must be called with the stream and channel locks held.
+ *
+ * Return 0 on success, a negative number of error.
+ */
+int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
+		struct lttng_consumer_stream *stream)
+{
+	int ret;
 
 	ret = close(stream->out_fd);
 	if (ret < 0) {

@@ -818,6 +818,8 @@ int consumer_create_index_file(struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		uint64_t relayd_id, uint32_t metadata,
 		struct lttng_consumer_local_data *ctx);
+int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream,
+		unsigned long len);
 int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_ready_streams(uint64_t key,
