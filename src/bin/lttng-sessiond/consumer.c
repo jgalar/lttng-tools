@@ -1591,9 +1591,13 @@ end:
 	return ret;
 }
 
+/*
+ * Ask the consumer to rotate a channel.
+ * app_pathname only used for UST, it contains the path after /ust/.
+ */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
-		char *tmp, uint32_t metadata)
+		char *app_pathname, uint32_t metadata)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
@@ -1608,18 +1612,19 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	msg.u.rotate_channel.key = key;
 	msg.u.rotate_channel.metadata = metadata;
 
-
 	if (output->type == CONSUMER_DST_NET) {
 		fprintf(stderr, "SUBDIR: %s\n", output->subdir);
+		fprintf(stderr, "CHUNK: %s\n", output->chunk_path);
 		msg.u.rotate_channel.relayd_id = output->net_seq_index;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s/%s/%s",
 				output->subdir,
-				output->chunk_path, tmp);
+				output->chunk_path, app_pathname);
+		fprintf(stderr, "SENDING: %s\n", msg.u.rotate_channel.pathname);
 	} else {
 		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s/%s/%s",
 				output->dst.session_root_path,
-				output->chunk_path, tmp);
+				output->chunk_path, app_pathname);
 		fprintf(stderr, "rotate to %s\n",
 				msg.u.rotate_channel.pathname);
 

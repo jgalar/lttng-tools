@@ -1490,6 +1490,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		ret = -1;
 		goto error;
 	}
+	stream->rotate_ready = rotate_ready;
 
 	if (!stream->metadata_flag) {
 		ret = get_index_values(&index, infd);
@@ -1667,7 +1668,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	}
 
 rotate:
-	if (rotate_ready) {
+	if (stream->rotate_ready) {
 		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 		if (rotation_ret < 0) {
 			ERR("Stream rotation error");

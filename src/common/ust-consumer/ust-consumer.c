@@ -2688,6 +2688,7 @@ retry:
 		assert(err == 0);
 		goto error;
 	}
+	stream->rotate_ready = rotate_ready;
 
 	/* write the subbuffer to the tracefile */
 	ret = lttng_consumer_on_read_subbuffer_mmap(ctx, stream, subbuf_size, padding, &index);
@@ -2762,7 +2763,7 @@ retry:
 	}
 
 rotate:
-	if (rotate_ready) {
+	if (stream->rotate_ready) {
 		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 		if (rotation_ret < 0) {
 			ret = -1;

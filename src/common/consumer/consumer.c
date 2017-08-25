@@ -4046,41 +4046,52 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream,
 		goto end;
 	}
 
+	if (stream->rotate_ready) {
+		fprintf(stderr, "Rotate position reached for stream %lu\n",
+				stream->key);
+		ret = 1;
+		goto end;
+	}
+
 	/*
 	 * If we don't have the rotate_ready flag, check the consumed position
 	 * to determine if we need to rotate.
 	 */
-	if (!stream->rotate_ready) {
-		ret = lttng_consumer_sample_snapshot_positions(stream);
-		if (ret < 0) {
-			ERR("Taking kernel snapshot positions");
-			goto end;
-		}
-
-		ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos);
-		if (ret < 0) {
-			ERR("Produced kernel snapshot position");
-			goto end;
-		}
-
-		fprintf(stderr, "packet %lu, pos %lu\n", stream->key, consumed_pos);
-		/* Rotate position not reached yet. */
-		if ((consumed_pos + len) < stream->rotate_position) {
-			ret = 0;
-			goto end;
-		}
-		fprintf(stderr, "Rotate position %lu (expected %lu) reached for stream %lu\n",
-				consumed_pos + len, stream->rotate_position,
-				stream->key);
-		ret = 1;
-	} else {
-		fprintf(stderr, "Rotate position reached for stream %lu\n",
-				stream->key);
-		ret = 1;
+	ret = lttng_consumer_sample_snapshot_positions(stream);
+	if (ret < 0) {
+		ERR("Taking kernel snapshot positions");
+		goto end;
 	}
+
+	ret = lttng_consumer_get_consumed_snapshot(stream, &consumed_pos);
+	if (ret < 0) {
+		ERR("Produced kernel snapshot position");
+		goto end;
+	}
+
+	fprintf(stderr, "packet %lu, pos %lu\n", stream->key, consumed_pos);
+	/* Rotate position not reached yet. */
+	if ((consumed_pos + len) < stream->rotate_position) {
+		ret = 0;
+		goto end;
+	}
+	fprintf(stderr, "Rotate position %lu (expected %lu) reached for stream %lu\n",
+			consumed_pos + len, stream->rotate_position,
+			stream->key);
+	ret = 1;
 
 end:
 	return ret;
+}
+
+/*
+ * Reset the state for a stream after a rotation occurred.
+ */
+void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream)
+{
+	stream->rotate_position = 0;
+	stream->rotate_ready = 0;
+	stream->rotated = 1;
 }
 
 /*
@@ -4153,9 +4164,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		}
 	}
 
-	stream->rotate_position = 0;
-	stream->rotate_ready = 0;
-	stream->rotated = 1;
+	lttng_consumer_reset_stream_rotate_state(stream);
 
 	ret = 0;
 	goto end;
