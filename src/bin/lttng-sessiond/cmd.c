@@ -4215,7 +4215,7 @@ int cmd_rotate_session(struct ltt_session *session,
 				datetime);
 		/* The sub-directory for the consumer. */
 		snprintf(session->kernel_session->consumer->chunk_path,
-				PATH_MAX, "/%s-/%s/", datetime,
+				PATH_MAX, "/%s-%s", datetime,
 				session->kernel_session->consumer->subdir);
 		ret = kernel_rotate_session(session);
 		if (ret != LTTNG_OK) {
@@ -4228,7 +4228,7 @@ int cmd_rotate_session(struct ltt_session *session,
 				session->ust_session->consumer->dst.session_root_path,
 				datetime);
 		snprintf(session->ust_session->consumer->chunk_path,
-				PATH_MAX, "/%s-/", datetime);
+				PATH_MAX, "/%s-", datetime);
 		ret = ust_app_rotate_session(session);
 		if (ret != LTTNG_OK) {
 			goto error;

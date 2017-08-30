@@ -4096,7 +4096,7 @@ void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stre
 
 /*
  * Performs the stream rotation for the rotate session feature if needed.
- * It must be called with the stream and channel locks held.
+ * It must be called with the stream lock held.
  *
  * Return 0 on success, a negative number of error.
  */
