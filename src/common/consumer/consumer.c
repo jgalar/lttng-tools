@@ -4095,12 +4095,9 @@ void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stre
 }
 
 /*
- * Performs the stream rotation for the rotate session feature if needed.
- * It must be called with the stream lock held.
- *
- * Return 0 on success, a negative number of error.
+ * Perform the rotation a local stream file.
  */
-int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
+int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream)
 {
 	int ret;
@@ -4164,14 +4161,72 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		}
 	}
 
-	lttng_consumer_reset_stream_rotate_state(stream);
-
 	ret = 0;
 	goto end;
 
 error:
 	ret = -1;
 end:
+	return ret;
+
+}
+
+/*
+ * Perform the rotation a stream file on the relay.
+ */
+int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
+		struct lttng_consumer_stream *stream)
+{
+	int ret;
+	char *new_pathname = NULL;
+	struct consumer_relayd_sock_pair *relayd;
+
+	relayd = consumer_find_relayd(stream->net_seq_idx);
+	if (!relayd) {
+		ERR("Failed to find relayd");
+		ret = -1;
+		goto end;
+	}
+
+	new_pathname = zmalloc(LTTNG_PATH_MAX * sizeof(char));
+	if (!new_pathname) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	ret = snprintf(new_pathname, LTTNG_PATH_MAX, "%s/%s",
+			stream->channel_ro_pathname, stream->name);
+	if (ret < 0) {
+		PERROR("snprintf stream name");
+		goto end;
+	}
+
+	ret = relayd_rotate_stream(&relayd->control_sock,
+			stream->relayd_stream_id, new_pathname);
+
+end:
+	free(new_pathname);
+	return ret;
+}
+
+/*
+ * Performs the stream rotation for the rotate session feature if needed.
+ * It must be called with the stream lock held.
+ *
+ * Return 0 on success, a negative number of error.
+ */
+int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
+		struct lttng_consumer_stream *stream)
+{
+	int ret;
+
+	if (stream->net_seq_idx != (uint64_t) -1ULL) {
+		ret = rotate_relay_stream(ctx, stream);
+	} else {
+		ret = rotate_local_stream(ctx, stream);
+	}
+	lttng_consumer_reset_stream_rotate_state(stream);
+
 	return ret;
 }
 

@@ -195,4 +195,9 @@ struct lttcomm_relayd_reset_metadata {
 	uint64_t version;
 } LTTNG_PACKED;
 
+struct lttcomm_relayd_rotate_stream {
+	uint64_t stream_id;
+	char new_pathname[LTTNG_PATH_MAX];
+} LTTNG_PACKED;
+
 #endif	/* _RELAYD_COMM */
