@@ -4178,7 +4178,6 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream)
 {
 	int ret;
-	char *new_pathname = NULL;
 	struct consumer_relayd_sock_pair *relayd;
 
 	relayd = consumer_find_relayd(stream->net_seq_idx);
@@ -4188,24 +4187,10 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 		goto end;
 	}
 
-	new_pathname = zmalloc(LTTNG_PATH_MAX * sizeof(char));
-	if (!new_pathname) {
-		ret = -ENOMEM;
-		goto end;
-	}
-
-	ret = snprintf(new_pathname, LTTNG_PATH_MAX, "%s/%s",
-			stream->channel_ro_pathname, stream->name);
-	if (ret < 0) {
-		PERROR("snprintf stream name");
-		goto end;
-	}
-
 	ret = relayd_rotate_stream(&relayd->control_sock,
-			stream->relayd_stream_id, new_pathname);
+			stream->relayd_stream_id, stream->channel_ro_pathname);
 
 end:
-	free(new_pathname);
 	return ret;
 }
 

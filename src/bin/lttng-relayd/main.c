@@ -2110,9 +2110,10 @@ end_no_session:
 }
 
 /*
- * relay_rotate_stream: rotate a stream to a new tracefile.
+ * relay_rotate_stream: rotate a stream to a new tracefile for the session
+ * rotation feature (not the tracefile rotation feature).
  */
-static int relay_rotate_stream(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_rotate_session_stream(struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn)
 {
 	int ret, send_ret;
@@ -2164,47 +2165,35 @@ static int relay_rotate_stream(struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	fprintf(stderr, "Rotating stream %lu to %s\n", stream_info.stream_id,
-			stream_info.new_pathname);
-#if 0
-	/*
-	 * Set last_net_seq_num before the close flag. Required by data
-	 * pending check.
-	 */
+	fprintf(stderr, "Rotating stream %lu to %s/\n",
+			be64toh(stream_info.stream_id), stream_info.new_pathname);
+
 	pthread_mutex_lock(&stream->lock);
-	stream->last_net_seq_num = be64toh(stream_info.last_net_seq_num);
-	pthread_mutex_unlock(&stream->lock);
-
-	/*
-	 * This is one of the conditions which may trigger a stream close
-	 * with the others being:
-	 *     1) A close command is received for a stream
-	 *     2) The control connection owning the stream is closed
-	 *     3) We have received all of the stream's data _after_ a close
-	 *        request.
-	 */
-	try_stream_close(stream);
-	if (stream->is_metadata) {
-		struct relay_viewer_stream *vstream;
-
-		vstream = viewer_stream_get_by_id(stream->stream_handle);
-		if (vstream) {
-			if (vstream->metadata_sent == stream->metadata_received) {
-				/*
-				 * Since all the metadata has been sent to the
-				 * viewer and that we have a request to close
-				 * its stream, we can safely teardown the
-				 * corresponding metadata viewer stream.
-				 */
-				viewer_stream_put(vstream);
-			}
-			/* Put local reference. */
-			viewer_stream_put(vstream);
-		}
+	free(stream->path_name);
+	stream->path_name = create_output_path(stream_info.new_pathname);
+	if (!stream->path_name) {
+		ERR("Failed to create a new output path");
+		goto end_stream_unlock;
 	}
-#endif
-	stream_put(stream);
+	ret = utils_mkdir_recursive(stream->path_name, S_IRWXU | S_IRWXG,
+			-1, -1);
+	if (ret < 0) {
+		ERR("relay creating output directory");
+		goto end;
+	}
+	ret = utils_rotate_stream_file(stream->path_name,
+			stream->channel_name, stream->tracefile_size,
+			stream->tracefile_count, -1,
+			-1, stream->stream_fd->fd,
+			NULL, &stream->stream_fd->fd);
+	if (ret < 0) {
+		ERR("Rotating stream output file");
+		goto end_stream_unlock;
+	}
 
+end_stream_unlock:
+	pthread_mutex_unlock(&stream->lock);
+	stream_put(stream);
 end:
 	memset(&reply, 0, sizeof(reply));
 	if (ret < 0) {
@@ -2273,7 +2262,7 @@ static int relay_process_control(struct lttcomm_relayd_hdr *recv_hdr,
 		ret = relay_reset_metadata(recv_hdr, conn);
 		break;
 	case RELAYD_ROTATE_STREAM:
-		ret = relay_rotate_stream(recv_hdr, conn);
+		ret = relay_rotate_session_stream(recv_hdr, conn);
 		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:
