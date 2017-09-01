@@ -2222,6 +2222,7 @@ static int relay_rotate_session_stream(struct lttcomm_relayd_hdr *recv_hdr,
 		ERR("Rotating stream output file");
 		goto end_stream_unlock;
 	}
+	stream->tracefile_size_current = 0;
 
 	/* Rotate also the index if the stream is not a metadata stream. */
 	if (!stream->is_metadata) {

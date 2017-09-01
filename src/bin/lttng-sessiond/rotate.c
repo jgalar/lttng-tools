@@ -168,8 +168,6 @@ int rename_first_chunk(struct ltt_session *session,
 	/* New domain path: <session>/<start-date>-<end-date>-<rotate-count>/kernel */
 	snprintf(tmppath2, PATH_MAX, "%s/%s",
 			new_path, consumer->subdir);
-	fprintf(stderr, "A: %s, B: %s, C: %s\n",
-			consumer->dst.net.base_dir, consumer->subdir, new_path);
 	/*
 	 * Move the per-domain folder inside the first rotation
 	 * folder.

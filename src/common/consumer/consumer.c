@@ -4134,31 +4134,6 @@ int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 		}
 		stream->index_file = index_file;
 		stream->out_fd_offset = 0;
-	} else {
-		switch (consumer_data.type) {
-		case LTTNG_CONSUMER_KERNEL:
-			/*
-			 * Reset the position of what has been read from the metadata
-			 * cache to 0 so we can dump it again.
-			 */
-			ret = kernctl_metadata_cache_dump(stream->wait_fd);
-			if (ret < 0) {
-				ERR("Failed to dump the kernel metadata cache after rotation");
-				goto error;
-			}
-			break;
-		case LTTNG_CONSUMER32_UST:
-		case LTTNG_CONSUMER64_UST:
-			/*
-			 * Reset the position pushed from the metadata cache so it
-			 * will write from the beginning on the next push.
-			 */
-			stream->ust_metadata_pushed = 0;
-			break;
-		default:
-			ERR("Unknown consumer_data type");
-			abort();
-		}
 	}
 
 	ret = 0;
@@ -4210,8 +4185,41 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 	} else {
 		ret = rotate_local_stream(ctx, stream);
 	}
+	if (ret < 0) {
+		goto error;
+	}
+
+	if (stream->metadata_flag) {
+		switch (consumer_data.type) {
+		case LTTNG_CONSUMER_KERNEL:
+			/*
+			 * Reset the position of what has been read from the metadata
+			 * cache to 0 so we can dump it again.
+			 */
+			ret = kernctl_metadata_cache_dump(stream->wait_fd);
+			if (ret < 0) {
+				ERR("Failed to dump the kernel metadata cache after rotation");
+				goto error;
+			}
+			break;
+		case LTTNG_CONSUMER32_UST:
+		case LTTNG_CONSUMER64_UST:
+			/*
+			 * Reset the position pushed from the metadata cache so it
+			 * will write from the beginning on the next push.
+			 */
+			stream->ust_metadata_pushed = 0;
+			break;
+		default:
+			ERR("Unknown consumer_data type");
+			abort();
+		}
+	}
 	lttng_consumer_reset_stream_rotate_state(stream);
 
+	ret = 0;
+
+error:
 	return ret;
 }
 
