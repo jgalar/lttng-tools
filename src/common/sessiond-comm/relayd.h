@@ -200,4 +200,9 @@ struct lttcomm_relayd_rotate_stream {
 	char new_pathname[LTTNG_PATH_MAX];
 } LTTNG_PACKED;
 
+struct lttcomm_relayd_rotate_rename {
+	char current_path[LTTNG_PATH_MAX];
+	char new_path[LTTNG_PATH_MAX];
+} LTTNG_PACKED;
+
 #endif	/* _RELAYD_COMM */

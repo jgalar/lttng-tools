@@ -825,7 +825,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 int lttng_consumer_rotate_ready_streams(uint64_t key,
 		struct lttng_consumer_local_data *ctx);
 int lttng_consumer_rotate_rename(char *current_path, char *new_path,
-		uint32_t create, uid_t uid, gid_t gid);
+		uid_t uid, gid_t gid, uint64_t relayd_id);
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream);
 
 #endif /* LIB_CONSUMER_H */

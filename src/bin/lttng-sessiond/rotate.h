@@ -28,7 +28,7 @@ int rotate_add_channel_pending(uint64_t key, enum lttng_domain_type domain,
 		struct ltt_session *session);
 
 int session_rename_chunk(struct ltt_session *session, char *current_path,
-		char *new_path, uint32_t create);
+		char *new_path);
 
 int rename_complete_chunk(struct ltt_session *session, time_t ts);
 

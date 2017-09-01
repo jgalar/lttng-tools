@@ -2109,6 +2109,36 @@ end_no_session:
 	return ret;
 }
 
+static
+int rotate_index_file(struct relay_stream *stream)
+{
+	int ret;
+	uint32_t major, minor;
+
+	/* Put ref on previous index_file. */
+	if (stream->index_file) {
+		lttng_index_file_put(stream->index_file);
+		stream->index_file = NULL;
+	}
+	major = stream->trace->session->major;
+	minor = stream->trace->session->minor;
+	stream->index_file = lttng_index_file_create(stream->path_name,
+			stream->channel_name,
+			-1, -1, stream->tracefile_size,
+			tracefile_array_get_file_index_head(stream->tfa),
+			lttng_to_index_major(major, minor),
+			lttng_to_index_minor(major, minor));
+	if (!stream->index_file) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = 0;
+
+end:
+	return ret;
+}
+
 /*
  * relay_rotate_stream: rotate a stream to a new tracefile for the session
  * rotation feature (not the tracefile rotation feature).
@@ -2169,6 +2199,8 @@ static int relay_rotate_session_stream(struct lttcomm_relayd_hdr *recv_hdr,
 			be64toh(stream_info.stream_id), stream_info.new_pathname);
 
 	pthread_mutex_lock(&stream->lock);
+
+	/* Update the trace path (just the folder, the stream name does not change). */
 	free(stream->path_name);
 	stream->path_name = create_output_path(stream_info.new_pathname);
 	if (!stream->path_name) {
@@ -2189,6 +2221,15 @@ static int relay_rotate_session_stream(struct lttcomm_relayd_hdr *recv_hdr,
 	if (ret < 0) {
 		ERR("Rotating stream output file");
 		goto end_stream_unlock;
+	}
+
+	/* Rotate also the index if the stream is not a metadata stream. */
+	if (!stream->is_metadata) {
+		ret = rotate_index_file(stream);
+		if (ret < 0) {
+			ERR("Failed to rotate index file");
+			goto end_stream_unlock;
+		}
 	}
 
 end_stream_unlock:
@@ -2212,6 +2253,115 @@ end_no_session:
 	return ret;
 }
 
+/*
+ * relay_rotate_rename: rename the trace folder after the rotation is
+ * complete. We are not closing any fd here, just moving the folder, so it
+ * works even if data is still in flight.
+ */
+static int relay_rotate_rename(struct lttcomm_relayd_hdr *recv_hdr,
+		struct relay_connection *conn)
+{
+	int ret, send_ret;
+	struct relay_session *session = conn->session;
+	struct lttcomm_relayd_rotate_rename stream_info;
+	struct lttcomm_relayd_generic_reply reply;
+	size_t len;
+	char *old = NULL, *new = NULL;
+
+	DBG("Rotate rename received");
+
+	if (!session || conn->version_check_done == 0) {
+		ERR("Trying to rename before version check");
+		ret = -1;
+		goto end_no_session;
+	}
+
+	if (session->minor < 11) {
+		ERR("Unsupported feature before 2.11");
+		ret = -1;
+		goto end_no_session;
+	}
+
+	ret = conn->sock->ops->recvmsg(conn->sock, &stream_info,
+			sizeof(stream_info), 0);
+	if (ret < sizeof(stream_info)) {
+		if (ret == 0) {
+			/* Orderly shutdown. Not necessary to print an error. */
+			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
+		} else {
+			ERR("Relay didn't receive valid rotate_rename struct size : %d", ret);
+		}
+		ret = -1;
+		goto end_no_session;
+	}
+
+	len = lttng_strnlen(stream_info.current_path,
+			sizeof(stream_info.current_path));
+	/* Ensure that NULL-terminated and fits in local filename length. */
+	if (len == sizeof(stream_info.current_path) || len >= LTTNG_NAME_MAX) {
+		ret = -ENAMETOOLONG;
+		ERR("Path name too long");
+		goto end;
+	}
+
+	len = lttng_strnlen(stream_info.new_path,
+			sizeof(stream_info.new_path));
+	/* Ensure that NULL-terminated and fits in local filename length. */
+	if (len == sizeof(stream_info.new_path) || len >= LTTNG_NAME_MAX) {
+		ret = -ENAMETOOLONG;
+		ERR("Path name too long");
+		goto end;
+	}
+
+	fprintf(stderr, "Renaming %s to %s/\n", stream_info.current_path,
+			stream_info.new_path);
+
+	old = create_output_path(stream_info.current_path);
+	if (!old) {
+		ERR("Failed to create current output path");
+		ret = -1;
+		goto end;
+	}
+
+	new = create_output_path(stream_info.new_path);
+	if (!new) {
+		ERR("Failed to create new output path");
+		ret = -1;
+		goto end;
+	}
+
+	ret = utils_mkdir_recursive(new, S_IRWXU | S_IRWXG,
+			-1, -1);
+	if (ret < 0) {
+		ERR("relay creating output directory");
+		goto end;
+	}
+
+	ret = rename(old, new);
+	if (ret < 0 && errno != ENOENT) {
+		PERROR("Rename completed rotation chunk");
+		goto end;
+	}
+
+end:
+	memset(&reply, 0, sizeof(reply));
+	if (ret < 0) {
+		reply.ret_code = htobe32(LTTNG_ERR_UNK);
+	} else {
+		reply.ret_code = htobe32(LTTNG_OK);
+	}
+	send_ret = conn->sock->ops->sendmsg(conn->sock, &reply,
+			sizeof(struct lttcomm_relayd_generic_reply), 0);
+	if (send_ret < 0) {
+		ERR("Relay sending stream id");
+		ret = send_ret;
+	}
+
+end_no_session:
+	free(old);
+	free(new);
+	return ret;
+}
 
 /*
  * Process the commands received on the control socket
@@ -2264,6 +2414,9 @@ static int relay_process_control(struct lttcomm_relayd_hdr *recv_hdr,
 	case RELAYD_ROTATE_STREAM:
 		ret = relay_rotate_session_stream(recv_hdr, conn);
 		break;
+	case RELAYD_ROTATE_RENAME:
+		ret = relay_rotate_rename(recv_hdr, conn);
+		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:
 		ERR("Received unknown command (%u)", be32toh(recv_hdr->cmd));
@@ -2308,23 +2461,9 @@ static int handle_index_data(struct relay_stream *stream, uint64_t net_seq_num,
 	}
 
 	if (rotate_index || !stream->index_file) {
-		uint32_t major, minor;
-
-		/* Put ref on previous index_file. */
-		if (stream->index_file) {
-			lttng_index_file_put(stream->index_file);
-			stream->index_file = NULL;
-		}
-		major = stream->trace->session->major;
-		minor = stream->trace->session->minor;
-		stream->index_file = lttng_index_file_create(stream->path_name,
-				stream->channel_name,
-			        -1, -1, stream->tracefile_size,
-				tracefile_array_get_file_index_head(stream->tfa),
-				lttng_to_index_major(major, minor),
-				lttng_to_index_minor(major, minor));
-		if (!stream->index_file) {
-			ret = -1;
+		ret = rotate_index_file(stream);
+		if (ret < 0) {
+			ERR("Failed to rotate index");
 			/* Put self-ref for this index due to error. */
 			relay_index_put(index);
 			index = NULL;

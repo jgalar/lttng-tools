@@ -4132,6 +4132,17 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 	return 0;
 }
 
+static
+const char *get_base_path(struct ltt_session *session,
+		struct consumer_output *consumer)
+{
+	if (session->net_handle > 0) {
+		return consumer->dst.net.base_dir;
+	} else {
+		return consumer->dst.session_root_path;
+	}
+}
+
 /*
  * Command LTTNG_ROTATE_SESSION from the lttng-ctl library.
  *
@@ -4168,18 +4179,21 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	/* Special case for the first rotation. */
 	if (session->rotate_count == 0) {
+		const char *base_path = NULL;
+
 		/* Either one of the two sessions is enough to get the root path. */
 		if (session->kernel_session) {
-			snprintf(session->rotation_chunk.current_rotate_path,
-					PATH_MAX, "%s",
-					session->kernel_session->consumer->dst.session_root_path);
+			base_path = get_base_path(session, session->kernel_session->consumer);
 		} else if (session->ust_session) {
-			snprintf(session->rotation_chunk.current_rotate_path,
-					PATH_MAX, "%s",
-					session->ust_session->consumer->dst.session_root_path);
+			base_path = get_base_path(session, session->ust_session->consumer);
 		} else {
 			assert(0);
 		}
+		assert(base_path);
+		snprintf(session->rotation_chunk.current_rotate_path,
+				PATH_MAX, "%s",
+				base_path);
+		fprintf(stderr, "b: %s\n", base_path);
 	} else {
 		/*
 		 * The currently active tracing path is now the folder we
@@ -4211,7 +4225,7 @@ int cmd_rotate_session(struct ltt_session *session,
 		/* The active path for the next rotation/destroy. */
 		snprintf(session->rotation_chunk.active_tracing_path,
 				PATH_MAX, "%s/%s-",
-				session->kernel_session->consumer->dst.session_root_path,
+				get_base_path(session, session->kernel_session->consumer),
 				datetime);
 		/* The sub-directory for the consumer. */
 		snprintf(session->kernel_session->consumer->chunk_path,
@@ -4225,7 +4239,7 @@ int cmd_rotate_session(struct ltt_session *session,
 	if (session->ust_session) {
 		snprintf(session->rotation_chunk.active_tracing_path,
 				PATH_MAX, "%s/%s-",
-				session->ust_session->consumer->dst.session_root_path,
+				get_base_path(session, session->ust_session->consumer),
 				datetime);
 		snprintf(session->ust_session->consumer->chunk_path,
 				PATH_MAX, "/%s-", datetime);

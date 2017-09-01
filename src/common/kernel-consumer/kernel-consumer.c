@@ -1173,9 +1173,9 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				msg.u.rotate_rename.session_id);
 		ret = lttng_consumer_rotate_rename(msg.u.rotate_rename.current_path,
 				msg.u.rotate_rename.new_path,
-				msg.u.rotate_rename.create,
 				msg.u.rotate_rename.uid,
-				msg.u.rotate_rename.gid);
+				msg.u.rotate_rename.gid,
+				msg.u.rotate_rename.relayd_id);
 		if (ret < 0) {
 			ERR("Rotate rename failed");
 			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;

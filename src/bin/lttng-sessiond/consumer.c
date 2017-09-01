@@ -1643,7 +1643,7 @@ error:
 
 int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 		struct consumer_output *output, char *current_path, char *new_path,
-		uint32_t create, uid_t uid, gid_t gid)
+		uid_t uid, gid_t gid)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
@@ -1655,25 +1655,18 @@ int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 	memset(&msg, 0, sizeof(msg));
 	msg.cmd_type = LTTNG_CONSUMER_ROTATE_RENAME;
 	msg.u.rotate_rename.session_id = session_id;
-	msg.u.rotate_rename.create = create;
 	msg.u.rotate_rename.uid = uid;
 	msg.u.rotate_rename.gid = gid;
+	snprintf(msg.u.rotate_rename.current_path, PATH_MAX, "%s", current_path);
+	snprintf(msg.u.rotate_rename.new_path, PATH_MAX, "%s", new_path);
+	fprintf(stderr, "rotate rename from %s to %s\n", current_path,
+			new_path);
+
 
 	if (output->type == CONSUMER_DST_NET) {
-		fprintf(stderr, "SUBDIR: %s\n", output->subdir);
-		fprintf(stderr, "SUBDIR: %s\n", output->dst.net.control.subdir);
-		ERR("TODO");
-		ret = -1;
 		msg.u.rotate_rename.relayd_id = output->net_seq_index;
-		goto error;
 	} else {
 		msg.u.rotate_rename.relayd_id = (uint64_t) -1ULL;
-		snprintf(msg.u.rotate_rename.current_path, PATH_MAX, "%s",
-				current_path);
-		snprintf(msg.u.rotate_rename.new_path, PATH_MAX, "%s",
-				new_path);
-		fprintf(stderr, "rotate rename from %s to %s\n", current_path,
-				new_path);
 	}
 
 	health_code_update();

@@ -82,7 +82,7 @@ end:
 }
 
 int session_rename_chunk(struct ltt_session *session, char *current_path,
-		char *new_path, uint32_t create)
+		char *new_path)
 {
 	int ret;
 	struct consumer_socket *socket;
@@ -121,7 +121,7 @@ int session_rename_chunk(struct ltt_session *session, char *current_path,
 	cds_lfht_for_each_entry(output->socks->ht, &iter.iter, socket, node.node) {
 		pthread_mutex_lock(socket->lock);
 		ret = consumer_rotate_rename(socket, session->id, output,
-				current_path, new_path, create, uid, gid);
+				current_path, new_path, uid, gid);
 		pthread_mutex_unlock(socket->lock);
 		if (ret) {
 			ERR("Consumer rename chunk");
@@ -158,16 +158,23 @@ int rename_first_chunk(struct ltt_session *session,
 	}
 
 	/* Current domain path: <session>/kernel */
-	snprintf(tmppath, PATH_MAX, "%s/%s",
-			consumer->dst.session_root_path, consumer->subdir);
+	if (session->net_handle > 0) {
+		snprintf(tmppath, PATH_MAX, "%s/%s",
+				consumer->dst.net.base_dir, consumer->subdir);
+	} else {
+		snprintf(tmppath, PATH_MAX, "%s/%s",
+				consumer->dst.session_root_path, consumer->subdir);
+	}
 	/* New domain path: <session>/<start-date>-<end-date>-<rotate-count>/kernel */
 	snprintf(tmppath2, PATH_MAX, "%s/%s",
 			new_path, consumer->subdir);
+	fprintf(stderr, "A: %s, B: %s, C: %s\n",
+			consumer->dst.net.base_dir, consumer->subdir, new_path);
 	/*
 	 * Move the per-domain folder inside the first rotation
 	 * folder.
 	 */
-	ret = session_rename_chunk(session, tmppath, tmppath2, 1);
+	ret = session_rename_chunk(session, tmppath, tmppath2);
 	if (ret < 0) {
 		ERR("Rename first trace directory");
 		ret = -LTTNG_ERR_ROTATE_NO_DATA;
@@ -271,7 +278,7 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 
 		ret = session_rename_chunk(session,
 				session->rotation_chunk.current_rotate_path,
-				new_path, 0);
+				new_path);
 		if (ret) {
 			ERR("Session rename");
 			ret = 0;
