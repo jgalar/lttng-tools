@@ -249,7 +249,7 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 			}
 		}
 		if (session->ust_session) {
-			fprintf(stderr, "rename %s/kernel to %s\n",
+			fprintf(stderr, "rename %s/ust to %s\n",
 					session->rotation_chunk.current_rotate_path,
 					new_path);
 			ret = rename_first_chunk(session,
@@ -291,7 +291,6 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 	 */
 	snprintf(session->rotation_chunk.current_rotate_path, PATH_MAX,
 			"%s", new_path);
-	session->rotate_pending = 0;
 
 	goto end;
 

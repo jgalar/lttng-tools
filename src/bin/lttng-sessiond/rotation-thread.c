@@ -323,6 +323,7 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 			ERR("Failed to rename completed rotation chunk");
 			goto end;
 		}
+		channel_info->session->rotate_pending = 0;
 	}
 
 	channel_rotation_info_destroy(channel_info);
