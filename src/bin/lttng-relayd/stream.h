@@ -129,6 +129,22 @@ struct relay_stream {
 	struct lttng_ht_node_u64 node;
 	bool in_stream_ht;		/* is stream in stream hash table. */
 	struct rcu_head rcu_node;	/* For call_rcu teardown. */
+	/*
+	 * When we have written the data and index corresponding to this
+	 * seq_num, rotate the tracefile (session rotation). The path_name is
+	 * already up-to-date.
+	 * This is set to -1ULL when no rotation is pending. Always
+	 * read/updated with stream lock held.
+	 */
+	uint64_t rotate_at_seq_num;
+	/*
+	 * This is the id of the chunk where we are writing to if no rotate is
+	 * pending (rotate_at_seq_num == -1ULL). If a rotate is pending, this
+	 * is the chunk_id we will have after the rotation. It must be updated
+	 * atomically with rotate_at_seq_num. Always read/updated with stream
+	 * lock held.
+	 */
+	uint64_t chunk_id;
 };
 
 struct relay_stream *stream_create(struct ctf_trace *trace,

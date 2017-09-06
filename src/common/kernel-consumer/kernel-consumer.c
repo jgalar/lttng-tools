@@ -1141,6 +1141,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				msg.u.rotate_channel.pathname,
 				msg.u.rotate_channel.relayd_id,
 				msg.u.rotate_channel.metadata,
+				msg.u.rotate_channel.new_chunk_id,
 				ctx);
 		if (ret < 0) {
 			ERR("Rotate channel failed");

@@ -979,7 +979,8 @@ error:
 }
 
 int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
-		const char *new_pathname)
+		const char *new_pathname, uint64_t new_chunk_id,
+		uint64_t seq_num)
 {
 	int ret;
 	struct lttcomm_relayd_rotate_stream msg;
@@ -992,6 +993,8 @@ int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
 
 	memset(&msg, 0, sizeof(msg));
 	msg.stream_id = htobe64(stream_id);
+	msg.rotate_at_seq_num = htobe64(seq_num);
+	msg.new_chunk_id = htobe64(new_chunk_id);
 	if (lttng_strncpy(msg.new_pathname, new_pathname,
 				sizeof(msg.new_pathname))) {
 		ret = -1;

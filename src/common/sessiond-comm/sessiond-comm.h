@@ -549,6 +549,7 @@ struct lttcomm_consumer_msg {
 			uint32_t metadata; /* This is a metadata channel. */
 			uint64_t relayd_id; /* Relayd id if apply. */
 			uint64_t key;
+			uint64_t new_chunk_id;
 		} LTTNG_PACKED rotate_channel;
 		struct {
 			char current_path[PATH_MAX];

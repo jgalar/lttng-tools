@@ -6359,7 +6359,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 				ret = consumer_rotate_channel(socket,
 						reg_chan->consumer_key,
 						usess->uid, usess->gid,
-						usess->consumer, pathname, 0);
+						usess->consumer, pathname, 0,
+						session->rotate_count);
 				if (ret < 0) {
 					goto error;
 				}
@@ -6370,7 +6371,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 			ret = consumer_rotate_channel(socket,
 					reg->registry->reg.ust->metadata_key,
 					usess->uid, usess->gid,
-					usess->consumer, pathname, 1);
+					usess->consumer, pathname, 1,
+					session->rotate_count);
 			if (ret < 0) {
 				goto error;
 			}
@@ -6441,7 +6443,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 				}
 				ret = consumer_rotate_channel(socket, ua_chan->key,
 						ua_sess->euid, ua_sess->egid,
-						ua_sess->consumer, pathname, 0);
+						ua_sess->consumer, pathname, 0,
+						session->rotate_count);
 				if (ret < 0) {
 					goto error;
 				}
@@ -6451,7 +6454,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 			(void) push_metadata(registry, usess->consumer);
 			ret = consumer_rotate_channel(socket, registry->metadata_key,
 					ua_sess->euid, ua_sess->egid,
-					ua_sess->consumer, pathname, 1);
+					ua_sess->consumer, pathname, 1,
+					session->rotate_count);
 			if (ret < 0) {
 				goto error;
 			}

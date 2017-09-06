@@ -3936,7 +3936,7 @@ end:
  * Returns 0 on success, < 0 on error
  */
 int lttng_consumer_rotate_channel(uint64_t key, char *path,
-		uint64_t relayd_id, uint32_t metadata,
+		uint64_t relayd_id, uint32_t metadata, uint64_t new_chunk_id,
 		struct lttng_consumer_local_data *ctx)
 {
 	int ret;
@@ -3956,6 +3956,7 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		goto end;
 	}
 	pthread_mutex_lock(&channel->lock);
+	channel->current_chunk_id = new_chunk_id;
 	snprintf(channel->pathname, PATH_MAX, "%s", path);
 	ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
 			channel->uid, channel->gid);
@@ -4163,8 +4164,11 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 		goto end;
 	}
 
+	/* FIXME: chan_ro ? */
 	ret = relayd_rotate_stream(&relayd->control_sock,
-			stream->relayd_stream_id, stream->channel_ro_pathname);
+			stream->relayd_stream_id, stream->channel_ro_pathname,
+			stream->chan->current_chunk_id,
+			stream->last_sequence_number);
 
 end:
 	return ret;

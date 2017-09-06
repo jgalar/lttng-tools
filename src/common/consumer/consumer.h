@@ -236,6 +236,13 @@ struct lttng_consumer_channel {
 	 * daemon that this channel has finished its rotation.
 	 */
 	uint64_t nr_stream_rotate_pending;
+
+	/*
+	 * The chunk id where we currently write the data. This value is sent
+	 * to the relay when we add a stream and when a stream rotates. This
+	 * allows to keep track of where each stream on the relay is writing.
+	 */
+	uint64_t current_chunk_id;
 };
 
 /*
@@ -818,7 +825,7 @@ void consumer_del_stream_for_metadata(struct lttng_consumer_stream *stream);
 int consumer_create_index_file(struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		uint64_t relayd_id, uint32_t metadata,
-		struct lttng_consumer_local_data *ctx);
+		uint64_t new_chunk_id, struct lttng_consumer_local_data *ctx);
 int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream,
 		unsigned long len);
 int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,

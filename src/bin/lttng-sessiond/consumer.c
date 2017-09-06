@@ -1594,10 +1594,14 @@ end:
 /*
  * Ask the consumer to rotate a channel.
  * app_pathname only used for UST, it contains the path after /ust/.
+ *
+ * The new_chunk_id is the session->rotate_count that has been incremented
+ * when the rotation started. On the relay, this allows to keep track in which
+ * chunk each stream is currently writing to (for the rotate_pending operation).
  */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
-		char *app_pathname, uint32_t metadata)
+		char *app_pathname, uint32_t metadata, uint64_t new_chunk_id)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
@@ -1611,6 +1615,7 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	msg.cmd_type = LTTNG_CONSUMER_ROTATE_CHANNEL;
 	msg.u.rotate_channel.key = key;
 	msg.u.rotate_channel.metadata = metadata;
+	msg.u.rotate_channel.new_chunk_id = new_chunk_id;
 
 	if (output->type == CONSUMER_DST_NET) {
 		fprintf(stderr, "BASE: %s\n", output->dst.net.base_dir);
