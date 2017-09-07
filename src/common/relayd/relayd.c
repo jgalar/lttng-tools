@@ -993,8 +993,12 @@ int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
 
 	memset(&msg, 0, sizeof(msg));
 	msg.stream_id = htobe64(stream_id);
-	msg.rotate_at_seq_num = htobe64(seq_num);
 	msg.new_chunk_id = htobe64(new_chunk_id);
+	/*
+	 * the seq_num is invalid for metadata streams, but it is ignored on
+	 * the relay.
+	 */
+	msg.rotate_at_seq_num = htobe64(seq_num);
 	if (lttng_strncpy(msg.new_pathname, new_pathname,
 				sizeof(msg.new_pathname))) {
 		ret = -1;
