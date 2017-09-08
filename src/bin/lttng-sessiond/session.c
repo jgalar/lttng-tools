@@ -400,6 +400,9 @@ int session_create(char *name, uid_t uid, gid_t gid)
 		goto error;
 	}
 
+	new_session->rotate_pending = false;
+	new_session->rotate_pending_relay = false;
+
 	/* Add new session to the session list */
 	session_lock_list();
 	new_session->id = add_session_list(new_session);

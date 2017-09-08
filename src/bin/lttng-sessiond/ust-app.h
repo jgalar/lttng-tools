@@ -593,6 +593,12 @@ int ust_app_rotate_session(struct ltt_session *session)
 {
 	return 0;
 }
+
+static inline
+int ust_app_relay_rotate_pending(struct ltt_session *session)
+{
+	return 0;
+}
 #endif /* HAVE_LIBLTTNG_UST_CTL */
 
 #endif /* _LTT_UST_APP_H */

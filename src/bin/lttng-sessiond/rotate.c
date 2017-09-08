@@ -195,12 +195,6 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 	char *new_path = NULL;
 	int ret;
 
-	/*
-	 * TODO 2: on first rotate, the current_rotate_path is the session root
-	 * path, so move the kernel/ and ust/ folders inside the
-	 * "session->last_chunk_start_ts-now()"
-	 */
-
 	timeinfo = localtime(&ts);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
 
@@ -298,6 +292,62 @@ error:
 	session->rotate_status = LTTNG_ROTATE_ERROR;
 end:
 	free(new_path);
+	return ret;
+}
+
+int relay_rotate_pending(struct ltt_session *session)
+{
+	int ret;
+	struct consumer_socket *socket;
+	struct consumer_output *output;
+	struct lttng_ht_iter iter;
+
+	/*
+	 * Either one of the sessions is enough to find the consumer_output
+	 * and uid/gid.
+	 */
+	if (session->kernel_session) {
+		output = session->kernel_session->consumer;
+	} else if (session->ust_session) {
+		output = session->ust_session->consumer;
+	} else {
+		assert(0);
+	}
+
+	if (!output || !output->socks) {
+		ERR("No consumer output found");
+		ret = -1;
+		goto end;
+	}
+
+	rcu_read_lock();
+	/*
+	 * We have to iterate to find a socket, but we only need to send the
+	 * rotate pending command to one consumer, so we break after the first
+	 * one.
+	 */
+	cds_lfht_for_each_entry(output->socks->ht, &iter.iter, socket, node.node) {
+		pthread_mutex_lock(socket->lock);
+		/*
+		 * (rotate_count - 1) is the chunk id that we want to make sure
+		 * is completely flushed to disk on the relay.
+		 */
+		ret = consumer_rotate_pending_relay(socket, output, session->id,
+				session->rotate_count - 1);
+		pthread_mutex_unlock(socket->lock);
+		if (ret) {
+			ERR("Consumer rename chunk");
+			ret = -1;
+			rcu_read_unlock();
+			goto end;
+		}
+		break;
+	}
+	rcu_read_unlock();
+
+	ret = 0;
+
+end:
 	return ret;
 }
 

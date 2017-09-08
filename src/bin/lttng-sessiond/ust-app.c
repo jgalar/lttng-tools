@@ -6360,7 +6360,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 						reg_chan->consumer_key,
 						usess->uid, usess->gid,
 						usess->consumer, pathname, 0,
-						session->rotate_count);
+						session->rotate_count,
+						&session->rotate_pending_relay);
 				if (ret < 0) {
 					goto error;
 				}
@@ -6372,7 +6373,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 					reg->registry->reg.ust->metadata_key,
 					usess->uid, usess->gid,
 					usess->consumer, pathname, 1,
-					session->rotate_count);
+					session->rotate_count,
+					&session->rotate_pending_relay);
 			if (ret < 0) {
 				goto error;
 			}
@@ -6444,7 +6446,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 				ret = consumer_rotate_channel(socket, ua_chan->key,
 						ua_sess->euid, ua_sess->egid,
 						ua_sess->consumer, pathname, 0,
-						session->rotate_count);
+						session->rotate_count,
+						&session->rotate_pending_relay);
 				if (ret < 0) {
 					goto error;
 				}
@@ -6455,7 +6458,8 @@ int ust_app_rotate_session(struct ltt_session *session)
 			ret = consumer_rotate_channel(socket, registry->metadata_key,
 					ua_sess->euid, ua_sess->egid,
 					ua_sess->consumer, pathname, 1,
-					session->rotate_count);
+					session->rotate_count,
+					&session->rotate_pending_relay);
 			if (ret < 0) {
 				goto error;
 			}
@@ -6468,7 +6472,7 @@ int ust_app_rotate_session(struct ltt_session *session)
 	}
 
 	if (nr_app == 0 && nr_channels == 0) {
-		session->rotate_pending = 0;
+		session->rotate_pending = false;
 		session->rotate_status = LTTNG_ROTATE_EMPTY;
 	}
 

@@ -135,14 +135,13 @@ struct ltt_session {
 	 * Number of session rotation for this session.
 	 */
 	uint64_t rotate_count;
-	unsigned int rotate_pending:1;
+	bool rotate_pending;
+	bool rotate_pending_relay;
 	enum lttng_rotate_status rotate_status;
 	/*
 	 * Number of channels waiting for a rotate.
 	 * When this number reaches 0, we can handle the rename of the chunk
 	 * folder and inform the client that the rotate is finished.
-	 *
-	 * TODO: replace rotate_pending checks by that.
 	 */
 	unsigned int nr_chan_rotate_pending;
 	struct ltt_session_chunk rotation_chunk;

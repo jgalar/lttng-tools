@@ -130,6 +130,8 @@ enum lttcomm_relayd_command {
 	RELAYD_ROTATE_STREAM                = 18,
 	/* Rename a chunk after the rotation is completed (2.11+) */
 	RELAYD_ROTATE_RENAME                = 19,
+	/* Check if a chunk has data pending (2.11+) */
+	RELAYD_ROTATE_PENDING               = 20,
 };
 
 /*
@@ -556,10 +558,14 @@ struct lttcomm_consumer_msg {
 			char new_path[PATH_MAX];
 			uint64_t relayd_id; /* Relayd id if apply. */
 			uint64_t session_id;
-			uint32_t create; /* Create new_path before move. */
 			uint32_t uid;
 			uint32_t gid;
 		} LTTNG_PACKED rotate_rename;
+		struct {
+			uint64_t relayd_id;
+			uint64_t session_id;
+			uint64_t chunk_id;
+		} LTTNG_PACKED rotate_pending_relay;
 	} u;
 } LTTNG_PACKED;
 

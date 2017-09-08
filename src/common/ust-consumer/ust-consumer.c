@@ -1992,6 +1992,28 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 
 	}
+	case LTTNG_CONSUMER_ROTATE_PENDING_RELAY:
+	{
+		DBG("Consumer rotate pending on relay for session %" PRIu64,
+				msg.u.rotate_pending_relay.session_id);
+		ret = lttng_consumer_rotate_pending_relay(
+				msg.u.rotate_pending_relay.session_id,
+				msg.u.rotate_pending_relay.relayd_id,
+				msg.u.rotate_pending_relay.chunk_id);
+		if (ret < 0) {
+			ERR("Rotate pending relay failed");
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		}
+
+		health_code_update();
+
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+
+	}
 	default:
 		break;
 	}

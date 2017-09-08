@@ -995,7 +995,7 @@ int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
 	msg.stream_id = htobe64(stream_id);
 	msg.new_chunk_id = htobe64(new_chunk_id);
 	/*
-	 * the seq_num is invalid for metadata streams, but it is ignored on
+	 * The seq_num is invalid for metadata streams, but it is ignored on
 	 * the relay.
 	 */
 	msg.rotate_at_seq_num = htobe64(seq_num);
@@ -1082,6 +1082,50 @@ int relayd_rotate_rename(struct lttcomm_relayd_sock *rsock,
 	}
 
 	DBG("Relayd rotate rename completed successfully");
+
+error:
+	return ret;
+
+}
+
+int relayd_rotate_pending(struct lttcomm_relayd_sock *rsock, uint64_t chunk_id)
+{
+	int ret;
+	struct lttcomm_relayd_rotate_pending msg;
+	struct lttcomm_relayd_generic_reply reply;
+
+	/* Code flow error. Safety net. */
+	assert(rsock);
+
+	DBG("Relayd rotate pending");
+
+	memset(&msg, 0, sizeof(msg));
+	msg.chunk_id = htobe64(chunk_id);
+
+	/* Send command */
+	ret = send_command(rsock, RELAYD_ROTATE_PENDING, (void *) &msg, sizeof(msg), 0);
+	if (ret < 0) {
+		goto error;
+	}
+
+	/* Receive response */
+	ret = recv_reply(rsock, (void *) &reply, sizeof(reply));
+	if (ret < 0) {
+		goto error;
+	}
+
+	reply.ret_code = be32toh(reply.ret_code);
+
+	/* Return session id or negative ret code. */
+	if (reply.ret_code != LTTNG_OK) {
+		ret = -1;
+		ERR("Relayd rotate pending replied error %d", reply.ret_code);
+	} else {
+		/* Success */
+		ret = 0;
+	}
+
+	DBG("Relayd rotate pending completed successfully");
 
 error:
 	return ret;

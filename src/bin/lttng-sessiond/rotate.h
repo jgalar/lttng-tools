@@ -32,4 +32,6 @@ int session_rename_chunk(struct ltt_session *session, char *current_path,
 
 int rename_complete_chunk(struct ltt_session *session, time_t ts);
 
+int relay_rotate_pending(struct ltt_session *session);
+
 #endif /* ROTATE_H */
