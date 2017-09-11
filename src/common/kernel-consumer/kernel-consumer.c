@@ -1192,13 +1192,15 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			/* Somehow, the session daemon is not responding anymore. */
 			goto end_nosignal;
 		}
-
+		break;
 	}
 	case LTTNG_CONSUMER_ROTATE_PENDING_RELAY:
 	{
+		uint32_t pending;
+
 		DBG("Consumer rotate pending on relay for session %" PRIu64,
 				msg.u.rotate_pending_relay.session_id);
-		ret = lttng_consumer_rotate_pending_relay(
+		pending = lttng_consumer_rotate_pending_relay(
 				msg.u.rotate_pending_relay.session_id,
 				msg.u.rotate_pending_relay.relayd_id,
 				msg.u.rotate_pending_relay.chunk_id);
@@ -1215,6 +1217,13 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			goto end_nosignal;
 		}
 
+		/* Send back returned value to session daemon */
+		ret = lttcomm_send_unix_sock(sock, &pending, sizeof(pending));
+		if (ret < 0) {
+			PERROR("send data pending ret code");
+			goto error_fatal;
+		}
+		break;
 	}
 	default:
 		goto end_nosignal;

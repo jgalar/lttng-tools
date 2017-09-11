@@ -295,7 +295,7 @@ end:
 	return ret;
 }
 
-int relay_rotate_pending(struct ltt_session *session)
+int relay_rotate_pending(struct ltt_session *session, uint64_t chunk_id)
 {
 	int ret;
 	struct consumer_socket *socket;
@@ -320,6 +320,8 @@ int relay_rotate_pending(struct ltt_session *session)
 		goto end;
 	}
 
+	ret = -1;
+
 	rcu_read_lock();
 	/*
 	 * We have to iterate to find a socket, but we only need to send the
@@ -328,24 +330,12 @@ int relay_rotate_pending(struct ltt_session *session)
 	 */
 	cds_lfht_for_each_entry(output->socks->ht, &iter.iter, socket, node.node) {
 		pthread_mutex_lock(socket->lock);
-		/*
-		 * (rotate_count - 1) is the chunk id that we want to make sure
-		 * is completely flushed to disk on the relay.
-		 */
 		ret = consumer_rotate_pending_relay(socket, output, session->id,
-				session->rotate_count - 1);
+				chunk_id);
 		pthread_mutex_unlock(socket->lock);
-		if (ret) {
-			ERR("Consumer rename chunk");
-			ret = -1;
-			rcu_read_unlock();
-			goto end;
-		}
 		break;
 	}
 	rcu_read_unlock();
-
-	ret = 0;
 
 end:
 	return ret;

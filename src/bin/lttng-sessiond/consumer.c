@@ -1697,7 +1697,7 @@ int consumer_rotate_pending_relay(struct consumer_socket *socket,
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
-	int32_t ret_code = 0;
+	uint32_t pending = 0;
 
 	assert(socket);
 
@@ -1716,16 +1716,12 @@ int consumer_rotate_pending_relay(struct consumer_socket *socket,
 		goto error;
 	}
 
-	/*
-	 * No need for a recv reply status because the answer to the command is
-	 * the reply status message.
-	 */
-	ret = consumer_socket_recv(socket, &ret_code, sizeof(ret_code));
+	ret = consumer_socket_recv(socket, &pending, sizeof(pending));
 	if (ret < 0) {
 		goto error;
 	}
 
-	ret = ret_code;
+	ret = pending;
 
 error:
 	health_code_update();

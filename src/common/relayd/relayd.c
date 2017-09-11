@@ -1117,12 +1117,12 @@ int relayd_rotate_pending(struct lttcomm_relayd_sock *rsock, uint64_t chunk_id)
 	reply.ret_code = be32toh(reply.ret_code);
 
 	/* Return session id or negative ret code. */
-	if (reply.ret_code != LTTNG_OK) {
+	if (reply.ret_code >= LTTNG_OK) {
 		ret = -1;
 		ERR("Relayd rotate pending replied error %d", reply.ret_code);
 	} else {
-		/* Success */
-		ret = 0;
+		/* No error, just rotate pending state */
+		ret = reply.ret_code;
 	}
 
 	DBG("Relayd rotate pending completed successfully");
