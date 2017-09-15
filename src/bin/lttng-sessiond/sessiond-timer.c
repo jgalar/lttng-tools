@@ -236,6 +236,21 @@ int sessiond_timer_signal_init(void)
 	return 0;
 }
 
+static
+void relay_rotation_pending_timer(struct timer_thread_parameters *ctx,
+		int sig, siginfo_t *si)
+{
+	int ret;
+	struct ltt_session *session = si->si_value.sival_ptr;
+	assert(session);
+
+	ret = lttng_write(ctx->rotate_timer_pipe, &session->id,
+			sizeof(session->id));
+	if (ret < sizeof(session->id)) {
+		PERROR("wakeup rotate pipe");
+	}
+}
+
 /*
  * This thread is the sighandler for the timer signals.
  */
@@ -244,6 +259,7 @@ void *sessiond_timer_thread(void *data)
 	int signr;
 	sigset_t mask;
 	siginfo_t info;
+	struct timer_thread_parameters *ctx = data;
 
 	rcu_register_thread();
 	rcu_thread_online();
@@ -283,7 +299,8 @@ void *sessiond_timer_thread(void *data)
 			fprintf(stderr, "KILL\n");
 			goto end;
 		} else if (signr == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
-			fprintf(stderr, "ALLO TIMER\n");
+			fprintf(stderr, "PENDING TIMER\n");
+			relay_rotation_pending_timer(ctx, info.si_signo, &info);
 		} else {
 			ERR("Unexpected signal %d\n", info.si_signo);
 		}

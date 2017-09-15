@@ -4177,35 +4177,9 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto error;
 	}
 
-	if (session->rotate_pending) {
+	if (session->rotate_pending || session->rotate_pending_relay) {
 		ret = -LTTNG_ERR_ROTATE_PENDING;
 		goto error;
-	}
-
-	/*
-	 * If the user did not wait for the previous rotation to complete
-	 * (--no-wait), we have to ensure now that the relay had time to
-	 * receive all the data pending from the previous rotation.
-	 */
-	if (session->rotate_pending_relay) {
-		ret = relay_rotate_pending(session,
-				session->rotate_count - 1);
-		if (ret == 0) {
-			DBG("Previous rotation completed on the relay for session %s"
-					", rotate_id %" PRIu64,
-					session->name,
-					session->rotate_count);
-			session->rotate_pending_relay = 0;
-		} else if (ret == 1) {
-			DBG("Session %s, rotate_id %" PRIu64 " still pending "
-					"on the relay",
-					session->name, session->rotate_count);
-			ret = -LTTNG_ERR_ROTATE_PENDING;
-			goto error;
-		} else {
-			ERR("Failed to check rotate pending on the relay");
-			ret = -LTTNG_ERR_UNK;
-		}
 	}
 
 	/* Special case for the first rotation. */
@@ -4333,43 +4307,9 @@ int cmd_rotate_pending(struct ltt_session *session,
 		(*pending_return)->status = LTTNG_ROTATE_EMPTY;
 	/* Rotate with a relay */
 	} else if (session->rotate_pending_relay) {
-		/* The consumer has not finished the rotation. */
-		if (session->rotate_pending) {
-			DBG("Session %s, rotate_id %" PRIu64 " still pending",
-					session->name, session->rotate_count);
-			(*pending_return)->status = LTTNG_ROTATE_STARTED;
-		} else {
-			/*
-			 * The consumer finished the rotation, but we don't
-			 * know if the relay still has data pending. We need to
-			 * find one consumer_output to talk to the relay and
-			 * ask it.
-			 *
-			 * (rotate_count - 1) is the chunk id that we want to
-			 * make sure is completely flushed to disk on the
-			 * relay.
-			 */
-			ret = relay_rotate_pending(session,
-					session->rotate_count - 1);
-			if (ret == 0) {
-				DBG("Rotate completed on the relay for session %s"
-						", rotate_id %" PRIu64,
-						session->name,
-						session->rotate_count);
-				session->rotate_pending_relay = 0;
-				(*pending_return)->status = LTTNG_ROTATE_COMPLETED;
-				snprintf((*pending_return)->output_path, PATH_MAX, "%s",
-						session->rotation_chunk.current_rotate_path);
-			} else if (ret == 1) {
-				DBG("Session %s, rotate_id %" PRIu64 " still pending "
-						"on the relay",
-						session->name, session->rotate_count);
-				(*pending_return)->status = LTTNG_ROTATE_STARTED;
-			} else {
-				ERR("Failed to check rotate pending on the relay");
-				(*pending_return)->status = LTTNG_ROTATE_ERROR;
-			}
-		}
+		DBG("Session %s, rotate_id %" PRIu64 " still pending",
+				session->name, session->rotate_count);
+		(*pending_return)->status = LTTNG_ROTATE_STARTED;
 	} else if (session->rotate_pending) {
 		DBG("Session %s, rotate_id %" PRIu64 " still pending",
 				session->name, session->rotate_count);

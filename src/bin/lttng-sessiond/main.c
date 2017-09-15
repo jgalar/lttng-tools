@@ -5726,6 +5726,7 @@ int main(int argc, char **argv)
 	struct lttng_pipe *ust32_channel_rotate_pipe = NULL,
 			*ust64_channel_rotate_pipe = NULL,
 			*kernel_channel_rotate_pipe = NULL;
+	struct timer_thread_parameters timer_thread_ctx;
 
 	init_kernel_workarounds();
 
@@ -6054,6 +6055,11 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto exit_init_data;
 	}
+	/*
+	 * The write-side of the pipe is used by the timer thread to wakeup
+	 * the rotation thread when needed.
+	 */
+	timer_thread_ctx.rotate_timer_pipe = rotate_timer_pipe[1];
 
 	/* 64 bits consumerd path setup */
 	ret = snprintf(ustconsumer64_data.err_unix_sock_path, PATH_MAX,
@@ -6308,7 +6314,7 @@ int main(int argc, char **argv)
 
 	/* Create timer thread. */
 	ret = pthread_create(&timer_thread, default_pthread_attr(),
-			sessiond_timer_thread, NULL);
+			sessiond_timer_thread, &timer_thread_ctx);
 	if (ret) {
 		errno = ret;
 		PERROR("pthread_create timer");

@@ -41,6 +41,10 @@ struct timer_signal_data {
 	pthread_mutex_t lock;
 };
 
+struct timer_thread_parameters {
+	int rotate_timer_pipe;
+};
+
 void *sessiond_timer_thread(void *data);
 int sessiond_timer_signal_init(void);
 

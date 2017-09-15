@@ -398,7 +398,8 @@ int handle_rotate_timer_pipe(int fd, uint32_t revents,
 	if (ret == 0) {
 		DBG("[rotation-thread] Rotation completed on the relay for "
 				"session %" PRIu64, session_id);
-		/* TODO: delete timer */
+		session->rotate_pending_relay = 0;
+		sessiond_timer_rotate_pending_stop(session);
 	} else if (ret == 1) {
 		DBG("[rotation-thread] Rotation still pending on the relay for "
 				"session %" PRIu64, session_id);
