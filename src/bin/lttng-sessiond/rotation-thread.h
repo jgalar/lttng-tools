@@ -51,6 +51,7 @@ struct rotation_thread_handle {
 	int ust64_consumer;
 	int kernel_consumer;
 	int thread_quit_pipe;
+	int rotate_timer_pipe;
 };
 
 struct rotation_thread_state {
@@ -62,7 +63,7 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		struct lttng_pipe *ust32_channel_rotate_pipe,
 		struct lttng_pipe *ust64_channel_rotate_pipe,
 		struct lttng_pipe *kernel_channel_rotate_pipe,
-		int thread_quit_pipe);
+		int thread_quit_pipe, int rotate_timer_pipe);
 
 void rotation_thread_handle_destroy(
 		struct rotation_thread_handle *handle);

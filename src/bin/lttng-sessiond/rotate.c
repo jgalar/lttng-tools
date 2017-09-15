@@ -340,4 +340,3 @@ int relay_rotate_pending(struct ltt_session *session, uint64_t chunk_id)
 end:
 	return ret;
 }
-

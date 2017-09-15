@@ -77,6 +77,7 @@
 #include "syscall.h"
 #include "agent.h"
 #include "ht-cleanup.h"
+#include "sessiond-timer.h"
 
 #define CONSUMERD_FILE	"lttng-consumerd"
 
@@ -217,6 +218,12 @@ static int apps_cmd_pipe[2] = { -1, -1 };
 
 int apps_cmd_notify_pipe[2] = { -1, -1 };
 
+/*
+ * Pipe to wakeup the rotation thread when the
+ * LTTNG_SESSIOND_SIG_ROTATE_PENDING signal is caught.
+ */
+static int rotate_timer_pipe[2] = { -1, -1 };
+
 /* Pthread, Mutexes and Semaphores */
 static pthread_t apps_thread;
 static pthread_t apps_notify_thread;
@@ -230,6 +237,7 @@ static pthread_t agent_reg_thread;
 static pthread_t load_session_thread;
 static pthread_t notification_thread;
 static pthread_t rotation_thread;
+static pthread_t timer_thread;
 
 /*
  * UST registration command queue. This queue is tied with a futex and uses a N
@@ -502,6 +510,9 @@ static void stop_threads(void)
 	/* Dispatch thread */
 	CMM_STORE_SHARED(dispatch_thread_exit, 1);
 	futex_nto1_wake(&ust_cmd_queue.futex);
+
+	/* timer thread */
+	kill(getpid(), LTTNG_SESSIOND_SIG_EXIT);
 }
 
 /*
@@ -5714,6 +5725,7 @@ int main(int argc, char **argv)
 			*ust64_channel_monitor_pipe = NULL,
 			*kernel_channel_monitor_pipe = NULL;
 	bool notification_thread_running = false;
+	bool timer_thread_running = false;
 	struct lttng_pipe *ust32_channel_rotate_pipe = NULL,
 			*ust64_channel_rotate_pipe = NULL,
 			*kernel_channel_rotate_pipe = NULL;
@@ -6030,6 +6042,17 @@ int main(int argc, char **argv)
 		goto exit_init_data;
 	}
 
+	/*
+	 * Create the rotate_timer_pipe as non blocking because we have to
+	 * write in it from the sighandler.
+	 */
+	ret = utils_create_pipe_cloexec_nonblock(rotate_timer_pipe);
+	if (ret < 0) {
+		ERR("Failed to create rotate pending pipe");
+		retval = -1;
+		goto exit_init_data;
+	}
+
 	/* 64 bits consumerd path setup */
 	ret = snprintf(ustconsumer64_data.err_unix_sock_path, PATH_MAX,
 			DEFAULT_USTCONSUMERD64_ERR_SOCK_PATH, rundir);
@@ -6272,13 +6295,26 @@ int main(int argc, char **argv)
 			ust32_channel_rotate_pipe,
 			ust64_channel_rotate_pipe,
 			kernel_channel_rotate_pipe,
-			thread_quit_pipe[0]);
+			thread_quit_pipe[0],
+			rotate_timer_pipe[0]);
 	if (!rotation_thread_handle) {
 		retval = -1;
 		ERR("Failed to create rotation thread shared data");
 		stop_threads();
 		goto exit_rotation;
 	}
+
+	/* Create timer thread. */
+	ret = pthread_create(&timer_thread, default_pthread_attr(),
+			sessiond_timer_thread, NULL);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_create timer");
+		retval = -1;
+		stop_threads();
+		goto exit_notification;
+	}
+	timer_thread_running = true;
 
 	/* Create rotation thread. */
 	ret = pthread_create(&rotation_thread, default_pthread_attr(),
@@ -6509,6 +6545,16 @@ exit_init_data:
 
 	if (rotation_thread_handle) {
 		rotation_thread_handle_destroy(rotation_thread_handle);
+		ret = close(rotate_timer_pipe[0]);
+		if (ret < 0) {
+			PERROR("Close rotate pending pipe");
+			retval = -1;
+		}
+		ret = close(rotate_timer_pipe[1]);
+		if (ret < 0) {
+			PERROR("Close rotate pending pipe");
+			retval = -1;
+		}
 	}
 
 	ret = pthread_join(rotation_thread, &status);
@@ -6516,6 +6562,15 @@ exit_init_data:
 		errno = ret;
 		PERROR("pthread_join rotation thread");
 		retval = -1;
+	}
+
+	if (timer_thread_running) {
+		ret = pthread_join(timer_thread, &status);
+		if (ret) {
+			errno = ret;
+			PERROR("pthread_join timer thread");
+			retval = -1;
+		}
 	}
 
 	rcu_thread_offline();

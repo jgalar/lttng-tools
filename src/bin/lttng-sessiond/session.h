@@ -161,6 +161,12 @@ struct ltt_session {
 	time_t current_chunk_start_ts;
 	time_t session_last_stop_ts;
 	time_t last_begin_rotation_ts;
+	/*
+	 * Timer to check periodically if a relay has completed the last
+	 * rotation.
+	 */
+	int rotate_relay_pending_timer_enabled;
+	timer_t rotate_relay_pending_timer;
 };
 
 /* Prototypes */
