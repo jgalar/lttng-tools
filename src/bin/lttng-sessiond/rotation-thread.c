@@ -37,6 +37,7 @@
 #include "health-sessiond.h"
 #include "rotate.h"
 #include "cmd.h"
+#include "sessiond-timer.h"
 
 #include <urcu.h>
 #include <urcu/list.h>
@@ -332,6 +333,15 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 			goto end;
 		}
 		channel_info->session->rotate_pending = false;
+		if (channel_info->session->rotate_pending_relay) {
+			ret = sessiond_timer_rotate_pending_start(
+					channel_info->session, 100000);
+			if (ret) {
+				ERR("Enabling rotate pending timer");
+				ret = -1;
+				goto end;
+			}
+		}
 	}
 
 	channel_rotation_info_destroy(channel_info);

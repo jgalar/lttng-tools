@@ -44,7 +44,8 @@ struct timer_signal_data {
 void *sessiond_timer_thread(void *data);
 int sessiond_timer_signal_init(void);
 
-int rotate_pending_timer_start(struct ltt_session *session, unsigned int
+int sessiond_timer_rotate_pending_start(struct ltt_session *session, unsigned int
 		interval_us);
+void sessiond_timer_rotate_pending_stop(struct ltt_session *session);
 
 #endif /* SESSIOND_TIMER_H */

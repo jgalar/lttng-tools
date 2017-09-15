@@ -53,6 +53,7 @@
 #include "notification-thread-commands.h"
 #include "rotate.h"
 #include "rotation-thread.h"
+#include "sessiond-timer.h"
 
 #include "cmd.h"
 
@@ -2764,6 +2765,10 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 		if (ret < 0) {
 			ERR("Renaming session on destroy");
 		}
+	}
+
+	if (session->rotate_relay_pending_timer_enabled) {
+		sessiond_timer_rotate_pending_stop(session);
 	}
 
 	/* Clean kernel session teardown */

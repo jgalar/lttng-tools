@@ -185,7 +185,7 @@ end:
 	return ret;
 }
 
-int rotate_pending_timer_start(struct ltt_session *session, unsigned int
+int sessiond_timer_rotate_pending_start(struct ltt_session *session, unsigned int
 		interval_us)
 {
 	int ret;
@@ -196,6 +196,24 @@ int rotate_pending_timer_start(struct ltt_session *session, unsigned int
 	session->rotate_relay_pending_timer_enabled = !!(ret == 0);
 
 	return ret;
+}
+
+/*
+ * Stop and delete the channel's live timer.
+ */
+void sessiond_timer_rotate_pending_stop(struct ltt_session *session)
+{
+	int ret;
+
+	assert(session);
+
+	ret = session_timer_stop(&session->rotate_relay_pending_timer,
+			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
+	if (ret == -1) {
+		ERR("Failed to stop live timer");
+	}
+
+	session->rotate_relay_pending_timer_enabled = 0;
 }
 
 /*
@@ -256,12 +274,16 @@ void *sessiond_timer_thread(void *data)
 			}
 			continue;
 		} else if (signr == LTTNG_SESSIOND_SIG_TEARDOWN) {
+			fprintf(stderr, "TEARDOWN\n");
 			cmm_smp_mb();
 			CMM_STORE_SHARED(timer_signal.qs_done, 1);
 			cmm_smp_mb();
 			DBG("Signal timer metadata thread teardown");
 		} else if (signr == LTTNG_SESSIOND_SIG_EXIT) {
+			fprintf(stderr, "KILL\n");
 			goto end;
+		} else if (signr == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
+			fprintf(stderr, "ALLO TIMER\n");
 		} else {
 			ERR("Unexpected signal %d\n", info.si_signo);
 		}
