@@ -4211,6 +4211,7 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	session->rotate_count++;
 	session->rotate_pending = true;
+	session->rotate_pending_relay_check_in_progress = false;
 	session->rotate_status = LTTNG_ROTATE_STARTED;
 
 	/*

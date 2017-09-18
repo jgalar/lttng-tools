@@ -244,11 +244,24 @@ void relay_rotation_pending_timer(struct timer_thread_parameters *ctx,
 	struct ltt_session *session = si->si_value.sival_ptr;
 	assert(session);
 
+	/*
+	 * Avoid sending too many requests in case the relay is slower to
+	 * respond than the timer period.
+	 */
+	if (session->rotate_pending_relay_check_in_progress ||
+			!session->rotate_pending_relay) {
+		goto end;
+	}
+
+	session->rotate_pending_relay_check_in_progress = true;
 	ret = lttng_write(ctx->rotate_timer_pipe, &session->id,
 			sizeof(session->id));
 	if (ret < sizeof(session->id)) {
 		PERROR("wakeup rotate pipe");
 	}
+
+end:
+	return;
 }
 
 /*

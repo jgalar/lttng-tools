@@ -137,6 +137,7 @@ struct ltt_session {
 	uint64_t rotate_count;
 	bool rotate_pending;
 	bool rotate_pending_relay;
+	bool rotate_pending_relay_check_in_progress;
 	enum lttng_rotate_status rotate_status;
 	/*
 	 * Number of channels waiting for a rotate.

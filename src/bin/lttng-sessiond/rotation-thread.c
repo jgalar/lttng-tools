@@ -335,7 +335,8 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 		channel_info->session->rotate_pending = false;
 		if (channel_info->session->rotate_pending_relay) {
 			ret = sessiond_timer_rotate_pending_start(
-					channel_info->session, 100000);
+					channel_info->session,
+					DEFAULT_ROTATE_PENDING_RELAY_TIMER);
 			if (ret) {
 				ERR("Enabling rotate pending timer");
 				ret = -1;
@@ -398,12 +399,16 @@ int handle_rotate_timer_pipe(int fd, uint32_t revents,
 	if (ret == 0) {
 		DBG("[rotation-thread] Rotation completed on the relay for "
 				"session %" PRIu64, session_id);
-		session->rotate_pending_relay = 0;
+		session->rotate_pending_relay = false;
 		sessiond_timer_rotate_pending_stop(session);
 	} else if (ret == 1) {
 		DBG("[rotation-thread] Rotation still pending on the relay for "
 				"session %" PRIu64, session_id);
 	}
+	/*
+	 * Allow the timer thread to send other notifications if needed.
+	 */
+	session->rotate_pending_relay_check_in_progress = false;
 	fprintf(stderr, "RET PENDING: %d\n", ret);
 
 	ret = 0;
