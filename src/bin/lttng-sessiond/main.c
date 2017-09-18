@@ -407,14 +407,18 @@ static int init_thread_apps_notify_teardown_trigger_pipe(void)
 }
 
 /*
- * Stop all threads by closing the thread quit pipe.
+ * Stop first wave threads by closing the thread quit pipe.
+ *  - kernel thread
+ *  - client thread
+ *  - agent thread
+ *  - reg apps thread
  */
 static void stop_threads(void)
 {
 	int ret;
 
-	/* Stopping all threads */
-	DBG("Terminating all threads");
+	/* Stopping first wave threads */
+	DBG("Terminating first wave threads");
 	ret = notify_thread_pipe(thread_quit_pipe[1]);
 	if (ret < 0) {
 		ERR("write error on thread quit pipe");
