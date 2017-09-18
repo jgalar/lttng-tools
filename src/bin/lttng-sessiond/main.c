@@ -181,6 +181,7 @@ static int kernel_poll_pipe[2] = { -1, -1 };
  * for all threads when receiving an event on the pipe.
  */
 static int thread_quit_pipe[2] = { -1, -1 };
+static int thread_health_teardown_trigger_pipe[2] = { -1, -1 };
 
 /*
  * This pipe is used to inform the thread managing application communication
@@ -386,6 +387,11 @@ error:
 static int init_thread_quit_pipe(void)
 {
 	return __init_thread_quit_pipe(thread_quit_pipe);
+}
+
+static int init_thread_health_teardown_trigger_pipe(void)
+{
+	return __init_thread_quit_pipe(thread_health_teardown_trigger_pipe);
 }
 
 /*
@@ -4121,11 +4127,13 @@ static void *thread_manage_health(void *data)
 		goto error;
 	}
 
-	/*
-	 * Pass 2 as size here for the thread quit pipe and client_sock. Nothing
-	 * more will be added to this poll set.
-	 */
-	ret = sessiond_set_thread_pollset(&events, 2);
+	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
+	if (ret < 0) {
+		goto error;
+	}
+
+	/* Add teardown trigger */
+	ret = lttng_poll_add(&events, thread_health_teardown_trigger_pipe[0], LPOLLIN | LPOLLERR);
 	if (ret < 0) {
 		goto error;
 	}
@@ -4167,10 +4175,18 @@ restart:
 			}
 
 			/* Thread quit pipe has been closed. Killing thread. */
-			ret = sessiond_check_thread_quit_pipe(pollfd, revents);
-			if (ret) {
-				err = 0;
-				goto exit;
+			if (pollfd == thread_health_teardown_trigger_pipe[0]) {
+				if (revents & LPOLLIN) {
+					/* Normal exit */
+					err = 0;
+					goto exit;
+				} else if (revents & LPOLLERR) {
+					ERR("Health teardown poll error");
+					goto error;
+				} else {
+					ERR("Unexpected poll events %u for teardown sock", revents);
+					goto error;
+				}
 			}
 
 			/* Event on the registration socket */
@@ -4236,8 +4252,13 @@ restart:
 		}
 	}
 
-exit:
 error:
+	/*
+	 * Perform stop_thread only on error path since in a normal teardown the
+	 * health thread is in the last thread to terminate.
+	 */
+	stop_threads();
+exit:
 	if (err) {
 		ERR("Health error occurred in %s", __func__);
 	}
@@ -4249,9 +4270,7 @@ error:
 			PERROR("close");
 		}
 	}
-
 	lttng_poll_clean(&events);
-	stop_threads();
 	rcu_unregister_thread();
 	return NULL;
 }
@@ -5446,6 +5465,7 @@ int main(int argc, char **argv)
 			*ust64_channel_monitor_pipe = NULL,
 			*kernel_channel_monitor_pipe = NULL;
 	bool notification_thread_running = false;
+	bool health_thread_running = false;
 
 	init_kernel_workarounds();
 
@@ -5565,6 +5585,11 @@ int main(int argc, char **argv)
 
 	/* Create thread quit pipe */
 	if (init_thread_quit_pipe()) {
+		retval = -1;
+		goto exit_init_data;
+	}
+
+	if (init_thread_health_teardown_trigger_pipe()) {
 		retval = -1;
 		goto exit_init_data;
 	}
@@ -5798,6 +5823,7 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto exit_health;
 	}
+	health_thread_running = true;
 
 	/* notification_thread_data acquires the pipes' read side. */
 	notification_thread_handle = notification_thread_handle_create(
@@ -5990,13 +6016,6 @@ exit_dispatch:
 
 exit_client:
 exit_notification:
-	ret = pthread_join(health_thread, &status);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join health thread");
-		retval = -1;
-	}
-
 exit_health:
 exit_init_data:
 	/*
@@ -6038,6 +6057,20 @@ exit_init_data:
 		notification_thread_handle_destroy(notification_thread_handle);
 	}
 
+	if (health_thread_running) {
+		ret = notify_thread_pipe(thread_health_teardown_trigger_pipe[1]);
+		if (ret < 0) {
+			ERR("write error on thread quit pipe");
+		}
+
+		ret = pthread_join(health_thread, &status);
+		if (ret) {
+			errno = ret;
+			PERROR("pthread_join health thread");
+			retval = -1;
+		}
+	}
+
 	rcu_thread_offline();
 	rcu_unregister_thread();
 
@@ -6045,6 +6078,9 @@ exit_init_data:
 	if (ret) {
 		retval = -1;
 	}
+
+	/* Health thread teardown pipe cleanup */
+	utils_close_pipe(thread_health_teardown_trigger_pipe);
 	lttng_pipe_destroy(ust32_channel_monitor_pipe);
 	lttng_pipe_destroy(ust64_channel_monitor_pipe);
 	lttng_pipe_destroy(kernel_channel_monitor_pipe);
