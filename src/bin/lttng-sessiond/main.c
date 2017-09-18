@@ -1616,11 +1616,15 @@ error_testpoint:
 	utils_close_pipe(apps_cmd_pipe);
 	apps_cmd_pipe[0] = apps_cmd_pipe[1] = -1;
 
-	/*
-	 * We don't clean the UST app hash table here since already registered
-	 * applications can still be controlled so let them be until the session
-	 * daemon dies or the applications stop.
-	 */
+	{
+		struct lttng_ht_iter iter;
+		struct ust_app *app;
+		rcu_read_lock();
+		cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+			ust_app_unregister(app->sock);
+		}
+		rcu_read_unlock();
+	}
 
 	if (err) {
 		health_error();
