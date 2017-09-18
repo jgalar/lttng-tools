@@ -182,6 +182,7 @@ static int kernel_poll_pipe[2] = { -1, -1 };
  */
 static int thread_quit_pipe[2] = { -1, -1 };
 static int thread_health_teardown_trigger_pipe[2] = { -1, -1 };
+static int thread_apps_teardown_trigger_pipe[2] = { -1, -1 };
 
 /*
  * This pipe is used to inform the thread managing application communication
@@ -394,6 +395,11 @@ static int init_thread_health_teardown_trigger_pipe(void)
 	return __init_thread_quit_pipe(thread_health_teardown_trigger_pipe);
 }
 
+static int init_thread_apps_teardown_trigger_pipe(void)
+{
+	return __init_thread_quit_pipe(thread_apps_teardown_trigger_pipe);
+}
+
 /*
  * Stop all threads by closing the thread quit pipe.
  */
@@ -407,7 +413,6 @@ static void stop_threads(void)
 	if (ret < 0) {
 		ERR("write error on thread quit pipe");
 	}
-
 }
 
 /*
@@ -1470,9 +1475,15 @@ static void *thread_manage_apps(void *data)
 
 	health_code_update();
 
-	ret = sessiond_set_thread_pollset(&events, 2);
+	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto error_poll_create;
+	}
+
+	/* Add quit pipe */
+	ret = lttng_poll_add(&events, thread_apps_teardown_trigger_pipe[0], LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		goto error;
 	}
 
 	ret = lttng_poll_add(&events, apps_cmd_pipe[0], LPOLLIN | LPOLLRDHUP);
@@ -1521,10 +1532,18 @@ static void *thread_manage_apps(void *data)
 			}
 
 			/* Thread quit pipe has been closed. Killing thread. */
-			ret = sessiond_check_thread_quit_pipe(pollfd, revents);
-			if (ret) {
-				err = 0;
-				goto exit;
+			if (pollfd == thread_apps_teardown_trigger_pipe[0]) {
+				if (revents & LPOLLIN) {
+					/* Normal exit */
+					err = 0;
+					goto exit;
+				} else if (revents & LPOLLERR) {
+					ERR("Quit pipe error");
+					goto error;
+				} else {
+					ERR("Unknown poll events %u for quit pipe", revents);
+					goto error;
+				}
 			}
 
 			/* Inspect the apps cmd pipe */
@@ -5591,6 +5610,11 @@ int main(int argc, char **argv)
 		goto exit_init_data;
 	}
 
+	if (init_thread_apps_teardown_trigger_pipe()) {
+		retval = -1;
+		goto exit_init_data;
+	}
+
 	/* Check if daemon is UID = 0 */
 	is_root = !getuid();
 
@@ -5981,6 +6005,7 @@ exit_client:
 		PERROR("pthread_join registration app" );
 		retval = -1;
 	}
+
 exit_reg_apps:
 	/* Instruct the dispatch thread to quit */
 	CMM_STORE_SHARED(dispatch_thread_exit, 1);
@@ -5994,6 +6019,12 @@ exit_reg_apps:
 	}
 
 exit_dispatch:
+	/* Instruct the apps thread to quit */
+	ret = notify_thread_pipe(thread_apps_teardown_trigger_pipe[1]);
+	if (ret < 0) {
+		ERR("write error on thread quit pipe");
+	}
+
 	ret = pthread_join(apps_thread, &status);
 	if (ret) {
 		errno = ret;
@@ -6076,6 +6107,9 @@ exit_init_data:
 
 	/* Health thread teardown pipe cleanup */
 	utils_close_pipe(thread_health_teardown_trigger_pipe);
+	/* Apps thread teardown pipe cleanup */
+	utils_close_pipe(thread_apps_teardown_trigger_pipe);
+
 	lttng_pipe_destroy(ust32_channel_monitor_pipe);
 	lttng_pipe_destroy(ust64_channel_monitor_pipe);
 	lttng_pipe_destroy(kernel_channel_monitor_pipe);
