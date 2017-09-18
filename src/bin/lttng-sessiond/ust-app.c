@@ -5394,13 +5394,13 @@ static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
 		size_t nr_fields, struct ustctl_field *fields)
 {
 	int ret, ret_code = 0;
-	uint32_t chan_id, reg_count;
-	uint64_t chan_reg_key;
-	enum ustctl_channel_header type;
+	uint32_t chan_id = 0, reg_count = 0;
+	uint64_t chan_reg_key = 0;
+	enum ustctl_channel_header type = USTCTL_CHANNEL_HEADER_UNKNOWN;
 	struct ust_app *app;
 	struct ust_app_channel *ua_chan;
 	struct ust_app_session *ua_sess;
-	struct ust_registry_session *registry;
+	struct ust_registry_session *registry = NULL;
 	struct ust_registry_channel *chan_reg;
 
 	rcu_read_lock();
@@ -5410,16 +5410,16 @@ static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
 	if (!app) {
 		DBG("Application socket %d is being torn down. Abort event notify",
 				sock);
-		ret = 0;
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	/* Lookup channel by UST object descriptor. */
 	ua_chan = find_channel_by_objd(app, cobjd);
 	if (!ua_chan) {
 		DBG("Application channel is being torn down. Abort event notify");
-		ret = 0;
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	assert(ua_chan->session);
@@ -5429,8 +5429,8 @@ static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
 	registry = get_session_registry(ua_sess);
 	if (!registry) {
 		DBG("Application session is being torn down. Abort event notify");
-		ret = 0;
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	};
 
 	/* Depending on the buffer type, a different channel key is used. */
@@ -5469,9 +5469,12 @@ static int reply_ust_register_channel(int sock, int sobjd, int cobjd,
 		ret_code = ust_metadata_channel_statedump(registry, chan_reg);
 		if (ret_code) {
 			ERR("Error appending channel metadata (errno = %d)", ret_code);
-			goto reply;
+			goto unlock_reply;
 		}
 	}
+
+unlock_reply:
+	pthread_mutex_unlock(&registry->lock);
 
 reply:
 	DBG3("UST app replying to register channel key %" PRIu64
@@ -5488,12 +5491,13 @@ reply:
 		goto error;
 	}
 
-	/* This channel registry registration is completed. */
+	if (ret_code < 0) {
+		goto error;
+	}
+
 	chan_reg->register_done = 1;
 
 error:
-	pthread_mutex_unlock(&registry->lock);
-error_rcu_unlock:
 	rcu_read_unlock();
 	free(fields);
 	return ret;
@@ -5527,16 +5531,16 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	if (!app) {
 		DBG("Application socket %d is being torn down. Abort event notify",
 				sock);
-		ret = 0;
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	/* Lookup channel by UST object descriptor. */
 	ua_chan = find_channel_by_objd(app, cobjd);
 	if (!ua_chan) {
 		DBG("Application channel is being torn down. Abort event notify");
-		ret = 0;
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	assert(ua_chan->session);
@@ -5545,8 +5549,8 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	registry = get_session_registry(ua_sess);
 	if (!registry) {
 		DBG("Application session is being torn down. Abort event notify");
-		ret = 0;
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	if (ua_sess->buffer_type == LTTNG_BUFFER_PER_UID) {
@@ -5570,6 +5574,9 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 	fields = NULL;
 	model_emf_uri = NULL;
 
+	pthread_mutex_unlock(&registry->lock);
+
+reply:
 	/*
 	 * The return value is returned to ustctl so in case of an error, the
 	 * application can be notified. In case of an error, it's important not to
@@ -5593,8 +5600,6 @@ static int add_event_ust_registry(int sock, int sobjd, int cobjd, char *name,
 			name, event_id);
 
 error:
-	pthread_mutex_unlock(&registry->lock);
-error_rcu_unlock:
 	rcu_read_unlock();
 	free(sig);
 	free(fields);
@@ -5627,8 +5632,9 @@ static int add_enum_ust_registry(int sock, int sobjd, char *name,
 		/* Return an error since this is not an error */
 		DBG("Application socket %d is being torn down. Aborting enum registration",
 				sock);
+		ret_code = -1;
 		free(entries);
-		goto error_rcu_unlock;
+		goto reply;
 	}
 
 	/* Lookup session by UST object descriptor. */
@@ -5637,14 +5643,16 @@ static int add_enum_ust_registry(int sock, int sobjd, char *name,
 		/* Return an error since this is not an error */
 		DBG("Application session is being torn down (session not found). Aborting enum registration.");
 		free(entries);
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	registry = get_session_registry(ua_sess);
 	if (!registry) {
 		DBG("Application session is being torn down (registry not found). Aborting enum registration.");
 		free(entries);
-		goto error_rcu_unlock;
+		ret_code = -1;
+		goto reply;
 	}
 
 	pthread_mutex_lock(&registry->lock);
@@ -5658,6 +5666,9 @@ static int add_enum_ust_registry(int sock, int sobjd, char *name,
 			entries, nr_entries, &enum_id);
 	entries = NULL;
 
+	pthread_mutex_unlock(&registry->lock);
+
+reply:
 	/*
 	 * The return value is returned to ustctl so in case of an error, the
 	 * application can be notified. In case of an error, it's important not to
@@ -5678,10 +5689,7 @@ static int add_enum_ust_registry(int sock, int sobjd, char *name,
 	}
 
 	DBG3("UST registry enum %s added successfully or already found", name);
-
 error:
-	pthread_mutex_unlock(&registry->lock);
-error_rcu_unlock:
 	rcu_read_unlock();
 	return ret;
 }
