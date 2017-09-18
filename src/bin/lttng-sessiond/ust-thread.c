@@ -51,9 +51,15 @@ void *ust_thread_manage_notify(void *data)
 
 	health_code_update();
 
-	ret = sessiond_set_thread_pollset(&events, 2);
+	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
 	if (ret < 0) {
-		goto error_poll_create;
+		goto error;
+	}
+
+	/* Add quit pipe */
+	ret = lttng_poll_add(&events, thread_apps_notify_teardown_trigger_pipe[0], LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		goto error;
 	}
 
 	/* Add notify pipe to the pollset. */
@@ -99,11 +105,18 @@ restart:
 				continue;
 			}
 
-			/* Thread quit pipe has been closed. Killing thread. */
-			ret = sessiond_check_thread_quit_pipe(pollfd, revents);
-			if (ret) {
-				err = 0;
-				goto exit;
+			if (pollfd == thread_apps_notify_teardown_trigger_pipe[0]) {
+				if (revents & LPOLLIN) {
+					/* Normal exit */
+					err = 0;
+					goto exit;
+				} else if (revents & LPOLLERR) {
+					ERR("Apps notify quit error");
+					goto error;
+				} else {
+					ERR("Unexpected poll events %u for quit pipe", revents);
+					goto error;
+				}
 			}
 
 			/* Inspect the apps cmd pipe */

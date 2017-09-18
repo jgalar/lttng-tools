@@ -95,6 +95,8 @@ struct ust_reg_wait_node {
  */
 extern int apps_cmd_notify_pipe[2];
 
+extern int thread_apps_notify_teardown_trigger_pipe[2];
+
 /*
  * Used to notify that a hash table needs to be destroyed by dedicated
  * thread. Required by design because we don't want to move destroy
