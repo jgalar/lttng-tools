@@ -27,6 +27,19 @@
 #include "health-sessiond.h"
 #include "testpoint.h"
 
+
+static
+void notify_sock_unregister_all()
+{
+	struct lttng_ht_iter iter;
+	struct ust_app *app;
+	rcu_read_lock();
+	cds_lfht_for_each_entry(ust_app_ht_by_notify_sock->ht, &iter.iter, app, notify_sock_n.node) {
+		ust_app_notify_sock_unregister(app->notify_sock);
+	}
+	rcu_read_unlock();
+}
+
 /*
  * This thread manage application notify communication.
  */
@@ -53,7 +66,7 @@ void *ust_thread_manage_notify(void *data)
 
 	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
 	if (ret < 0) {
-		goto error;
+		goto error_poll_create;
 	}
 
 	/* Add quit pipe */
@@ -197,6 +210,8 @@ error_poll_create:
 error_testpoint:
 	utils_close_pipe(apps_cmd_notify_pipe);
 	apps_cmd_notify_pipe[0] = apps_cmd_notify_pipe[1] = -1;
+	notify_sock_unregister_all();
+
 	DBG("Application notify communication apps thread cleanup complete");
 	if (err) {
 		health_error();
