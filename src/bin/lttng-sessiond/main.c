@@ -5888,16 +5888,6 @@ int main(int argc, char **argv)
 	}
 	notification_thread_running = true;
 
-	/* Create thread to manage application notify socket */
-	ret = pthread_create(&apps_notify_thread, default_pthread_attr(),
-			ust_thread_manage_notify, (void *) NULL);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_create notify");
-		retval = -1;
-		stop_threads();
-		goto exit_apps_notify;
-	}
 
 	/* Create thread to manage application socket */
 	ret = pthread_create(&apps_thread, default_pthread_attr(),
@@ -5908,6 +5898,17 @@ int main(int argc, char **argv)
 		retval = -1;
 		stop_threads();
 		goto exit_apps;
+	}
+
+	/* Create thread to manage application notify socket */
+	ret = pthread_create(&apps_notify_thread, default_pthread_attr(),
+			ust_thread_manage_notify, (void *) NULL);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_create notify");
+		retval = -1;
+		stop_threads();
+		goto exit_apps_notify;
 	}
 
 	/* Create thread to dispatch registration */
@@ -6037,20 +6038,6 @@ exit_reg_apps:
 	}
 
 exit_dispatch:
-	/* Instruct the apps thread to quit */
-	ret = notify_thread_pipe(thread_apps_teardown_trigger_pipe[1]);
-	if (ret < 0) {
-		ERR("write error on thread quit pipe");
-	}
-
-	ret = pthread_join(apps_thread, &status);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join apps");
-		retval = -1;
-	}
-
-exit_apps:
 	/* Instruct the apps_notify thread to quit */
 	ret = notify_thread_pipe(thread_apps_notify_teardown_trigger_pipe[1]);
 	if (ret < 0) {
@@ -6065,6 +6052,26 @@ exit_apps:
 	}
 
 exit_apps_notify:
+	/*
+	 * The barrier ensure that all previous resources, notify sockets in
+	 * particular, are freed/closed.
+	 */
+	rcu_barrier();
+
+	/* Instruct the apps thread to quit */
+	ret = notify_thread_pipe(thread_apps_teardown_trigger_pipe[1]);
+	if (ret < 0) {
+		ERR("write error on thread quit pipe");
+	}
+
+	ret = pthread_join(apps_thread, &status);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_join apps");
+		retval = -1;
+	}
+
+exit_apps:
 exit_notification:
 exit_health:
 exit_init_data:
