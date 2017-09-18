@@ -408,9 +408,6 @@ static void stop_threads(void)
 		ERR("write error on thread quit pipe");
 	}
 
-	/* Dispatch thread */
-	CMM_STORE_SHARED(dispatch_thread_exit, 1);
-	futex_nto1_wake(&ust_cmd_queue.futex);
 }
 
 /*
@@ -5985,6 +5982,10 @@ exit_client:
 		retval = -1;
 	}
 exit_reg_apps:
+	/* Instruct the dispatch thread to quit */
+	CMM_STORE_SHARED(dispatch_thread_exit, 1);
+	futex_nto1_wake(&ust_cmd_queue.futex);
+
 	ret = pthread_join(dispatch_thread, &status);
 	if (ret) {
 		errno = ret;
