@@ -5849,15 +5849,26 @@ int main(int argc, char **argv)
 	}
 	notification_thread_running = true;
 
-	/* Create thread to manage the client socket */
-	ret = pthread_create(&client_thread, default_pthread_attr(),
-			thread_manage_clients, (void *) NULL);
+	/* Create thread to manage application notify socket */
+	ret = pthread_create(&apps_notify_thread, default_pthread_attr(),
+			ust_thread_manage_notify, (void *) NULL);
 	if (ret) {
 		errno = ret;
-		PERROR("pthread_create clients");
+		PERROR("pthread_create notify");
 		retval = -1;
 		stop_threads();
-		goto exit_client;
+		goto exit_apps_notify;
+	}
+
+	/* Create thread to manage application socket */
+	ret = pthread_create(&apps_thread, default_pthread_attr(),
+			thread_manage_apps, (void *) NULL);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_create apps");
+		retval = -1;
+		stop_threads();
+		goto exit_apps;
 	}
 
 	/* Create thread to dispatch registration */
@@ -5882,26 +5893,15 @@ int main(int argc, char **argv)
 		goto exit_reg_apps;
 	}
 
-	/* Create thread to manage application socket */
-	ret = pthread_create(&apps_thread, default_pthread_attr(),
-			thread_manage_apps, (void *) NULL);
+	/* Create thread to manage the client socket */
+	ret = pthread_create(&client_thread, default_pthread_attr(),
+			thread_manage_clients, (void *) NULL);
 	if (ret) {
 		errno = ret;
-		PERROR("pthread_create apps");
+		PERROR("pthread_create clients");
 		retval = -1;
 		stop_threads();
-		goto exit_apps;
-	}
-
-	/* Create thread to manage application notify socket */
-	ret = pthread_create(&apps_notify_thread, default_pthread_attr(),
-			ust_thread_manage_notify, (void *) NULL);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_create notify");
-		retval = -1;
-		stop_threads();
-		goto exit_apps_notify;
+		goto exit_client;
 	}
 
 	/* Create agent registration thread. */
@@ -5957,12 +5957,12 @@ exit_load_session:
 		ret = pthread_join(kernel_thread, &status);
 		if (ret) {
 			errno = ret;
-			PERROR("pthread_join");
+			PERROR("pthread_join kernel");
 			retval = -1;
 		}
 	}
-exit_kernel:
 
+exit_kernel:
 	ret = pthread_join(agent_reg_thread, &status);
 	if (ret) {
 		errno = ret;
@@ -5970,51 +5970,45 @@ exit_kernel:
 		retval = -1;
 	}
 exit_agent_reg:
-
-	ret = pthread_join(apps_notify_thread, &status);
+	ret = pthread_join(client_thread, &status);
 	if (ret) {
 		errno = ret;
-		PERROR("pthread_join apps notify");
+		PERROR("pthread_join client");
 		retval = -1;
 	}
-exit_apps_notify:
 
+exit_client:
+	ret = pthread_join(reg_apps_thread, &status);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_join registration app" );
+		retval = -1;
+	}
+exit_reg_apps:
+	ret = pthread_join(dispatch_thread, &status);
+	if (ret) {
+		errno = ret;
+		PERROR("pthread_join dispatch");
+		retval = -1;
+	}
+
+exit_dispatch:
 	ret = pthread_join(apps_thread, &status);
 	if (ret) {
 		errno = ret;
 		PERROR("pthread_join apps");
 		retval = -1;
 	}
+
 exit_apps:
-
-	ret = pthread_join(reg_apps_thread, &status);
+	ret = pthread_join(apps_notify_thread, &status);
 	if (ret) {
 		errno = ret;
-		PERROR("pthread_join");
-		retval = -1;
-	}
-exit_reg_apps:
-
-	/*
-	 * Join dispatch thread after joining reg_apps_thread to ensure
-	 * we don't leak applications in the queue.
-	 */
-	ret = pthread_join(dispatch_thread, &status);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join");
-		retval = -1;
-	}
-exit_dispatch:
-
-	ret = pthread_join(client_thread, &status);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join");
+		PERROR("pthread_join apps notify");
 		retval = -1;
 	}
 
-exit_client:
+exit_apps_notify:
 exit_notification:
 exit_health:
 exit_init_data:
