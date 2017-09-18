@@ -2080,7 +2080,7 @@ static void *thread_dispatch_ust_registration(void *data)
 				rcu_read_unlock();
 				session_unlock_list();
 			}
-		} while (node != NULL);
+		} while (node != NULL && !CMM_LOAD_SHARED(dispatch_thread_exit));
 
 		health_poll_entry();
 		/* Futex wait on queue. Blocking call on futex() */
