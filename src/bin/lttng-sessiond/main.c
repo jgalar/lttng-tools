@@ -219,8 +219,8 @@ static int apps_cmd_pipe[2] = { -1, -1 };
 int apps_cmd_notify_pipe[2] = { -1, -1 };
 
 /*
- * Pipe to wakeup the rotation thread when the
- * LTTNG_SESSIOND_SIG_ROTATE_PENDING signal is caught.
+ * Pipe to wakeup the rotation thread when a timer related to the session
+ * rotation feature fires.
  */
 static int rotate_timer_pipe[2] = { -1, -1 };
 
@@ -6047,7 +6047,7 @@ int main(int argc, char **argv)
 
 	/*
 	 * Create the rotate_timer_pipe as non blocking because we have to
-	 * write in it from the sighandler.
+	 * write in it from the sighandler of the timer thread.
 	 */
 	ret = utils_create_pipe_cloexec_nonblock(rotate_timer_pipe);
 	if (ret < 0) {

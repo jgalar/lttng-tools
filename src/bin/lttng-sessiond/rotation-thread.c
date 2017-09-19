@@ -354,13 +354,67 @@ end:
 }
 
 static
+int rotate_pending_relay_timer(struct ltt_session *session)
+{
+	int ret;
+
+	DBG("[rotation-thread] Check rotate pending on session %" PRIu64,
+			session->id);
+	ret = relay_rotate_pending(session, session->rotate_count - 1);
+	if (ret < 0) {
+		ERR("[rotation-thread] Check relay rotate pending");
+		goto end;
+	}
+	if (ret == 0) {
+		DBG("[rotation-thread] Rotation completed on the relay for "
+				"session %" PRIu64, session->id);
+		/*
+		 * Stop the timer and clear the queue, the timers are currently
+		 * ignored because of the rotate_pending_relay_check_in_progress
+		 * flag.
+		 */
+		sessiond_timer_rotate_pending_stop(session);
+		/*
+		 * Now we can clear the pending flag in the session. New
+		 * rotations can start now.
+		 */
+		session->rotate_pending_relay = false;
+	} else if (ret == 1) {
+		DBG("[rotation-thread] Rotation still pending on the relay for "
+				"session %" PRIu64, session->id);
+	}
+	/*
+	 * Allow the timer thread to send other notifications when needed.
+	 */
+	session->rotate_pending_relay_check_in_progress = false;
+	fprintf(stderr, "RET PENDING: %d\n", ret);
+
+	ret = 0;
+
+end:
+	return ret;
+}
+
+static
+int rotate_timer(struct ltt_session *session)
+{
+	int ret;
+
+	DBG("[rotation-thread] Rotate timer on session %" PRIu64, session->id);
+	ret = cmd_rotate_session(session, NULL);
+	fprintf(stderr, "RET ROTATE TIMER: %d\n", ret);
+
+	return ret;
+}
+
+static
 int handle_rotate_timer_pipe(int fd, uint32_t revents,
 		struct rotation_thread_handle *handle,
 		struct rotation_thread_state *state)
 {
 	int ret = 0;
-	uint64_t session_id;
 	struct ltt_session *session;
+	struct sessiond_rotation_timer timer_data;
 
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 		ret = lttng_poll_del(&state->events, fd);
@@ -371,47 +425,34 @@ int handle_rotate_timer_pipe(int fd, uint32_t revents,
 		goto end;
 	}
 
+	memset(&timer_data, 0, sizeof(struct sessiond_rotation_timer));
+
 	do {
-		ret = read(fd, &session_id, sizeof(session_id));
+		ret = read(fd, &timer_data, sizeof(timer_data));
 	} while (ret == -1 && errno == EINTR);
-	if (ret != sizeof(session_id)) {
+	if (ret != sizeof(timer_data)) {
 		ERR("[rotation-thread] Failed to read from pipe (fd = %i)",
 				fd);
 		ret = -1;
 		goto end;
 	}
 
-	session = session_find_by_id(session_id);
+	session = session_find_by_id(timer_data.session_id);
 	if (!session) {
 		ERR("[rotation-thread] Session %" PRIu64 " not found",
-				session_id);
+				timer_data.session_id);
 		ret = -1;
 		goto end;
 	}
 
-	DBG("[rotation-thread] Check rotate pending on session %" PRIu64,
-			session_id);
-	ret = relay_rotate_pending(session, session->rotate_count - 1);
-	if (ret < 0) {
-		ERR("[rotation-thread] Check relay rotate pending");
-		goto end;
+	if (timer_data.signal == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
+		ret = rotate_pending_relay_timer(session);
+	} else if (timer_data.signal == LTTNG_SESSIOND_SIG_ROTATE_TIMER) {
+		ret = rotate_timer(session);
+	} else {
+		ERR("Unknown signal in rotate timer");
+		ret = -1;
 	}
-	if (ret == 0) {
-		DBG("[rotation-thread] Rotation completed on the relay for "
-				"session %" PRIu64, session_id);
-		session->rotate_pending_relay = false;
-		sessiond_timer_rotate_pending_stop(session);
-	} else if (ret == 1) {
-		DBG("[rotation-thread] Rotation still pending on the relay for "
-				"session %" PRIu64, session_id);
-	}
-	/*
-	 * Allow the timer thread to send other notifications if needed.
-	 */
-	session->rotate_pending_relay_check_in_progress = false;
-	fprintf(stderr, "RET PENDING: %d\n", ret);
-
-	ret = 0;
 
 end:
 	return ret;
@@ -478,7 +519,7 @@ void *thread_rotation(void *data)
 				ret = handle_rotate_timer_pipe(fd, revents,
 						handle, &state);
 				if (ret) {
-					ERR("[rotation-thread] Rotate pending");
+					ERR("[rotation-thread] Rotate timer");
 					goto error;
 				}
 			} else if (fd == handle->ust32_consumer ||

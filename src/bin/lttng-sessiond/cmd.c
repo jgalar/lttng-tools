@@ -4165,10 +4165,12 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	assert(session);
 
-	*rotate_return = zmalloc(sizeof(struct lttng_rotate_session_return));
-	if (!*rotate_return) {
-		ret = -ENOMEM;
-		goto end;
+	if (rotate_return) {
+		*rotate_return = zmalloc(sizeof(struct lttng_rotate_session_return));
+		if (!*rotate_return) {
+			ret = -ENOMEM;
+			goto end;
+		}
 	}
 
 	if (session->live_timer || session->snapshot_mode ||
@@ -4255,8 +4257,10 @@ int cmd_rotate_session(struct ltt_session *session,
 		}
 	}
 
-	(*rotate_return)->rotate_id = session->rotate_count;
-	(*rotate_return)->status = LTTNG_ROTATE_STARTED;
+	if (rotate_return) {
+		(*rotate_return)->rotate_id = session->rotate_count;
+		(*rotate_return)->status = LTTNG_ROTATE_STARTED;
+	}
 
 	DBG("Cmd rotate session %s, rotate_id %" PRIu64, session->name,
 			session->rotate_count);
@@ -4265,7 +4269,9 @@ int cmd_rotate_session(struct ltt_session *session,
 	goto end;
 
 error:
-	(*rotate_return)->status = LTTNG_ROTATE_ERROR;
+	if (rotate_return) {
+		(*rotate_return)->status = LTTNG_ROTATE_ERROR;
+	}
 end:
 	return ret;
 }

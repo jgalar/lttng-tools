@@ -23,19 +23,6 @@
 #include "sessiond-timer.h"
 #include "health-sessiond.h"
 
-#if 0
-#include <bin/lttng-sessiond/ust-ctl.h>
-#include <bin/lttng-consumerd/health-consumerd.h>
-#include <common/common.h>
-#include <common/compat/endian.h>
-#include <common/kernel-ctl/kernel-ctl.h>
-#include <common/kernel-consumer/kernel-consumer.h>
-#include <common/consumer/consumer-stream.h>
-#include <common/consumer/consumer-timer.h>
-#include <common/consumer/consumer-testpoint.h>
-#include <common/ust-consumer/ust-consumer.h>
-#endif
-
 static struct timer_signal_data timer_signal = {
 	.tid = 0,
 	.setup_done = 0,
@@ -63,6 +50,10 @@ static void setmask(sigset_t *mask)
 		PERROR("sigaddset exit");
 	}
 	ret = sigaddset(mask, LTTNG_SESSIOND_SIG_ROTATE_PENDING);
+	if (ret) {
+		PERROR("sigaddset switch");
+	}
+	ret = sigaddset(mask, LTTNG_SESSIOND_SIG_ROTATE_TIMER);
 	if (ret) {
 		PERROR("sigaddset switch");
 	}
@@ -185,15 +176,17 @@ end:
 	return ret;
 }
 
-int sessiond_timer_rotate_pending_start(struct ltt_session *session, unsigned int
-		interval_us)
+int sessiond_timer_rotate_pending_start(struct ltt_session *session,
+		unsigned int interval_us)
 {
 	int ret;
 
 	ret = session_timer_start(&session->rotate_relay_pending_timer,
 			session, interval_us,
 			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
-	session->rotate_relay_pending_timer_enabled = !!(ret == 0);
+	if (ret == 0) {
+		session->rotate_relay_pending_timer_enabled = true;
+	}
 
 	return ret;
 }
@@ -213,7 +206,39 @@ void sessiond_timer_rotate_pending_stop(struct ltt_session *session)
 		ERR("Failed to stop live timer");
 	}
 
-	session->rotate_relay_pending_timer_enabled = 0;
+	session->rotate_relay_pending_timer_enabled = false;
+}
+
+int sessiond_rotate_timer_start(struct ltt_session *session,
+		unsigned int interval_us)
+{
+	int ret;
+
+	ret = session_timer_start(&session->rotate_timer, session, interval_us,
+			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
+	if (ret == 0) {
+		session->rotate_timer_enabled = true;
+	}
+
+	return ret;
+}
+
+/*
+ * Stop and delete the channel's live timer.
+ */
+void sessiond_rotate_timer_stop(struct ltt_session *session)
+{
+	int ret;
+
+	assert(session);
+
+	ret = session_timer_stop(&session->rotate_timer,
+			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
+	if (ret == -1) {
+		ERR("Failed to stop live timer");
+	}
+
+	session->rotate_timer_enabled = false;
 }
 
 /*
@@ -242,6 +267,7 @@ void relay_rotation_pending_timer(struct timer_thread_parameters *ctx,
 {
 	int ret;
 	struct ltt_session *session = si->si_value.sival_ptr;
+	struct sessiond_rotation_timer timer_data;
 	assert(session);
 
 	/*
@@ -254,13 +280,40 @@ void relay_rotation_pending_timer(struct timer_thread_parameters *ctx,
 	}
 
 	session->rotate_pending_relay_check_in_progress = true;
-	ret = lttng_write(ctx->rotate_timer_pipe, &session->id,
-			sizeof(session->id));
+	memset(&timer_data, 0, sizeof(struct sessiond_rotation_timer));
+	timer_data.session_id = session->id;
+	timer_data.signal = LTTNG_SESSIOND_SIG_ROTATE_PENDING;
+	ret = lttng_write(ctx->rotate_timer_pipe, &timer_data,
+			sizeof(timer_data));
 	if (ret < sizeof(session->id)) {
 		PERROR("wakeup rotate pipe");
 	}
 
 end:
+	return;
+}
+
+static
+void rotate_timer(struct timer_thread_parameters *ctx, int sig, siginfo_t *si)
+{
+	int ret;
+	struct ltt_session *session = si->si_value.sival_ptr;
+	struct sessiond_rotation_timer timer_data;
+	assert(session);
+
+	/*
+	 * No rate limiting here, so if the timer fires too quickly, there will
+	 * be a backlog of timers queued up and we will try to catch up.
+	 */
+	memset(&timer_data, 0, sizeof(struct sessiond_rotation_timer));
+	timer_data.session_id = session->id;
+	timer_data.signal = LTTNG_SESSIOND_SIG_ROTATE_TIMER;
+	ret = lttng_write(ctx->rotate_timer_pipe, &timer_data,
+			sizeof(timer_data));
+	if (ret < sizeof(session->id)) {
+		PERROR("wakeup rotate pipe");
+	}
+
 	return;
 }
 
@@ -314,6 +367,9 @@ void *sessiond_timer_thread(void *data)
 		} else if (signr == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
 			fprintf(stderr, "PENDING TIMER\n");
 			relay_rotation_pending_timer(ctx, info.si_signo, &info);
+		} else if (signr == LTTNG_SESSIOND_SIG_ROTATE_TIMER) {
+			fprintf(stderr, "ROTATE TIMER\n");
+			rotate_timer(ctx, info.si_signo, &info);
 		} else {
 			ERR("Unexpected signal %d\n", info.si_signo);
 		}

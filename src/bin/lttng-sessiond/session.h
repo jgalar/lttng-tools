@@ -166,8 +166,11 @@ struct ltt_session {
 	 * Timer to check periodically if a relay has completed the last
 	 * rotation.
 	 */
-	int rotate_relay_pending_timer_enabled;
+	bool rotate_relay_pending_timer_enabled;
 	timer_t rotate_relay_pending_timer;
+	/* Timer to periodically rotate a session. */
+	bool rotate_timer_enabled;
+	timer_t rotate_timer;
 };
 
 /* Prototypes */
