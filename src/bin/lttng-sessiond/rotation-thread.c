@@ -401,9 +401,30 @@ int rotate_timer(struct ltt_session *session)
 	int ret;
 
 	DBG("[rotation-thread] Rotate timer on session %" PRIu64, session->id);
+
+	/*
+	 * If the session is stopped, we need to cancel this timer.
+	 */
+	pthread_mutex_lock(&session->lock);
+	if (!session->active && session->rotate_timer_enabled) {
+		sessiond_rotate_timer_stop(session);
+	}
+	pthread_mutex_unlock(&session->lock);
+
 	ret = cmd_rotate_session(session, NULL);
 	fprintf(stderr, "RET ROTATE TIMER: %d\n", ret);
+	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
+		ret = 0;
+		goto end;
+	} else if (ret != LTTNG_OK) {
+		ret = -1;
+		goto end;
+	}
 
+
+	ret = 0;
+
+end:
 	return ret;
 }
 

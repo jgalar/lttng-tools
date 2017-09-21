@@ -23,6 +23,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <inttypes.h>
+#include <ctype.h>
 
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/mi-lttng.h>
@@ -37,6 +39,8 @@ static struct mi_writer *writer;
 enum {
 	OPT_HELP = 1,
 	OPT_LIST_OPTIONS,
+	OPT_TIMER,
+	OPT_SIZE,
 };
 
 static struct poptOption long_options[] = {
@@ -44,6 +48,9 @@ static struct poptOption long_options[] = {
 	{"help",      'h', POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
 	{"list-options", 0, POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
 	{"no-wait",   'n', POPT_ARG_VAL, &opt_no_wait, 1, 0, 0},
+	{"session",        's', POPT_ARG_STRING, &opt_session_name, 0, 0, 0},
+	{"timer",   0,   POPT_ARG_INT, 0, OPT_TIMER, 0, 0},
+	{"size",   0,   POPT_ARG_INT, 0, OPT_SIZE, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
@@ -77,10 +84,47 @@ end:
 	return ret;
 }
 
-static int rotate_tracing(void)
+static int setup_rotate(char *session_name, uint64_t timer, uint64_t size)
+{
+	int ret = 0;
+	struct lttng_rotate_session_attr *attr = NULL;
+
+	attr = lttng_rotate_session_attr_create();
+	if (!attr) {
+		goto error;
+	}
+
+	ret = lttng_rotate_session_attr_set_session_name(attr, session_name);
+	if (ret < 0) {
+		goto error;
+	}
+
+	lttng_rotate_session_attr_set_timer(attr, timer);
+	lttng_rotate_session_attr_set_size(attr, size);
+
+	if (timer) {
+		DBG("Configuring session %s to rotate every %" PRIu64 " us",
+				session_name, timer);
+	}
+	if (size) {
+		DBG("Configuring session %s to rotate every %" PRIu64 " bytes written",
+				session_name, size);
+	}
+
+	ret = lttng_rotate_setup(attr);
+
+	goto end;
+
+error:
+	ret = -1;
+end:
+	return ret;
+}
+
+static int rotate_tracing(char *session_name)
 {
 	int ret;
-	char *session_name = NULL, *path = NULL;
+	char *path = NULL;
 	struct lttng_rotate_session_attr *attr = NULL;
 	struct lttng_rotate_session_handle *handle = NULL;
 	enum lttng_rotate_status rotate_status;
@@ -88,15 +132,6 @@ static int rotate_tracing(void)
 	attr = lttng_rotate_session_attr_create();
 	if (!attr) {
 		goto error;
-	}
-
-	if (opt_session_name == NULL) {
-		session_name = get_session_name();
-		if (session_name == NULL) {
-			goto error;
-		}
-	} else {
-		session_name = opt_session_name;
 	}
 
 	ret = lttng_rotate_session_attr_set_session_name(attr, session_name);
@@ -194,9 +229,6 @@ static int rotate_tracing(void)
 error:
 	ret = CMD_ERROR;
 end:
-	if (opt_session_name == NULL) {
-		free(session_name);
-	}
 	lttng_rotate_session_handle_destroy(handle);
 	lttng_rotate_session_attr_destroy(attr);
 	return ret;
@@ -211,6 +243,9 @@ int cmd_rotate(int argc, const char **argv)
 {
 	int opt, ret = CMD_SUCCESS, command_ret = CMD_SUCCESS, success = 1;
 	static poptContext pc;
+	char *session_name = NULL;
+	char *opt_arg = NULL;
+	uint64_t timer = 0, size = 0;
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 0);
 	poptReadDefaultConfig(pc, 0);
@@ -223,13 +258,46 @@ int cmd_rotate(int argc, const char **argv)
 		case OPT_LIST_OPTIONS:
 			list_cmd_options(stdout, long_options);
 			goto end;
+		case OPT_TIMER:
+		{
+			errno = 0;
+			opt_arg = poptGetOptArg(pc);
+			timer = strtoull(opt_arg, NULL, 0);
+			if (errno != 0 || !isdigit(opt_arg[0])) {
+				ERR("Wrong value in --timer parameter: %s", opt_arg);
+				ret = CMD_ERROR;
+				goto end;
+			}
+			DBG("Rotation timer set to %" PRIu64, timer);
+			break;
+		}
+		case OPT_SIZE:
+		{
+			errno = 0;
+			opt_arg = poptGetOptArg(pc);
+			size = strtoull(opt_arg, NULL, 0);
+			if (errno != 0 || !isdigit(opt_arg[0])) {
+				ERR("Wrong value in --timer parameter: %s", opt_arg);
+				ret = CMD_ERROR;
+				goto end;
+			}
+			DBG("Rotation size set to %" PRIu64, size);
+			break;
+		}
 		default:
 			ret = CMD_UNDEFINED;
 			goto end;
 		}
 	}
 
-	opt_session_name = (char*) poptGetArg(pc);
+	if (opt_session_name == NULL) {
+		session_name = get_session_name();
+		if (session_name == NULL) {
+			goto end;
+		}
+	} else {
+		session_name = opt_session_name;
+	}
 
 	/* Mi check */
 	if (lttng_opt_mi) {
@@ -267,8 +335,15 @@ int cmd_rotate(int argc, const char **argv)
 		}
 	}
 
-	command_ret = rotate_tracing();
+	fprintf(stderr, "T: %lu, S: %lu\n", timer, size);
+	/* No config options, just rotate the session now */
+	if (timer == 0 && size == 0) {
+		command_ret = rotate_tracing(session_name);
+	} else {
+		command_ret = setup_rotate(session_name, timer, size);
+	}
 	if (command_ret) {
+		ERR("%s", lttng_strerror(command_ret));
 		success = 0;
 	}
 
@@ -307,5 +382,6 @@ end:
 	/* Overwrite ret if an error occurred with start_tracing */
 	ret = command_ret ? command_ret : ret;
 	poptFreeContext(pc);
+	free(session_name);
 	return ret;
 }

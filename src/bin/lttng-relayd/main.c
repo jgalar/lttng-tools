@@ -2431,6 +2431,7 @@ static int relay_rotate_rename(struct lttcomm_relayd_hdr *recv_hdr,
 		PERROR("Rename completed rotation chunk");
 		goto end;
 	}
+	ret = 0;
 
 end:
 	memset(&reply, 0, sizeof(reply));

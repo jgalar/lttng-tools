@@ -30,14 +30,17 @@
  * This is opaque to the public library.
  */
 struct lttng_rotate_session_attr {
-	/*
-	 * Session name to rotate.
-	 */
+	/* Session name to rotate. */
 	char session_name[LTTNG_NAME_MAX];
-	/*
-	 * For the rotate pending request.
-	 */
+	/* For the rotate pending request. */
 	uint64_t rotate_id;
+	/* > 0 if a timer is set. */
+	uint64_t timer_us;
+	/*
+	 * > 0 if the session should rotate when it has written that many
+	 * bytes.
+	 */
+	uint64_t size;
 } LTTNG_PACKED;
 
 /*

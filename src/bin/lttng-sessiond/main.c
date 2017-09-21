@@ -3130,6 +3130,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_UNREGISTER_TRIGGER:
 	case LTTNG_ROTATE_SESSION:
 	case LTTNG_ROTATE_PENDING:
+	case LTTNG_ROTATE_SETUP:
 		need_domain = 0;
 		break;
 	default:
@@ -4304,6 +4305,13 @@ error_add_context:
 		}
 
 		ret = LTTNG_OK;
+		break;
+	}
+	case LTTNG_ROTATE_SETUP:
+	{
+		ret = cmd_rotate_setup(cmd_ctx->session,
+				cmd_ctx->lsm->u.rotate_setup.timer_us,
+				cmd_ctx->lsm->u.rotate_setup.size);
 		break;
 	}
 	default:

@@ -2434,6 +2434,16 @@ int cmd_start_trace(struct ltt_session *session)
 		}
 	}
 
+	if (session->rotate_timer_period) {
+		ret = sessiond_rotate_timer_start(session,
+				session->rotate_timer_period);
+		if (ret < 0) {
+			ERR("Failed to enable rotate timer");
+			ret = LTTNG_ERR_UNK;
+			goto error;
+		}
+	}
+
 	/* Flag this after a successful start. */
 	session->has_been_started = 1;
 	session->active = 1;
@@ -2769,6 +2779,10 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 
 	if (session->rotate_relay_pending_timer_enabled) {
 		sessiond_timer_rotate_pending_stop(session);
+	}
+
+	if (session->rotate_timer_enabled) {
+		sessiond_rotate_timer_stop(session);
 	}
 
 	/* Clean kernel session teardown */
@@ -4328,6 +4342,59 @@ int cmd_rotate_pending(struct ltt_session *session,
 		snprintf((*pending_return)->output_path, PATH_MAX, "%s",
 				session->rotation_chunk.current_rotate_path);
 	}
+
+	ret = LTTNG_OK;
+
+	goto end;
+
+end:
+	return ret;
+}
+
+/*
+ * Command LTTNG_ROTATE_SETUP from the lttng-ctl library.
+ *
+ * Configure the automatic rotation parameters.
+ *
+ * Return 0 on success or else a LTTNG_ERR code.
+ */
+int cmd_rotate_setup(struct ltt_session *session,
+		uint64_t timer_us, uint64_t size)
+{
+	int ret;
+
+	assert(session);
+
+	DBG("Cmd rotate setup session %s", session->name);
+
+	if (timer_us && session->rotate_timer_period) {
+		ret = LTTNG_ERR_ROTATE_TIMER_EXISTS;
+		goto end;
+	}
+
+	if (size && session->rotate_size) {
+		ret = LTTNG_ERR_ROTATE_SIZE_EXISTS;
+		goto end;
+	}
+
+	if (timer_us && !session->rotate_timer_period) {
+		session->rotate_timer_period = timer_us;
+		/*
+		 * Only start the timer if the session is active, otherwise
+		 * it will be started when the session starts.
+		 */
+		if (session->active) {
+			ret = sessiond_rotate_timer_start(session, timer_us);
+			if (ret) {
+				ERR("Failed to enable rotate timer");
+				ret = LTTNG_ERR_UNK;
+				goto end;
+			}
+		}
+	} else if (timer_us == -1ULL && session->rotate_timer_period > 0) {
+		sessiond_rotate_timer_stop(session);
+	}
+	session->rotate_size = size;
 
 	ret = LTTNG_OK;
 
