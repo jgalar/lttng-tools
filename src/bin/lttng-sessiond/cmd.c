@@ -2434,6 +2434,10 @@ int cmd_start_trace(struct ltt_session *session)
 		}
 	}
 
+	/* Flag this after a successful start. */
+	session->has_been_started = 1;
+	session->active = 1;
+
 	if (session->rotate_timer_period) {
 		ret = sessiond_rotate_timer_start(session,
 				session->rotate_timer_period);
@@ -2443,10 +2447,6 @@ int cmd_start_trace(struct ltt_session *session)
 			goto error;
 		}
 	}
-
-	/* Flag this after a successful start. */
-	session->has_been_started = 1;
-	session->active = 1;
 
 	ret = LTTNG_OK;
 
