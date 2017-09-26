@@ -4252,14 +4252,21 @@ int cmd_rotate_session(struct ltt_session *session,
 	timeinfo = localtime(&now);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
 	if (session->kernel_session) {
-		/* The active path for the next rotation/destroy. */
+		/*
+		 * The active path for the next rotation/destroy.
+		 * Ex: ~/lttng-traces/auto-20170922-111748/20170922-111754-42
+		 */
 		snprintf(session->rotation_chunk.active_tracing_path,
-				PATH_MAX, "%s/%s-",
+				PATH_MAX, "%s/%s-%" PRIu64,
 				get_base_path(session, session->kernel_session->consumer),
-				datetime);
-		/* The sub-directory for the consumer. */
+				datetime, session->rotate_count + 1);
+		/*
+		 * The sub-directory for the consumer
+		 * Ex: /20170922-111754-42/kernel
+		 */
 		snprintf(session->kernel_session->consumer->chunk_path,
-				PATH_MAX, "/%s-%s", datetime,
+				PATH_MAX, "/%s-%" PRIu64 "%s", datetime,
+				session->rotate_count + 1,
 				session->kernel_session->consumer->subdir);
 		ret = kernel_rotate_session(session);
 		if (ret != LTTNG_OK) {
@@ -4268,11 +4275,12 @@ int cmd_rotate_session(struct ltt_session *session,
 	}
 	if (session->ust_session) {
 		snprintf(session->rotation_chunk.active_tracing_path,
-				PATH_MAX, "%s/%s-",
+				PATH_MAX, "%s/%s-%" PRIu64,
 				get_base_path(session, session->ust_session->consumer),
-				datetime);
+				datetime, session->rotate_count + 1);
 		snprintf(session->ust_session->consumer->chunk_path,
-				PATH_MAX, "/%s-", datetime);
+				PATH_MAX, "/%s-%" PRIu64, datetime,
+				session->rotate_count + 1);
 		ret = ust_app_rotate_session(session);
 		if (ret != LTTNG_OK) {
 			goto error;
