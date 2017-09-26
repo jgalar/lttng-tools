@@ -3183,6 +3183,14 @@ int cmd_data_pending(struct ltt_session *session)
 		}
 	}
 
+	/*
+	 * A rotation is still pending, we have to wait.
+	 */
+	if (session->rotate_pending) {
+		ret = 1;
+		goto error;
+	}
+
 	if (ksess && ksess->consumer) {
 		ret = consumer_is_data_pending(ksess->id, ksess->consumer);
 		if (ret == 1) {
