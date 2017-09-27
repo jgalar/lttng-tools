@@ -303,7 +303,8 @@ void rotate_timer(struct timer_thread_parameters *ctx, int sig, siginfo_t *si)
 
 	/*
 	 * No rate limiting here, so if the timer fires too quickly, there will
-	 * be a backlog of timers queued up and we will try to catch up.
+	 * be a backlog of timers queued up and the sessiond will try to catch
+	 * up.
 	 */
 	memset(&timer_data, 0, sizeof(struct sessiond_rotation_timer));
 	timer_data.session_id = session->id;

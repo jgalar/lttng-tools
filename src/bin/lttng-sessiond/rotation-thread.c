@@ -405,13 +405,13 @@ int rotate_timer(struct ltt_session *session)
 	/*
 	 * If the session is stopped, we need to cancel this timer.
 	 */
-	pthread_mutex_lock(&session->lock);
+	session_lock(session);
 	if (!session->active && session->rotate_timer_enabled) {
 		sessiond_rotate_timer_stop(session);
 	}
-	pthread_mutex_unlock(&session->lock);
 
 	ret = cmd_rotate_session(session, NULL);
+	session_unlock(session);
 	fprintf(stderr, "RET ROTATE TIMER: %d\n", ret);
 	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
 		ret = 0;
@@ -458,12 +458,14 @@ int handle_rotate_timer_pipe(int fd, uint32_t revents,
 		goto end;
 	}
 
+	rcu_read_lock();
+	session_lock_list();
 	session = session_find_by_id(timer_data.session_id);
 	if (!session) {
 		ERR("[rotation-thread] Session %" PRIu64 " not found",
 				timer_data.session_id);
 		ret = -1;
-		goto end;
+		goto end_unlock;
 	}
 
 	if (timer_data.signal == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
@@ -475,6 +477,9 @@ int handle_rotate_timer_pipe(int fd, uint32_t revents,
 		ret = -1;
 	}
 
+end_unlock:
+	session_unlock_list();
+	rcu_read_unlock();
 end:
 	return ret;
 }

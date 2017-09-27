@@ -4174,6 +4174,7 @@ const char *get_base_path(struct ltt_session *session,
  * Command LTTNG_ROTATE_SESSION from the lttng-ctl library.
  *
  * Ask the consumer to rotate the session output directory.
+ * The session lock must be held.
  *
  * Return 0 on success or else a LTTNG_ERR code.
  */
