@@ -1156,19 +1156,14 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			goto end_nosignal;
 		}
 
-		/*
-		 * Rotate the streams that are ready right now.
-		 * FIXME: this is a second consecutive iteration over the
-		 * streams in a channel, there is probably a better way to
-		 * handle this, but it needs to be after the
-		 * consumer_send_status_msg() call.
-		 */
+		/* Rotate the streams that are ready right now.  */
 		ret = lttng_consumer_rotate_ready_streams(
 				msg.u.rotate_channel.key, ctx);
 		if (ret < 0) {
-			ERR("Rotate channel failed");
+			ERR("Rotate ready streams failed");
 			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
 		}
+
 		break;
 	}
 	case LTTNG_CONSUMER_ROTATE_RENAME:
@@ -1509,6 +1504,8 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	}
 
 	rotate_ready = lttng_consumer_stream_is_rotate_ready(stream, len);
+	fprintf(stderr, "consumer read stream %lu, len %lu, ready = %d\n", stream->key,
+			len, rotate_ready);
 	if (rotate_ready < 0) {
 		ERR("Failed to check if stream is ready for rotation");
 		err = kernctl_put_subbuf(infd);
@@ -1666,6 +1663,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		ret = err;
 		goto error;
 	}
+	fprintf(stderr, "consumer read stream %lu done\n", stream->key);
 
 	/* Write index if needed. */
 	if (!write_index) {
