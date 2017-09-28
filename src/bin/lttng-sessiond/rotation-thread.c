@@ -37,6 +37,7 @@
 #include "health-sessiond.h"
 #include "rotate.h"
 #include "cmd.h"
+#include "session.h"
 #include "sessiond-timer.h"
 
 #include <urcu.h>
@@ -277,6 +278,7 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 	int ret = 0;
 	enum lttng_domain_type domain;
 	struct rotation_channel_info *channel_info;
+	struct ltt_session *session = NULL;
 	uint64_t key;
 
 	if (fd == handle->ust32_consumer ||
@@ -317,38 +319,54 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 		ret = -1;
 		goto end;
 	}
+	rcu_read_lock();
+	session_lock_list();
+	session = session_find_by_id(channel_info->session_id);
+	if (!session) {
+		ERR("[rotation-thread] Session %" PRIu64 " not found",
+				channel_info->session_id);
+		ret = -1;
+		goto end_unlock;
+	}
 
-	if (--channel_info->session->nr_chan_rotate_pending == 0) {
+	if (--session->nr_chan_rotate_pending == 0) {
 		time_t now = time(NULL);
 
 		if (now == (time_t) -1) {
-			channel_info->session->rotate_status = LTTNG_ROTATE_ERROR;
+			session->rotate_status = LTTNG_ROTATE_ERROR;
 			ret = LTTNG_ERR_ROTATE_NOT_AVAILABLE;
 			goto end;
 		}
+		session_lock(session);
 
-		ret = rename_complete_chunk(channel_info->session, now);
+		ret = rename_complete_chunk(session, now);
 		if (ret < 0) {
 			ERR("Failed to rename completed rotation chunk");
+			session_unlock(session);
 			goto end;
 		}
-		channel_info->session->rotate_pending = false;
-		if (channel_info->session->rotate_pending_relay) {
+		session->rotate_pending = false;
+		if (session->rotate_pending_relay) {
 			ret = sessiond_timer_rotate_pending_start(
-					channel_info->session,
+					session,
 					DEFAULT_ROTATE_PENDING_RELAY_TIMER);
 			if (ret) {
 				ERR("Enabling rotate pending timer");
 				ret = -1;
+				session_unlock(session);
 				goto end;
 			}
 		}
+		session_unlock(session);
 	}
 
 	channel_rotation_info_destroy(channel_info);
 
 	ret = 0;
 
+end_unlock:
+	session_unlock_list();
+	rcu_read_unlock();
 end:
 	return ret;
 }

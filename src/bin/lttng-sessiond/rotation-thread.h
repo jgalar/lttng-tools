@@ -26,6 +26,7 @@
 #include <common/compat/poll.h>
 #include <common/hashtable/hashtable.h>
 #include <pthread.h>
+#include "session.h"
 
 struct rotation_channel_key {
 	uint64_t key;
@@ -33,11 +34,7 @@ struct rotation_channel_key {
 };
 
 struct rotation_channel_info {
-	union {
-		struct ltt_kernel_channel *kchan;
-		struct ltt_ust_channel *uchan;
-	} chan;
-	struct ltt_session *session;
+	uint64_t session_id;
 	struct rotation_channel_key channel_key;
 	struct cds_lfht_node rotate_channels_ht_node;
 };

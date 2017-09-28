@@ -64,7 +64,7 @@ int rotate_add_channel_pending(uint64_t key, enum lttng_domain_type domain,
 
 	new_info->channel_key.key = key;
 	new_info->channel_key.domain = domain;
-	new_info->session = session;
+	new_info->session_id = session->id;
 	cds_lfht_node_init(&new_info->rotate_channels_ht_node);
 
 	session->nr_chan_rotate_pending++;
