@@ -1462,7 +1462,7 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx)
 {
 	unsigned long len, subbuf_size, padding;
-	int err, write_index = 1, rotation_ret, rotate_ready;
+	int err, write_index = 1, rotation_ret;
 	ssize_t ret = 0;
 	int infd = stream->wait_fd;
 	struct ctf_packet_index index;
@@ -1502,27 +1502,6 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		ret = err;
 		goto error;
 	}
-
-	rotate_ready = lttng_consumer_stream_is_rotate_ready(stream, len);
-	fprintf(stderr, "consumer read stream %lu, len %lu, ready = %d\n", stream->key,
-			len, rotate_ready);
-	if (rotate_ready < 0) {
-		ERR("Failed to check if stream is ready for rotation");
-		err = kernctl_put_subbuf(infd);
-		if (err != 0) {
-			if (err == -EFAULT) {
-				PERROR("Error in unreserving sub buffer\n");
-			} else if (err == -EIO) {
-				/* Should never happen with newer LTTng versions */
-				PERROR("Reader has been pushed by the writer, last sub-buffer corrupted.");
-			}
-			ret = err;
-			goto error;
-		}
-		ret = -1;
-		goto error;
-	}
-	stream->rotate_ready = rotate_ready;
 
 	if (!stream->metadata_flag) {
 		ret = get_index_values(&index, infd);
@@ -1701,13 +1680,18 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	}
 
 rotate:
-	if (stream->rotate_ready) {
+	rotation_ret = lttng_consumer_stream_is_rotate_ready(stream);
+	if (rotation_ret == 1) {
 		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
 		if (rotation_ret < 0) {
 			ERR("Stream rotation error");
 			ret = -1;
 			goto error;
 		}
+	} else if (rotation_ret < 0) {
+		ERR("Checking if stream is ready to rotate");
+		ret = -1;
+		goto error;
 	}
 
 error:

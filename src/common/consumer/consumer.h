@@ -448,11 +448,8 @@ struct lttng_consumer_stream {
 	uint64_t channel_ro_tracefile_size;
 
 	/*
-	 * If rotate_ready is set to 1, rotate the stream the next time data
-	 * need to be extracted, regardless of the rotate_position. This is
-	 * used if all the metadata has been consumed when we rotate. In this
-	 * case, the snapshot of the positions returns -EAGAIN and we cannot
-	 * use the produced/consumed positions as reference.
+	 * Flag to inform the data or metadata thread that a stream is
+	 * ready to be rotated.
 	 */
 	unsigned int rotate_ready:1;
 	/*
@@ -837,8 +834,7 @@ int consumer_create_index_file(struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_channel(uint64_t key, char *path,
 		uint64_t relayd_id, uint32_t metadata,
 		uint64_t new_chunk_id, struct lttng_consumer_local_data *ctx);
-int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream,
-		unsigned long len);
+int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_ready_streams(uint64_t key,
