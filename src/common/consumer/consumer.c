@@ -4179,7 +4179,7 @@ int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream)
 
 	fprintf(stderr, "packet %lu, pos %lu\n", stream->key, consumed_pos);
 	/* Rotate position not reached yet. */
-	if (consumed_pos < stream->rotate_position) {
+	if ((long) (consumed_pos - stream->rotate_position) < 0) {
 		ret = 0;
 		goto end;
 	}
