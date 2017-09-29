@@ -1102,7 +1102,6 @@ static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
 		goto send_reply;
 	}
 
-	fprintf(stderr, "name: %s\n", session_name);
 	session = session_create(session_name, hostname, live_timer,
 			snapshot, conn->major, conn->minor);
 	if (!session) {
@@ -1588,8 +1587,6 @@ int check_rotate_stream(struct relay_stream *stream)
 	if (stream->prev_seq < stream->rotate_at_seq_num) {
 		DBG("Stream %" PRIu64 " no yet ready for rotation",
 				stream->stream_handle);
-		fprintf(stderr, "Stream %" PRIu64 " no yet ready for rotation\n",
-				stream->stream_handle);
 		ret = 0;
 		goto end;
 	} else if (stream->prev_seq > stream->rotate_at_seq_num) {
@@ -1602,7 +1599,6 @@ int check_rotate_stream(struct relay_stream *stream)
 		/* TODO */
 	} else {
 		DBG("Stream %" PRIu64 " ready for rotation", stream->stream_handle);
-		fprintf(stderr, "Stream %" PRIu64 " ready for rotation\n", stream->stream_handle);
 	}
 
 	ret = do_rotate_stream(stream);
@@ -2402,9 +2398,6 @@ static int relay_rotate_rename(struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	fprintf(stderr, "Renaming %s to %s/\n", stream_info.current_path,
-			stream_info.new_path);
-
 	old = create_output_path(stream_info.current_path);
 	if (!old) {
 		ERR("Failed to create current output path");
@@ -2467,7 +2460,6 @@ int relay_rotate_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	uint32_t rotate_pending;
 
 	DBG("Rotate pending command received");
-	fprintf(stderr, "Rotate pending command received\n");
 
 	if (!session || conn->version_check_done == 0) {
 		ERR("Trying to check for data before version check");
@@ -2530,7 +2522,6 @@ int relay_rotate_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	rcu_read_unlock();
 
 send_reply:
-	fprintf(stderr, "Rotate pending done: %d\n", rotate_pending);
 	memset(&reply, 0, sizeof(reply));
 	reply.ret_code = htobe32(rotate_pending);
 	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);

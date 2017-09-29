@@ -357,19 +357,15 @@ void *sessiond_timer_thread(void *data)
 			}
 			continue;
 		} else if (signr == LTTNG_SESSIOND_SIG_TEARDOWN) {
-			fprintf(stderr, "TEARDOWN\n");
 			cmm_smp_mb();
 			CMM_STORE_SHARED(timer_signal.qs_done, 1);
 			cmm_smp_mb();
 			DBG("Signal timer metadata thread teardown");
 		} else if (signr == LTTNG_SESSIOND_SIG_EXIT) {
-			fprintf(stderr, "KILL\n");
 			goto end;
 		} else if (signr == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
-			fprintf(stderr, "PENDING TIMER\n");
 			relay_rotation_pending_timer(ctx, info.si_signo, &info);
 		} else if (signr == LTTNG_SESSIOND_SIG_ROTATE_TIMER) {
-			fprintf(stderr, "ROTATE TIMER\n");
 			rotate_timer(ctx, info.si_signo, &info);
 		} else {
 			ERR("Unexpected signal %d\n", info.si_signo);

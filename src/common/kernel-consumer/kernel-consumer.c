@@ -1642,7 +1642,6 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		ret = err;
 		goto error;
 	}
-	fprintf(stderr, "consumer read stream %lu done\n", stream->key);
 
 	/* Write index if needed. */
 	if (!write_index) {

@@ -405,7 +405,6 @@ int rotate_pending_relay_timer(struct ltt_session *session)
 	 * Allow the timer thread to send other notifications when needed.
 	 */
 	session->rotate_pending_relay_check_in_progress = false;
-	fprintf(stderr, "RET PENDING: %d\n", ret);
 
 	ret = 0;
 
@@ -430,7 +429,6 @@ int rotate_timer(struct ltt_session *session)
 
 	ret = cmd_rotate_session(session, NULL);
 	session_unlock(session);
-	fprintf(stderr, "RET ROTATE TIMER: %d\n", ret);
 	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
 		ret = 0;
 		goto end;

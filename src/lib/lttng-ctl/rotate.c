@@ -153,7 +153,6 @@ int lttng_rotate_session(struct lttng_rotate_session_attr *attr,
 			sizeof(lsm.session.name));
 
 	ret = lttng_ctl_ask_sessiond(&lsm, (void **) &rotate_return);
-	fprintf(stderr, "RET: %d\n", ret);
 	if (ret < 0) {
 		*rotate_handle = NULL;
 		goto end;
@@ -249,7 +248,6 @@ int lttng_rotate_setup(struct lttng_rotate_session_attr *attr)
 	lsm.u.rotate_setup.size = attr->size;
 
 	ret = lttng_ctl_ask_sessiond(&lsm, NULL);
-	fprintf(stderr, "SETUP RET: %d\n", ret);
 
 end:
 	return ret;

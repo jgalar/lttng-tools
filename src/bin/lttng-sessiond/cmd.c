@@ -4223,7 +4223,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		snprintf(session->rotation_chunk.current_rotate_path,
 				PATH_MAX, "%s",
 				base_path);
-		fprintf(stderr, "b: %s\n", base_path);
 	} else {
 		/*
 		 * The currently active tracing path is now the folder we

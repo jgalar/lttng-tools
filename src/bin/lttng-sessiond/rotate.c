@@ -223,9 +223,6 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 				datetime, session->rotate_count);
 
 		if (session->kernel_session) {
-			fprintf(stderr, "rename %s/kernel to %s\n",
-					session->rotation_chunk.current_rotate_path,
-					new_path);
 			ret = rename_first_chunk(session,
 					session->kernel_session->consumer,
 					new_path);
@@ -243,9 +240,6 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 			}
 		}
 		if (session->ust_session) {
-			fprintf(stderr, "rename %s/ust to %s\n",
-					session->rotation_chunk.current_rotate_path,
-					new_path);
 			ret = rename_first_chunk(session,
 					session->ust_session->consumer,
 					new_path);
@@ -263,11 +257,6 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 		snprintf(new_path, PATH_MAX, "%s%s-%" PRIu64,
 				session->rotation_chunk.current_rotate_path,
 				datetime, session->rotate_count);
-
-		fprintf(stderr, "rename %s to %s\n",
-				session->rotation_chunk.current_rotate_path,
-				new_path);
-
 		ret = session_rename_chunk(session,
 				session->rotation_chunk.current_rotate_path,
 				new_path);

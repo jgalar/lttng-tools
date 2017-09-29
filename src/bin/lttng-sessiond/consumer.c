@@ -1611,7 +1611,6 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 
 	DBG("Consumer rotate channel key %" PRIu64, key);
 
-	fprintf(stderr, "rotate socket %p\n", socket);
 	memset(&msg, 0, sizeof(msg));
 	msg.cmd_type = LTTNG_CONSUMER_ROTATE_CHANNEL;
 	msg.u.rotate_channel.key = key;
@@ -1619,25 +1618,19 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	msg.u.rotate_channel.new_chunk_id = new_chunk_id;
 
 	if (output->type == CONSUMER_DST_NET) {
-		fprintf(stderr, "BASE: %s\n", output->dst.net.base_dir);
-		fprintf(stderr, "CHUNK: %s\n", output->chunk_path);
 		msg.u.rotate_channel.relayd_id = output->net_seq_index;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s%s%s",
 				output->dst.net.base_dir,
 				output->chunk_path, app_pathname);
-		fprintf(stderr, "SENDING: %s\n", msg.u.rotate_channel.pathname);
 		*rotate_pending_relay = true;
 	} else {
 		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s%s%s",
 				output->dst.session_root_path,
 				output->chunk_path, app_pathname);
-		fprintf(stderr, "rotate to %s\n",
-				msg.u.rotate_channel.pathname);
 	}
 
 	health_code_update();
-	fprintf(stderr, "send %d\n", LTTNG_CONSUMER_ROTATE_CHANNEL);
 	ret = consumer_send_msg(socket, &msg);
 	if (ret < 0) {
 		goto error;

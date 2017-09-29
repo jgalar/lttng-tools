@@ -335,7 +335,6 @@ int cmd_rotate(int argc, const char **argv)
 		}
 	}
 
-	fprintf(stderr, "T: %lu, S: %lu\n", timer, size);
 	/* No config options, just rotate the session now */
 	if (timer == 0 && size == 0) {
 		command_ret = rotate_tracing(session_name);
