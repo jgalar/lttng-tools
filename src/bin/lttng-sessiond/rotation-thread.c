@@ -482,7 +482,12 @@ int handle_rotate_timer_pipe(int fd, uint32_t revents,
 	if (!session) {
 		ERR("[rotation-thread] Session %" PRIu64 " not found",
 				timer_data.session_id);
-		ret = -1;
+		/*
+		 * This is a non-fatal error, and we cannot report it to the
+		 * user (timer), so just print the error and continue the
+		 * processing.
+		 */
+		ret = 0;
 		goto end_unlock;
 	}
 

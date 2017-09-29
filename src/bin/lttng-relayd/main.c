@@ -2530,6 +2530,7 @@ int relay_rotate_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	rcu_read_unlock();
 
 send_reply:
+	fprintf(stderr, "Rotate pending done: %d\n", rotate_pending);
 	memset(&reply, 0, sizeof(reply));
 	reply.ret_code = htobe32(rotate_pending);
 	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);

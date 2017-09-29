@@ -1199,7 +1199,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				msg.u.rotate_pending_relay.session_id,
 				msg.u.rotate_pending_relay.relayd_id,
 				msg.u.rotate_pending_relay.chunk_id);
-		if (ret < 0) {
+		if (pending < 0) {
 			ERR("Rotate pending relay failed");
 			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
 		}
