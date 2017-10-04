@@ -66,6 +66,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_ROTATE_CHANNEL,
 	LTTNG_CONSUMER_ROTATE_RENAME,
 	LTTNG_CONSUMER_ROTATE_PENDING_RELAY,
+	LTTNG_CONSUMER_MKDIR,
 };
 
 /* State of each fd in consumer */
@@ -844,5 +845,6 @@ int lttng_consumer_rotate_rename(char *current_path, char *new_path,
 int lttng_consumer_rotate_pending_relay( uint64_t session_id,
 		uint64_t relayd_id, uint64_t chunk_id);
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream);
+int lttng_consumer_mkdir(char *path, uid_t uid, gid_t gid, uint64_t relayd_id);
 
 #endif /* LIB_CONSUMER_H */

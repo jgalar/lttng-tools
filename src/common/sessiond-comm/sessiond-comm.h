@@ -133,6 +133,8 @@ enum lttcomm_relayd_command {
 	RELAYD_ROTATE_RENAME                = 19,
 	/* Check if a chunk has data pending (2.11+) */
 	RELAYD_ROTATE_PENDING               = 20,
+	/* Create a folder on the relayd FS (2.11+) */
+	RELAYD_MKDIR                        = 21,
 };
 
 /*
@@ -571,6 +573,13 @@ struct lttcomm_consumer_msg {
 			uint64_t session_id;
 			uint64_t chunk_id;
 		} LTTNG_PACKED rotate_pending_relay;
+		struct {
+			char path[PATH_MAX];
+			uint64_t relayd_id; /* Relayd id if apply. */
+			uint64_t session_id;
+			uint32_t uid;
+			uint32_t gid;
+		} LTTNG_PACKED mkdir;
 	} u;
 } LTTNG_PACKED;
 

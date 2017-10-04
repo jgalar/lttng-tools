@@ -2359,6 +2359,105 @@ error:
 	return -ret;
 }
 
+static
+const char *get_base_path(struct ltt_session *session,
+		struct consumer_output *consumer)
+{
+	if (session->net_handle > 0) {
+		return consumer->dst.net.base_dir;
+	} else {
+		return consumer->dst.session_root_path;
+	}
+}
+
+static
+int domain_mkdir(struct consumer_output *output, struct ltt_session *session,
+		uid_t uid, gid_t gid)
+{
+	struct consumer_socket *socket;
+	struct lttng_ht_iter iter;
+	int ret;
+	char *path = NULL;
+
+	if (!output || !output->socks) {
+		ERR("No consumer output found");
+		ret = -1;
+		goto end;
+	}
+
+	path = zmalloc(PATH_MAX * sizeof(char));
+	if (!path) {
+		ERR("Cannot allocate mkdir path");
+		ret = -1;
+		goto end;
+	}
+
+	snprintf(path, PATH_MAX, "%s%s", get_base_path(session, output),
+			output->subdir);
+
+	rcu_read_lock();
+	/*
+	 * We have to iterate to find a socket, but we only need to send the
+	 * rename command to one consumer, so we break after the first one.
+	 */
+	cds_lfht_for_each_entry(output->socks->ht, &iter.iter, socket, node.node) {
+		pthread_mutex_lock(socket->lock);
+		ret = consumer_mkdir(socket, session->id, output, path, uid, gid);
+		pthread_mutex_unlock(socket->lock);
+		if (ret) {
+			ERR("Consumer mkdir");
+			ret = -1;
+			rcu_read_unlock();
+			goto end;
+		}
+		break;
+	}
+	rcu_read_unlock();
+
+	ret = 0;
+
+end:
+	free(path);
+	return ret;
+}
+
+static
+int session_mkdir(struct ltt_session *session)
+{
+	int ret;
+	struct consumer_output *output;
+	uid_t uid;
+	gid_t gid;
+
+	if (session->kernel_session) {
+		output = session->kernel_session->consumer;
+		uid = session->kernel_session->uid;
+		gid = session->kernel_session->gid;
+		ret = domain_mkdir(output, session, uid, gid);
+		if (ret) {
+			ERR("Mkdir kernel");
+			goto end;
+		}
+	}
+
+	if (session->ust_session) {
+		output = session->ust_session->consumer;
+		uid = session->ust_session->uid;
+		gid = session->ust_session->gid;
+		ret = domain_mkdir(output, session, uid, gid);
+		if (ret) {
+			ERR("Mkdir UST");
+			goto end;
+		}
+	}
+
+	ret = 0;
+
+end:
+	return ret;
+
+}
+
 /*
  * Command LTTNG_START_TRACE processed by the client thread.
  *
@@ -2406,6 +2505,12 @@ int cmd_start_trace(struct ltt_session *session)
 		session->current_chunk_start_ts = time(NULL);
 		if (session->current_chunk_start_ts == (time_t) -1) {
 			PERROR("Get start time");
+			ret = LTTNG_ERR_FATAL;
+			goto error;
+		}
+		ret = session_mkdir(session);
+		if (ret) {
+			ERR("Failed to create the session directories");
 			ret = LTTNG_ERR_FATAL;
 			goto error;
 		}
@@ -4157,17 +4262,6 @@ int cmd_set_session_shm_path(struct ltt_session *session,
 	session->shm_path[sizeof(session->shm_path) - 1] = '\0';
 
 	return 0;
-}
-
-static
-const char *get_base_path(struct ltt_session *session,
-		struct consumer_output *consumer)
-{
-	if (session->net_handle > 0) {
-		return consumer->dst.net.base_dir;
-	} else {
-		return consumer->dst.session_root_path;
-	}
 }
 
 /*

@@ -334,5 +334,8 @@ int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 int consumer_rotate_pending_relay(struct consumer_socket *socket,
 		struct consumer_output *output, uint64_t session_id,
 		uint64_t chunk_id);
+int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
+		struct consumer_output *output, char *path,
+		uid_t uid, gid_t gid);
 
 #endif /* _CONSUMER_H */
