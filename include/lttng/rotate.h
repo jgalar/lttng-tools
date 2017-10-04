@@ -42,14 +42,9 @@ enum lttng_rotate_status {
 	 */
 	LTTNG_ROTATE_EXPIRED = 2,
 	/*
-	 * Nothing to rotate, it happens on the first rotation when tracing
-	 * only in user-space and no app was started.
-	 */
-	LTTNG_ROTATE_EMPTY = 3,
-	/*
 	 * On error.
 	 */
-	LTTNG_ROTATE_ERROR = 4,
+	LTTNG_ROTATE_ERROR = 3,
 };
 
 /*

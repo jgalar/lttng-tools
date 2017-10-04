@@ -4415,7 +4415,6 @@ int rotate_rename_relay(char *current_path, char *new_path, uint64_t relayd_id)
 
 end:
 	return ret;
-
 }
 
 int lttng_consumer_rotate_rename(char *current_path, char *new_path,

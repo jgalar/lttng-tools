@@ -1085,7 +1085,6 @@ int relayd_rotate_rename(struct lttcomm_relayd_sock *rsock,
 
 error:
 	return ret;
-
 }
 
 int relayd_rotate_pending(struct lttcomm_relayd_sock *rsock, uint64_t chunk_id)

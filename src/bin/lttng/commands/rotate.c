@@ -220,10 +220,6 @@ static int rotate_tracing(char *session_name)
 
 		ret = CMD_SUCCESS;
 		goto end;
-	case LTTNG_ROTATE_EMPTY:
-		MSG("Empty session, nothing to rotate.");
-		ret = CMD_SUCCESS;
-		goto end;
 	}
 
 error:

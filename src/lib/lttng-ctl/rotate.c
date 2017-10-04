@@ -207,7 +207,6 @@ int lttng_rotate_session_pending(
 		snprintf(rotate_handle->output_path, PATH_MAX, "%s",
 				pending_return->output_path);
 	case LTTNG_ROTATE_EXPIRED:
-	case LTTNG_ROTATE_EMPTY:
 		ret = 0;
 		break;
 	/* Still pending */

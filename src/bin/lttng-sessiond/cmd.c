@@ -4433,9 +4433,6 @@ int cmd_rotate_pending(struct ltt_session *session,
 	if (session->rotate_status == LTTNG_ROTATE_ERROR) {
 		DBG("An error occurred during rotation");
 		(*pending_return)->status = LTTNG_ROTATE_ERROR;
-	} else if (session->rotate_status == LTTNG_ROTATE_EMPTY) {
-		DBG("Nothing to rotate");
-		(*pending_return)->status = LTTNG_ROTATE_EMPTY;
 	/* Rotate with a relay */
 	} else if (session->rotate_pending_relay) {
 		DBG("Session %s, rotate_id %" PRIu64 " still pending",
