@@ -4360,9 +4360,8 @@ int cmd_rotate_session(struct ltt_session *session,
 		 * Ex: /20170922-111754-42/kernel
 		 */
 		snprintf(session->kernel_session->consumer->chunk_path,
-				PATH_MAX, "/%s-%" PRIu64 "%s", datetime,
-				session->rotate_count + 1,
-				session->kernel_session->consumer->subdir);
+				PATH_MAX, "/%s-%" PRIu64, datetime,
+				session->rotate_count + 1);
 		ret = kernel_rotate_session(session);
 		if (ret != LTTNG_OK) {
 			goto error;
@@ -4404,16 +4403,17 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	/*
 	 * Create the new chunk folder, so we don't depend on the activity of the
-	 * tracer for it to exist.
+	 * tracer to create it. The tracer may have time to create it before we
+	 * arrive here, but we accept if it already exists.
 	 */
 	ret = session_mkdir(session);
 	if (ret) {
 		ERR("Create new chunk folder");
 		ret = LTTNG_ERR_UNK;
-		goto end;
+		goto error;
 	}
 
-	DBG("Cmd rotate session %s, rotate_id %" PRIu64, session->name,
+	DBG("Cmd rotate session %s, rotate_id %" PRIu64 " sent", session->name,
 			session->rotate_count);
 	ret = LTTNG_OK;
 

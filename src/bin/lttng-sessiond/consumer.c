@@ -1593,7 +1593,8 @@ end:
 
 /*
  * Ask the consumer to rotate a channel.
- * app_pathname only used for UST, it contains the path after /ust/.
+ * domain_path contains "/kernel" for kernel or the complete path for UST
+ * (ex: /ust/uid/1000/64-bit);
  *
  * The new_chunk_id is the session->rotate_count that has been incremented
  * when the rotation started. On the relay, this allows to keep track in which
@@ -1601,7 +1602,7 @@ end:
  */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
-		char *app_pathname, uint32_t metadata, uint64_t new_chunk_id,
+		char *domain_path, uint32_t metadata, uint64_t new_chunk_id,
 		bool *rotate_pending_relay)
 {
 	int ret;
@@ -1621,13 +1622,13 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		msg.u.rotate_channel.relayd_id = output->net_seq_index;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s%s%s",
 				output->dst.net.base_dir,
-				output->chunk_path, app_pathname);
+				output->chunk_path, domain_path);
 		*rotate_pending_relay = true;
 	} else {
 		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
 		snprintf(msg.u.rotate_channel.pathname, PATH_MAX, "%s%s%s",
 				output->dst.session_root_path,
-				output->chunk_path, app_pathname);
+				output->chunk_path, domain_path);
 	}
 
 	health_code_update();

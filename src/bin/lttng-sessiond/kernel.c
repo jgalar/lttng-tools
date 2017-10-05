@@ -1179,7 +1179,7 @@ int kernel_rotate_session(struct ltt_session *session)
 
 			ret = consumer_rotate_channel(socket, chan->fd,
 					ksess->uid, ksess->gid, ksess->consumer,
-					"", 0, session->rotate_count,
+					ksess->consumer->subdir, 0, session->rotate_count,
 					&session->rotate_pending_relay);
 			if (ret < 0) {
 				ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
@@ -1195,7 +1195,8 @@ int kernel_rotate_session(struct ltt_session *session)
 		 */
 		pthread_mutex_lock(socket->lock);
 		ret = consumer_rotate_channel(socket, ksess->metadata->fd,
-				ksess->uid, ksess->gid, ksess->consumer, "", 1,
+				ksess->uid, ksess->gid, ksess->consumer,
+				ksess->consumer->subdir, 1,
 				session->rotate_count,
 				&session->rotate_pending_relay);
 		if (ret < 0) {

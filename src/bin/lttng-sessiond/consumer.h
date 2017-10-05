@@ -326,7 +326,7 @@ int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
-		char *tmp, uint32_t metadata, uint64_t new_chunk_id,
+		char *domain_path, uint32_t metadata, uint64_t new_chunk_id,
 		bool *rotate_pending_relay);
 int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 		struct consumer_output *output, char *current_path, char *new_path,
