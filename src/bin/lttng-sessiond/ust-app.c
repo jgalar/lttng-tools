@@ -6331,7 +6331,6 @@ int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 					LTTNG_DOMAIN_UST, session);
 			if (ret < 0) {
 				ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
-				pthread_mutex_unlock(socket->lock);
 				goto error;
 			}
 
@@ -6340,7 +6339,6 @@ int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 					reg->uid, reg->bits_per_long);
 			if (ret < 0) {
 				PERROR("snprintf rotate path");
-				pthread_mutex_unlock(socket->lock);
 				goto error;
 			}
 
@@ -6352,7 +6350,6 @@ int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 						LTTNG_DOMAIN_UST, session);
 				if (ret < 0) {
 					ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
-					pthread_mutex_unlock(socket->lock);
 					goto error;
 				}
 				ret = consumer_rotate_channel(socket,
@@ -6427,7 +6424,6 @@ int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 					LTTNG_DOMAIN_UST, session);
 			if (ret < 0) {
 				ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
-				pthread_mutex_unlock(socket->lock);
 				goto error;
 			}
 
@@ -6439,7 +6435,6 @@ int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 						session);
 				if (ret < 0) {
 					ret = LTTNG_ERR_KERN_CONSUMER_FAIL;
-					pthread_mutex_unlock(socket->lock);
 					goto error;
 				}
 				ret = consumer_rotate_channel(socket, ua_chan->key,

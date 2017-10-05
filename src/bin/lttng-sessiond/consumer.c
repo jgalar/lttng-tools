@@ -1612,6 +1612,7 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 
 	DBG("Consumer rotate channel key %" PRIu64, key);
 
+	pthread_mutex_lock(socket->lock);
 	memset(&msg, 0, sizeof(msg));
 	msg.cmd_type = LTTNG_CONSUMER_ROTATE_CHANNEL;
 	msg.u.rotate_channel.key = key;
@@ -1636,6 +1637,7 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	if (ret < 0) {
 		goto error;
 	}
+	pthread_mutex_unlock(socket->lock);
 
 error:
 	health_code_update();
