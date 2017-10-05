@@ -188,6 +188,11 @@ error:
 	return ret;
 }
 
+/*
+ * Rename a chunk folder after a rotation is complete.
+ * session_lock_list and session lock must be held.
+ * Returns 0 on success, a negative value on error.
+ */
 int rename_complete_chunk(struct ltt_session *session, time_t ts)
 {
 	struct tm *timeinfo;

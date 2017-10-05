@@ -2392,8 +2392,8 @@ int domain_mkdir(struct consumer_output *output, struct ltt_session *session,
 		goto end;
 	}
 
-	snprintf(path, PATH_MAX, "%s%s", get_base_path(session, output),
-			output->subdir);
+	snprintf(path, PATH_MAX, "%s%s%s", get_base_path(session, output),
+			output->chunk_path, output->subdir);
 
 	rcu_read_lock();
 	/*
@@ -4279,6 +4279,7 @@ int cmd_rotate_session(struct ltt_session *session,
 	struct tm *timeinfo;
 	char datetime[16];
 	time_t now;
+	bool ust_active = false;
 
 	assert(session);
 
@@ -4375,15 +4376,41 @@ int cmd_rotate_session(struct ltt_session *session,
 		snprintf(session->ust_session->consumer->chunk_path,
 				PATH_MAX, "/%s-%" PRIu64, datetime,
 				session->rotate_count + 1);
-		ret = ust_app_rotate_session(session);
+		ret = ust_app_rotate_session(session, &ust_active);
 		if (ret != LTTNG_OK) {
 			goto error;
+		}
+		/*
+		 * Handle the case where we did not start a rotation on any channel.
+		 * The consumer will never wake up the rotation thread to perform the
+		 * rename, so we have to do it here while we hold the session and
+		 * session_list locks.
+		 */
+		if (!session->kernel_session && !ust_active) {
+			ret = rename_complete_chunk(session, now);
+			if (ret < 0) {
+				ERR("Failed to rename completed rotation chunk");
+				session_unlock(session);
+				goto end;
+			}
+			session->rotate_pending = false;
 		}
 	}
 
 	if (rotate_return) {
 		(*rotate_return)->rotate_id = session->rotate_count;
 		(*rotate_return)->status = LTTNG_ROTATE_STARTED;
+	}
+
+	/*
+	 * Create the new chunk folder, so we don't depend on the activity of the
+	 * tracer for it to exist.
+	 */
+	ret = session_mkdir(session);
+	if (ret) {
+		ERR("Create new chunk folder");
+		ret = LTTNG_ERR_UNK;
+		goto end;
 	}
 
 	DBG("Cmd rotate session %s, rotate_id %" PRIu64, session->name,

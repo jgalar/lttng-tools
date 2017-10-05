@@ -6284,7 +6284,7 @@ int ust_app_regenerate_statedump_all(struct ltt_ust_session *usess)
  *
  * Return 0 on success or else a negative value.
  */
-int ust_app_rotate_session(struct ltt_session *session)
+int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 {
 	int ret = 0;
 	struct lttng_ht_iter iter;
@@ -6377,6 +6377,7 @@ int ust_app_rotate_session(struct ltt_session *session)
 			if (ret < 0) {
 				goto error;
 			}
+			*ust_active = true;
 		}
 		break;
 	}
@@ -6461,6 +6462,7 @@ int ust_app_rotate_session(struct ltt_session *session)
 			if (ret < 0) {
 				goto error;
 			}
+			*ust_active = true;
 		}
 		break;
 	}
