@@ -1002,18 +1002,21 @@ int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
 	if (lttng_strncpy(msg.new_pathname, new_pathname,
 				sizeof(msg.new_pathname))) {
 		ret = -1;
+		ERR("Copy new pathname");
 		goto error;
 	}
 
 	/* Send command */
 	ret = send_command(rsock, RELAYD_ROTATE_STREAM, (void *) &msg, sizeof(msg), 0);
 	if (ret < 0) {
+		ERR("Send rotate command");
 		goto error;
 	}
 
 	/* Receive response */
 	ret = recv_reply(rsock, (void *) &reply, sizeof(reply));
 	if (ret < 0) {
+		ERR("Receive rotate reply");
 		goto error;
 	}
 
