@@ -46,6 +46,8 @@ struct relay_index {
 
 	/* Index packet data. This is the data that is written on disk. */
 	struct ctf_packet_index index_data;
+	/* data + padding of this packet, filled by the data thread */
+	uint64_t total_size;
 
 	bool has_index_data;
 	bool flushed;

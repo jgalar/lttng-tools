@@ -64,6 +64,11 @@ struct relay_stream {
 	uint64_t tracefile_count;
 
 	/*
+	 * Position in the tracefile where we have the full index also on disk.
+	 */
+	uint64_t pos_after_last_complete_data_index;
+
+	/*
 	 * Counts the number of received indexes. The "tag" associated
 	 * with an index is taken before incrementing this seqcount.
 	 * Therefore, the sequence tag associated with the last index

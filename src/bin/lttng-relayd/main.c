@@ -54,6 +54,7 @@
 #include <common/sessiond-comm/relayd.h>
 #include <common/uri.h>
 #include <common/utils.h>
+#include <common/align.h>
 #include <common/config/session-config.h>
 #include <urcu/rculist.h>
 
@@ -1563,7 +1564,95 @@ int do_rotate_stream(struct relay_stream *stream)
 	}
 
 	stream->rotate_at_seq_num = -1ULL;
+
 end:
+	return ret;
+}
+
+static
+int truncate_rotate_stream(struct relay_stream *stream)
+{
+	int ret, new_fd;
+	uint64_t diff, pos = 0;
+	char *buff = NULL;
+
+	assert(!stream->is_metadata);
+
+	buff = zmalloc(PAGE_SIZE);
+	if (!buff) {
+		ERR("Alloc buffer for moving trace data");
+		ret = -1;
+		goto end;
+	}
+
+	fprintf(stderr, "%d\n", stream->tracefile_size_current -
+			            stream->pos_after_last_complete_data_index);
+	assert((stream->tracefile_size_current -
+			stream->pos_after_last_complete_data_index) > 0);
+
+	diff = stream->tracefile_size_current - stream->pos_after_last_complete_data_index;
+
+	new_fd = utils_create_stream_file(stream->path_name, stream->channel_name,
+			stream->tracefile_size, stream->tracefile_count, -1, -1, NULL);
+	if (new_fd < 0) {
+		ERR("Failed to create new stream file");
+		ret = -1;
+		goto end;
+	}
+
+	ret = lseek(stream->stream_fd->fd,
+			stream->pos_after_last_complete_data_index, SEEK_SET);
+	if (ret < 0) {
+		PERROR("seek truncate stream");
+		goto end;
+	}
+
+	while (pos < diff) {
+		int cnt;
+
+		if (diff - pos > PAGE_SIZE) {
+			cnt = PAGE_SIZE;
+		} else {
+			cnt = diff - pos;
+		}
+		ret = lttng_read(stream->stream_fd->fd, buff, cnt);
+		if (ret < cnt) {
+			PERROR("read truncate stream");
+			ret = -1;
+			goto end;
+		}
+
+		ret = lttng_write(new_fd, buff, cnt);
+		if (ret < cnt) {
+			PERROR("write truncated stream");
+			ret = -1;
+			goto end;
+		}
+
+		pos += cnt;
+	}
+
+	ret = ftruncate(stream->stream_fd->fd, stream->pos_after_last_complete_data_index);
+	if (ret) {
+		PERROR("ftruncate");
+		goto end;
+	}
+
+	ret = close(stream->stream_fd->fd);
+	if (ret < 0) {
+		PERROR("Closing tracefile");
+		goto end;
+	}
+
+	stream->stream_fd->fd = new_fd;
+	stream->tracefile_size_current = 0;
+	stream->rotate_at_seq_num = -1ULL;
+
+	ret = 0;
+	goto end;
+
+end:
+	free(buff);
 	return ret;
 }
 
@@ -1596,12 +1685,18 @@ int check_rotate_stream(struct relay_stream *stream)
 		fprintf(stderr, "Rotation after too much data has been written in tracefile "
 				"for stream %" PRIu64 ", need to truncate before "
 				"rotating\n", stream->stream_handle);
-		/* TODO */
+		fprintf(stderr, "current pos: %lu, last safe pos: %lu\n",
+				stream->tracefile_size_current,
+				stream->pos_after_last_complete_data_index);
+		ret = truncate_rotate_stream(stream);
+		if (ret) {
+			ERR("Failed to truncate stream");
+			goto end;
+		}
 	} else {
 		DBG("Stream %" PRIu64 " ready for rotation", stream->stream_handle);
+		ret = do_rotate_stream(stream);
 	}
-
-	ret = do_rotate_stream(stream);
 
 end:
 	return ret;
@@ -2155,6 +2250,9 @@ static int relay_recv_index(struct lttcomm_relayd_hdr *recv_hdr,
 	if (ret == 0) {
 		tracefile_array_commit_seq(stream->tfa);
 		stream->index_received_seqcount++;
+		stream->pos_after_last_complete_data_index += index->total_size;
+		fprintf(stderr, "Stream %lu, ctrl flush index, safe_pos = %lu\n",
+				stream->stream_handle, stream->pos_after_last_complete_data_index);
 	} else if (ret > 0) {
 		/* no flush. */
 		ret = 0;
@@ -2695,7 +2793,7 @@ end:
  * Return 0 on success else a negative value.
  */
 static int handle_index_data(struct relay_stream *stream, uint64_t net_seq_num,
-		int rotate_index)
+		int rotate_index, int *flushed, uint64_t total_size)
 {
 	int ret = 0;
 	uint64_t data_offset;
@@ -2741,7 +2839,9 @@ static int handle_index_data(struct relay_stream *stream, uint64_t net_seq_num,
 	if (ret == 0) {
 		tracefile_array_commit_seq(stream->tfa);
 		stream->index_received_seqcount++;
+		*flushed = 1;
 	} else if (ret > 0) {
+		index->total_size = total_size;
 		/* No flush. */
 		ret = 0;
 	} else {
@@ -2771,6 +2871,7 @@ static int relay_process_data(struct relay_connection *conn)
 	size_t chunk_size = RECV_DATA_BUFFER_SIZE;
 	size_t recv_off = 0;
 	char data_buffer[chunk_size];
+	int flushed = 0;
 
 	ret = conn->sock->ops->recvmsg(conn->sock, &data_hdr,
 			sizeof(struct lttcomm_relayd_data_hdr), 0);
@@ -2836,7 +2937,8 @@ static int relay_process_data(struct relay_connection *conn)
 	 * snapshot and index are NOT supported.
 	 */
 	if (session->minor >= 4 && !session->snapshot) {
-		ret = handle_index_data(stream, net_seq_num, rotate_index);
+		ret = handle_index_data(stream, net_seq_num, rotate_index, &flushed,
+				data_size + be32toh(data_hdr.padding_size));
 		if (ret < 0) {
 			ERR("handle_index_data: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
 					stream->stream_handle, net_seq_num, ret);
@@ -2883,6 +2985,14 @@ static int relay_process_data(struct relay_connection *conn)
 			data_size + be32toh(data_hdr.padding_size);
 	if (stream->prev_seq == -1ULL) {
 		new_stream = true;
+	}
+	fprintf(stderr, "Stream %lu, data in pos = %lu\n",
+			stream->stream_handle, stream->tracefile_size_current);
+	if (flushed) {
+		stream->pos_after_last_complete_data_index = stream->tracefile_size_current;
+		fprintf(stderr, "Stream %lu, flush data index, safe_pos %lu\n",
+				stream->stream_handle,
+				stream->pos_after_last_complete_data_index);
 	}
 
 	stream->prev_seq = net_seq_num;

@@ -785,7 +785,7 @@ int utils_create_stream_file(const char *path_name, char *file_name, uint64_t si
 		goto error;
 	}
 
-	flags = O_WRONLY | O_CREAT | O_TRUNC;
+	flags = O_RDWR | O_CREAT | O_TRUNC;
 	/* Open with 660 mode */
 	mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP;
 
