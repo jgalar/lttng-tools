@@ -4362,6 +4362,9 @@ int cmd_rotate_session(struct ltt_session *session,
 		snprintf(session->kernel_session->consumer->chunk_path,
 				PATH_MAX, "/%s-%" PRIu64, datetime,
 				session->rotate_count + 1);
+		fprintf(stderr, "active: %s, chunk: %s\n",
+				session->rotation_chunk.active_tracing_path,
+				session->kernel_session->consumer->chunk_path);
 		ret = kernel_rotate_session(session);
 		if (ret != LTTNG_OK) {
 			goto error;
