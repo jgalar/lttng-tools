@@ -33,60 +33,29 @@
 #include <lttng/rotate.h>
 
 static char *opt_session_name;
-static int opt_no_wait;
 static struct mi_writer *writer;
 
 enum {
 	OPT_HELP = 1,
 	OPT_LIST_OPTIONS,
+	OPT_TIMER,
+	OPT_SIZE,
 };
 
 static struct poptOption long_options[] = {
 	/* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
-	{"help",      'h', POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
+	{"help",        'h', POPT_ARG_NONE, 0, OPT_HELP, 0, 0},
 	{"list-options", 0, POPT_ARG_NONE, NULL, OPT_LIST_OPTIONS, NULL, NULL},
-	{"no-wait",   'n', POPT_ARG_VAL, &opt_no_wait, 1, 0, 0},
-	{"session",        's', POPT_ARG_STRING, &opt_session_name, 0, 0, 0},
+	{"session",     's', POPT_ARG_STRING, &opt_session_name, 0, 0, 0},
+	{"timer",        0,   POPT_ARG_NONE, 0, OPT_TIMER, 0, 0},
+	{"size",         0,   POPT_ARG_NONE, 0, OPT_SIZE, 0, 0},
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
-static int mi_print_session(char *session_name, int enabled)
+static int setup_rotate(char *session_name, uint64_t timer, uint64_t size)
 {
-	int ret;
-
-	/* Open session element */
-	ret = mi_lttng_writer_open_element(writer, config_element_session);
-	if (ret) {
-		goto end;
-	}
-
-	/* Print session name element */
-	ret = mi_lttng_writer_write_element_string(writer, config_element_name,
-			session_name);
-	if (ret) {
-		goto end;
-	}
-
-	ret = mi_lttng_writer_write_element_bool(writer, config_element_enabled,
-			enabled);
-	if (ret) {
-		goto end;
-	}
-
-	/* Close session element */
-	ret = mi_lttng_writer_close_element(writer);
-
-end:
-	return ret;
-}
-
-static int rotate_tracing(char *session_name)
-{
-	int ret;
-	char *path = NULL;
+	int ret = 0;
 	struct lttng_rotate_session_attr *attr = NULL;
-	struct lttng_rotate_session_handle *handle = NULL;
-	enum lttng_rotate_status rotate_status;
 
 	attr = lttng_rotate_session_attr_create();
 	if (!attr) {
@@ -98,107 +67,36 @@ static int rotate_tracing(char *session_name)
 		goto error;
 	}
 
-	DBG("Rotating the output files of session %s", session_name);
-
-	ret = lttng_rotate_session(attr, &handle);
-	if (ret < 0) {
-		switch (-ret) {
-		case LTTNG_ERR_SESSION_NOT_STARTED:
-			WARN("Tracing session %s not started yet", session_name);
-			break;
-		default:
-			ERR("%s", lttng_strerror(ret));
-			break;
-		}
-		goto error;
+	if (timer == -1ULL) {
+		lttng_rotate_session_attr_set_timer(attr, timer);
+		MSG("Disabling rotation timer on session %s", session_name);
+	}
+	if (size == -1ULL) {
+		lttng_rotate_session_attr_set_size(attr, size);
+		MSG("Disabling rotation based on size on session %s", session_name);
 	}
 
-	if (!opt_no_wait) {
-		_MSG("Waiting for data availability");
-		fflush(stdout);
-		do {
-			ret = lttng_rotate_session_pending(handle);
-			if (ret < 0) {
-				goto error;
-			}
+	ret = lttng_rotate_setup(attr);
 
-			/*
-			 * Data sleep time before retrying (in usec). Don't sleep if the call
-			 * returned value indicates availability.
-			 */
-			if (ret) {
-				usleep(DEFAULT_DATA_AVAILABILITY_WAIT_TIME);
-				_MSG(".");
-				fflush(stdout);
-			}
-		} while (ret == 1);
-		MSG("");
-	}
-
-	rotate_status = lttng_rotate_session_get_status(handle);
-	switch(rotate_status) {
-	case LTTNG_ROTATE_COMPLETED:
-		lttng_rotate_session_get_output_path(handle, &path);
-		MSG("Output files of session %s rotated to %s", session_name, path);
-		ret = CMD_SUCCESS;
-		goto end;
-	case LTTNG_ROTATE_STARTED:
-		MSG("Rotation started for session %s", session_name);
-		free(path);
-		if (lttng_opt_mi) {
-			ret = mi_print_session(session_name, 1);
-			if (ret) {
-				ret = CMD_ERROR;
-				goto error;
-			}
-		}
-
-		ret = CMD_SUCCESS;
-		goto end;
-	case LTTNG_ROTATE_EXPIRED:
-		MSG("Output files of session %s rotated, but handle expired", session_name);
-		if (lttng_opt_mi) {
-			ret = mi_print_session(session_name, 1);
-			if (ret) {
-				ret = CMD_ERROR;
-				goto error;
-			}
-		}
-
-		ret = CMD_SUCCESS;
-		goto end;
-	case LTTNG_ROTATE_ERROR:
-		MSG("An error occurred with the rotation of session %s", session_name);
-		if (lttng_opt_mi) {
-			ret = mi_print_session(session_name, 1);
-			if (ret) {
-				ret = CMD_ERROR;
-				goto error;
-			}
-		}
-
-		ret = CMD_SUCCESS;
-		goto end;
-	}
+	goto end;
 
 error:
-	ret = CMD_ERROR;
+	ret = -1;
 end:
-	lttng_rotate_session_handle_destroy(handle);
-	lttng_rotate_session_attr_destroy(attr);
 	return ret;
 }
 
 /*
- *  cmd_rotate
+ *  cmd_disable_rotation
  *
- *  The 'rotate <options>' first level command
+ *  The 'enable-rotation <options>' first level command
  */
-int cmd_rotate(int argc, const char **argv)
+int cmd_disable_rotation(int argc, const char **argv)
 {
 	int opt, ret = CMD_SUCCESS, command_ret = CMD_SUCCESS, success = 1;
 	static poptContext pc;
 	char *session_name = NULL;
+	uint64_t timer = 0, size = 0;
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 0);
 	poptReadDefaultConfig(pc, 0);
@@ -211,6 +109,16 @@ int cmd_rotate(int argc, const char **argv)
 		case OPT_LIST_OPTIONS:
 			list_cmd_options(stdout, long_options);
 			goto end;
+		case OPT_TIMER:
+		{
+			timer = -1ULL;
+			break;
+		}
+		case OPT_SIZE:
+		{
+			size = -1ULL;
+			break;
+		}
 		default:
 			ret = CMD_UNDEFINED;
 			goto end;
@@ -262,7 +170,14 @@ int cmd_rotate(int argc, const char **argv)
 		}
 	}
 
-	command_ret = rotate_tracing(session_name);
+	/* No config options, just rotate the session now */
+	if (timer == 0 && size == 0) {
+		ERR("No timer or size given");
+		success = 0;
+		command_ret = -1;
+	} else {
+		command_ret = setup_rotate(session_name, timer, size);
+	}
 
 	if (command_ret) {
 		ERR("%s", lttng_strerror(command_ret));

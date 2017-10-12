@@ -4492,6 +4492,7 @@ end:
  * Command LTTNG_ROTATE_SETUP from the lttng-ctl library.
  *
  * Configure the automatic rotation parameters.
+ * Set to -1ULL to disable them.
  *
  * Return 0 on success or else a LTTNG_ERR code.
  */
@@ -4504,12 +4505,12 @@ int cmd_rotate_setup(struct ltt_session *session,
 
 	DBG("Cmd rotate setup session %s", session->name);
 
-	if (timer_us && session->rotate_timer_period) {
+	if (timer_us && timer_us != -1ULL && session->rotate_timer_period) {
 		ret = LTTNG_ERR_ROTATE_TIMER_EXISTS;
 		goto end;
 	}
 
-	if (size && session->rotate_size) {
+	if (size && size != -1ULL && session->rotate_size) {
 		ret = LTTNG_ERR_ROTATE_SIZE_EXISTS;
 		goto end;
 	}
@@ -4530,7 +4531,9 @@ int cmd_rotate_setup(struct ltt_session *session,
 		}
 	} else if (timer_us == -1ULL && session->rotate_timer_period > 0) {
 		sessiond_rotate_timer_stop(session);
+		session->rotate_timer_period = 0;
 	}
+
 	session->rotate_size = size;
 
 	ret = LTTNG_OK;
