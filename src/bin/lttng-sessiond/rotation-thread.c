@@ -122,6 +122,12 @@ void rotation_thread_handle_destroy(
 			PERROR("close kernel consumer channel rotation pipe");
 		}
 	}
+	if (handle->client_rotate_pipe >= 0) {
+		ret = close(handle->client_rotate_pipe);
+		if (ret) {
+			PERROR("close client command rotation pipe");
+		}
+	}
 
 end:
 	free(handle);
@@ -131,6 +137,7 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		struct lttng_pipe *ust32_channel_rotate_pipe,
 		struct lttng_pipe *ust64_channel_rotate_pipe,
 		struct lttng_pipe *kernel_channel_rotate_pipe,
+		struct lttng_pipe *client_rotate_pipe,
 		int thread_quit_pipe, int rotate_timer_pipe)
 {
 	struct rotation_thread_handle *handle;
@@ -169,6 +176,16 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		}
 	} else {
 		handle->kernel_consumer = -1;
+	}
+	if (client_rotate_pipe) {
+		handle->client_rotate_pipe =
+				lttng_pipe_release_readfd(
+					client_rotate_pipe);
+		if (handle->client_rotate_pipe < 0) {
+			goto error;
+		}
+	} else {
+		handle->client_rotate_pipe = -1;
 	}
 	handle->thread_quit_pipe = thread_quit_pipe;
 	handle->rotate_timer_pipe = rotate_timer_pipe;
@@ -436,7 +453,6 @@ int rotate_timer(struct ltt_session *session)
 		ret = -1;
 		goto end;
 	}
-
 
 	ret = 0;
 

@@ -52,6 +52,8 @@ struct command_ctx {
 	struct lttcomm_lttng_msg *llm;
 	struct lttcomm_session_msg *lsm;
 	lttng_sock_cred creds;
+	/* Write-side to send commands to the rotation thread */
+	int client_rotate_pipe;
 };
 
 struct ust_command {
@@ -86,6 +88,11 @@ struct ust_reg_wait_queue {
 struct ust_reg_wait_node {
 	struct ust_app *app;
 	struct cds_list_head head;
+};
+
+struct manage_client_handle {
+	/* Write side to send commands to the rotation thread. */
+	int client_rotate_pipe;
 };
 
 /*

@@ -41,14 +41,18 @@ struct rotation_channel_info {
 
 struct rotation_thread_handle {
 	/*
-	 * Read side of pipes used to receive channel status info collected
-	 * by the various consumer daemons.
+	 * Read side of pipes used to communicate with the rotation thread.
 	 */
+	/* Notification from the consumers */
 	int ust32_consumer;
 	int ust64_consumer;
 	int kernel_consumer;
+	/* quit pipe */
 	int thread_quit_pipe;
+	/* Timer thread wakeup pipe */
 	int rotate_timer_pipe;
+	/* thread_manage_clients command pipe */
+	int client_rotate_pipe;
 };
 
 struct rotation_thread_state {
@@ -60,6 +64,7 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		struct lttng_pipe *ust32_channel_rotate_pipe,
 		struct lttng_pipe *ust64_channel_rotate_pipe,
 		struct lttng_pipe *kernel_channel_rotate_pipe,
+		struct lttng_pipe *client_rotate_pipe,
 		int thread_quit_pipe, int rotate_timer_pipe);
 
 void rotation_thread_handle_destroy(

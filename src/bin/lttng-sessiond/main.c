@@ -338,6 +338,9 @@ struct notification_thread_handle *notification_thread_handle;
 /* Rotation thread handle. */
 struct rotation_thread_handle *rotation_thread_handle;
 
+/* Thread manage client handle. */
+struct manage_client_handle *manage_client_handle;
+
 /* Global hash tables */
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
 
@@ -4526,6 +4529,7 @@ static void *thread_manage_clients(void *data)
 	uint32_t revents, nb_fd;
 	struct command_ctx *cmd_ctx = NULL;
 	struct lttng_poll_event events;
+	struct manage_client_handle *handle = data;
 
 	DBG("[thread] Manage client started");
 
@@ -4663,6 +4667,7 @@ static void *thread_manage_clients(void *data)
 
 		cmd_ctx->llm = NULL;
 		cmd_ctx->session = NULL;
+		cmd_ctx->client_rotate_pipe = handle->client_rotate_pipe;
 
 		health_code_update();
 
@@ -5702,6 +5707,55 @@ error:
 	return ret;
 }
 
+static
+void manage_client_handle_destroy(
+		struct manage_client_handle *handle)
+{
+	int ret;
+
+	if (!handle) {
+		goto end;
+	}
+
+	if (handle->client_rotate_pipe >= 0) {
+		ret = close(handle->client_rotate_pipe);
+		if (ret) {
+			PERROR("close client rotate pipe");
+		}
+	}
+
+end:
+	free(handle);
+}
+
+static
+struct manage_client_handle *manage_client_handle_create(
+		struct lttng_pipe *client_rotate_pipe)
+{
+	struct manage_client_handle *handle;
+
+	handle = zmalloc(sizeof(*handle));
+	if (!handle) {
+		goto end;
+	}
+
+	if (client_rotate_pipe) {
+		handle->client_rotate_pipe = lttng_pipe_release_writefd(
+				client_rotate_pipe);
+		if (handle->client_rotate_pipe < 0) {
+			goto error;
+		}
+	} else {
+		handle->client_rotate_pipe = -1;
+	}
+
+end:
+	return handle;
+error:
+	manage_client_handle_destroy(handle);
+	return NULL;
+}
+
 /*
  * main
  */
@@ -5717,7 +5771,8 @@ int main(int argc, char **argv)
 	bool timer_thread_running = false;
 	struct lttng_pipe *ust32_channel_rotate_pipe = NULL,
 			*ust64_channel_rotate_pipe = NULL,
-			*kernel_channel_rotate_pipe = NULL;
+			*kernel_channel_rotate_pipe = NULL,
+			*client_rotate_pipe = NULL;
 	struct timer_thread_parameters timer_thread_ctx;
 
 	init_kernel_workarounds();
@@ -6053,6 +6108,23 @@ int main(int argc, char **argv)
 	 */
 	timer_thread_ctx.rotate_timer_pipe = rotate_timer_pipe[1];
 
+	/*
+	 * Pipe to send commands from the manage client thread to the rotation
+	 * thread.
+	 */
+	client_rotate_pipe = lttng_pipe_open(0);
+	if (!client_rotate_pipe) {
+		ERR("Failed to create client rotate pipe");
+		retval = -1;
+		goto exit_init_data;
+	}
+
+	manage_client_handle = manage_client_handle_create(client_rotate_pipe);
+	if (!manage_client_handle) {
+		retval = -1;
+		goto exit_init_data;
+	}
+
 	/* 64 bits consumerd path setup */
 	ret = snprintf(ustconsumer64_data.err_unix_sock_path, PATH_MAX,
 			DEFAULT_USTCONSUMERD64_ERR_SOCK_PATH, rundir);
@@ -6295,6 +6367,7 @@ int main(int argc, char **argv)
 			ust32_channel_rotate_pipe,
 			ust64_channel_rotate_pipe,
 			kernel_channel_rotate_pipe,
+			client_rotate_pipe,
 			thread_quit_pipe[0],
 			rotate_timer_pipe[0]);
 	if (!rotation_thread_handle) {
@@ -6329,7 +6402,7 @@ int main(int argc, char **argv)
 
 	/* Create thread to manage the client socket */
 	ret = pthread_create(&client_thread, default_pthread_attr(),
-			thread_manage_clients, (void *) NULL);
+			thread_manage_clients, manage_client_handle);
 	if (ret) {
 		errno = ret;
 		PERROR("pthread_create clients");
@@ -6491,6 +6564,9 @@ exit_dispatch:
 		PERROR("pthread_join");
 		retval = -1;
 	}
+	if (manage_client_handle) {
+		manage_client_handle_destroy(manage_client_handle);
+	}
 
 exit_client:
 exit_rotation:
@@ -6587,6 +6663,7 @@ exit_init_data:
 	lttng_pipe_destroy(ust32_channel_rotate_pipe);
 	lttng_pipe_destroy(ust64_channel_rotate_pipe);
 	lttng_pipe_destroy(kernel_channel_rotate_pipe);
+	lttng_pipe_destroy(client_rotate_pipe);
 exit_ht_cleanup:
 
 	health_app_destroy(health_sessiond);
