@@ -22,7 +22,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/evaluation-internal.h>
 #include <lttng/domain.h>
-#include "common/session-view.h"
+#include "common/buffer-view.h"
 
 struct lttng_condition_session_usage {
 	struct lttng_condition parent;
@@ -34,10 +34,10 @@ struct lttng_condition_session_usage {
 };
 
 struct lttng_condition_session_usage_comm {
-	uint64_t consumed_threshold;
+	uint64_t consumed_threshold_bytes;
 	/* Length includes the trailing \0. */
 	uint32_t session_name_len;
-	char session_names[];
+	char session_name[];
 } LTTNG_PACKED;
 
 struct lttng_evaluation_session_usage {
@@ -50,16 +50,16 @@ struct lttng_evaluation_session_usage_comm {
 } LTTNG_PACKED;
 
 LTTNG_HIDDEN
-struct lttng_evaluation *lttng_evaluation_session_usage_create(
+struct lttng_evaluation *lttng_evaluation_session_usage_consumed_create(
 		enum lttng_condition_type type, uint64_t consumed);
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_session_usage_create_from_buffer(
+ssize_t lttng_condition_session_usage_consumed_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_condition **condition);
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_session_usage_create_from_buffer(
+ssize_t lttng_evaluation_session_usage_consumed_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_evaluation **evaluation);
 

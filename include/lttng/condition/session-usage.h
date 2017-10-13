@@ -58,7 +58,7 @@ struct lttng_evaluation;
  * destroyed using lttng_condition_destroy().
  */
 extern struct lttng_condition *
-lttng_condition_session_consumed_create(void);
+lttng_condition_session_usage_consumed_create(void);
 
 /*
  * Get the threshold of a consumed session usage condition.
@@ -72,9 +72,9 @@ lttng_condition_session_consumed_create(void);
  * bytes, was not set prior to this call.
  */
 extern enum lttng_condition_status
-lttng_condition_session_consumed_get_threshold(
+lttng_condition_session_usage_consumed_get_threshold(
 		const struct lttng_condition *condition,
-	        uint64_t *threshold_bytes);
+	        uint64_t *consumed_threshold_bytes);
 
 /*
  * Set the threshold of a consumed session usage condition.
@@ -85,9 +85,9 @@ lttng_condition_session_consumed_get_threshold(
  * if invalid paramenters are passed.
  */
 extern enum lttng_condition_status
-lttng_condition_session_consumed_set_threshold(
+lttng_condition_session_usage_consumed_set_threshold(
 		struct lttng_condition *condition,
-	        uint64_t threshold_bytes);
+	        uint64_t consumed_threshold_bytes);
 
 /*
  * Get the session name property of a session usage condition.
@@ -134,7 +134,7 @@ lttng_condition_session_usage_set_session_name(
 extern enum lttng_evaluation_status
 lttng_evaluation_session_usage_get_consumed(
 		const struct lttng_evaluation *evaluation,
-	        uint64_t *consumed_bytes);
+	        uint64_t *session_consumed);
 
 #ifdef __cplusplus
 }
