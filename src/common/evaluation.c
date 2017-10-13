@@ -86,6 +86,14 @@ ssize_t lttng_evaluation_create_from_buffer(
 		}
 		evaluation_size += ret;
 		break;
+	case LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED:
+		ret = lttng_evaluation_session_usage_consumed_create_from_buffer(
+				&evaluation_view, evaluation);
+		if (ret < 0) {
+			goto end;
+		}
+		evaluation_size += ret;
+		break;
 	default:
 		ERR("Attempted to create evaluation of unknown type (%i)",
 				(int) evaluation_comm->type);

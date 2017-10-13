@@ -229,7 +229,7 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_session_usage_consumed_from_buffer(
+ssize_t lttng_condition_session_usage_consumed_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_condition **_condition)
 {
