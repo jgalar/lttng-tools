@@ -32,6 +32,7 @@
 #include <lttng/notification/notification-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
+#include <lttng/condition/session-consumed-size-internal.h>
 #include <lttng/notification/channel-internal.h>
 
 #include <time.h>
@@ -152,6 +153,7 @@ struct channel_state_sample {
 	struct cds_lfht_node channel_state_ht_node;
 	uint64_t highest_usage;
 	uint64_t lowest_usage;
+	uint64_t total_consumed;
 };
 
 static unsigned long hash_channel_key(struct channel_key *key);
@@ -304,6 +306,25 @@ unsigned long lttng_condition_buffer_usage_hash(
 	return hash;
 }
 
+static
+unsigned long lttng_condition_session_consumed_size_hash(
+	struct lttng_condition *_condition)
+{
+	unsigned long hash = 0;
+	struct lttng_condition_session_consumed_size *condition;
+	uint64_t val;
+
+	condition = container_of(_condition,
+			struct lttng_condition_session_consumed_size, parent);
+
+	if (condition->session_name) {
+		hash ^= hash_key_str(condition->session_name, lttng_ht_seed);
+	}
+	val = condition->consumed_threshold_bytes.value;
+	hash ^= hash_key_u64(&val, lttng_ht_seed);
+	return hash;
+}
+
 /*
  * The lttng_condition hashing code is kept in this file (rather than
  * condition.c) since it makes use of GPLv2 code (hashtable utils), which we
@@ -316,6 +337,8 @@ unsigned long lttng_condition_hash(struct lttng_condition *condition)
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
 		return lttng_condition_buffer_usage_hash(condition);
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+		return lttng_condition_session_consumed_size_hash(condition);
 	default:
 		ERR("[notification-thread] Unexpected condition type caught");
 		abort();
@@ -2178,6 +2201,7 @@ int handle_notification_thread_channel_sample(
 	latest_sample.key.domain = domain;
 	latest_sample.highest_usage = sample_msg.highest;
 	latest_sample.lowest_usage = sample_msg.lowest;
+	latest_sample.total_consumed = sample_msg.total_consumed;
 
 	rcu_read_lock();
 
@@ -2203,12 +2227,13 @@ int handle_notification_thread_channel_sample(
 	}
 	channel_info = caa_container_of(node, struct channel_info,
 			channels_ht_node);
-	DBG("[notification-thread] Handling channel sample for channel %s (key = %" PRIu64 ") in session %s (highest usage = %" PRIu64 ", lowest usage = %" PRIu64")",
+	DBG("[notification-thread] Handling channel sample for channel %s (key = %" PRIu64 ") in session %s (highest usage = %" PRIu64 ", lowest usage = %" PRIu64", total consumed = %" PRIu64")",
 			channel_info->channel_name,
 			latest_sample.key.key,
 			channel_info->session_name,
 			latest_sample.highest_usage,
-			latest_sample.lowest_usage);
+			latest_sample.lowest_usage,
+			latest_sample.total_consumed);
 
 	/* Retrieve the channel's last sample, if it exists, and update it. */
 	cds_lfht_lookup(state->channel_state_ht,
@@ -2228,6 +2253,7 @@ int handle_notification_thread_channel_sample(
 				sizeof(previous_sample));
 		stored_sample->highest_usage = latest_sample.highest_usage;
 		stored_sample->lowest_usage = latest_sample.lowest_usage;
+		stored_sample->total_consumed = latest_sample.total_consumed;
 		previous_sample_available = true;
 	} else {
 		/*
