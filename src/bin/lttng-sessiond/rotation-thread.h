@@ -28,6 +28,21 @@
 #include <pthread.h>
 #include "session.h"
 
+enum rotation_thread_commands {
+	ROTATION_THREAD_SUBSCRIBE_SESSION_USAGE = 0,
+};
+
+struct rotation_thread_msg {
+	enum rotation_thread_commands cmd;
+	union {
+		/* ROTATION_THREAD_SUBSCRIBE_SESSION_USAGE */
+		struct {
+			struct ltt_session *session;
+			uint64_t size;
+		} LTTNG_PACKED subscribe_session_usage;
+	};
+};
+
 struct rotation_channel_key {
 	uint64_t key;
 	enum lttng_domain_type domain;
