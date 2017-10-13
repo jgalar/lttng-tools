@@ -17,6 +17,7 @@
 
 #include <lttng/condition/evaluation-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
+#include <lttng/condition/session-usage-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
 #include <stdbool.h>
