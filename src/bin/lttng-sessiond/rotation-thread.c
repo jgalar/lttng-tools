@@ -539,12 +539,12 @@ int handle_condition(
 
 	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED) {
 		ret = 1;
-		printf("error: condition type and buffer usage type are not the same\n");
+		printf("error: condition type and session usage type are not the same\n");
 		goto end;
 	}
 
 	/* Fetch info to test */
-	ret = lttng_condition_buffer_usage_get_session_name(condition,
+	ret = lttng_condition_session_usage_get_session_name(condition,
 			&condition_session_name);
 	if (ret) {
 		printf("error: session name could not be fetched\n");
