@@ -4299,7 +4299,8 @@ error_add_context:
 	{
 		ret = cmd_rotate_setup(cmd_ctx->session,
 				cmd_ctx->lsm->u.rotate_setup.timer_us,
-				cmd_ctx->lsm->u.rotate_setup.size);
+				cmd_ctx->lsm->u.rotate_setup.size,
+				cmd_ctx->client_rotate_pipe);
 		break;
 	}
 	default:

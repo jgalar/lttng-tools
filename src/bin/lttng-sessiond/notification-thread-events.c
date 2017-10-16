@@ -153,6 +153,7 @@ struct channel_state_sample {
 	struct cds_lfht_node channel_state_ht_node;
 	uint64_t highest_usage;
 	uint64_t lowest_usage;
+	uint64_t total_consumed;
 };
 
 static unsigned long hash_channel_key(struct channel_key *key);
@@ -2198,6 +2199,7 @@ int handle_notification_thread_channel_sample(
 	latest_sample.key.domain = domain;
 	latest_sample.highest_usage = sample_msg.highest;
 	latest_sample.lowest_usage = sample_msg.lowest;
+	latest_sample.total_consumed = sample_msg.total_consumed;
 
 	rcu_read_lock();
 
@@ -2223,12 +2225,13 @@ int handle_notification_thread_channel_sample(
 	}
 	channel_info = caa_container_of(node, struct channel_info,
 			channels_ht_node);
-	DBG("[notification-thread] Handling channel sample for channel %s (key = %" PRIu64 ") in session %s (highest usage = %" PRIu64 ", lowest usage = %" PRIu64")",
+	DBG("[notification-thread] Handling channel sample for channel %s (key = %" PRIu64 ") in session %s (highest usage = %" PRIu64 ", lowest usage = %" PRIu64", total consumed = %" PRIu64")",
 			channel_info->channel_name,
 			latest_sample.key.key,
 			channel_info->session_name,
 			latest_sample.highest_usage,
-			latest_sample.lowest_usage);
+			latest_sample.lowest_usage,
+			latest_sample.total_consumed);
 
 	/* Retrieve the channel's last sample, if it exists, and update it. */
 	cds_lfht_lookup(state->channel_state_ht,
@@ -2248,6 +2251,7 @@ int handle_notification_thread_channel_sample(
 				sizeof(previous_sample));
 		stored_sample->highest_usage = latest_sample.highest_usage;
 		stored_sample->lowest_usage = latest_sample.lowest_usage;
+		stored_sample->total_consumed = latest_sample.total_consumed;
 		previous_sample_available = true;
 	} else {
 		/*

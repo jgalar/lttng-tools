@@ -124,6 +124,6 @@ int cmd_rotate_pending(struct ltt_session *session,
 		struct lttng_rotate_pending_return **pending_return,
 		uint64_t rotate_id);
 int cmd_rotate_setup(struct ltt_session *session, uint64_t timer_us,
-		uint64_t size);
+		uint64_t size, int client_rotate_pipe);
 
 #endif /* CMD_H */

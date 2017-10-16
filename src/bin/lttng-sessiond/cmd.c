@@ -4497,7 +4497,7 @@ end:
  * Return 0 on success or else a LTTNG_ERR code.
  */
 int cmd_rotate_setup(struct ltt_session *session,
-		uint64_t timer_us, uint64_t size)
+		uint64_t timer_us, uint64_t size, int client_rotate_pipe)
 {
 	int ret;
 
@@ -4534,7 +4534,19 @@ int cmd_rotate_setup(struct ltt_session *session,
 		session->rotate_timer_period = 0;
 	}
 
-	session->rotate_size = size;
+	if (size) {
+		struct rotation_thread_msg msg;
+
+		msg.cmd = ROTATION_THREAD_SUBSCRIBE_SESSION_USAGE;
+		msg.subscribe_session_usage.session = session;
+		msg.subscribe_session_usage.size = size;
+		ret = lttng_write(client_rotate_pipe, &msg, sizeof(msg));
+		if (ret < sizeof(msg)) {
+			PERROR("Subscribe to session usage");
+			ret = LTTNG_ERR_UNK;
+			goto end;
+		}
+	}
 
 	ret = LTTNG_OK;
 

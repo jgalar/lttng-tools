@@ -204,14 +204,15 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	int ret;
 
 	/*
-	 * Create pollset with size 5:
+	 * Create pollset with size 6:
 	 *	- sessiond quit pipe
 	 *	- consumerd (32-bit user space) channel rotate pipe,
 	 *	- consumerd (64-bit user space) channel rotate pipe,
-	 *	- consumerd (kernel) channel rotate pipe.
-	 *	- sessiond rotate pending pipe
+	 *	- consumerd (kernel) channel rotate pipe,
+	 *	- sessiond rotate pending pipe,
+	 *	- sessiond thread manage client pipe (for session size polling).
 	 */
-	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
+	ret = lttng_poll_create(poll_set, 6, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto end;
 	}
@@ -240,10 +241,13 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 		ERR("[rotation-thread] Failed to add ust-64 channel rotation pipe fd to pollset");
 		goto error;
 	}
-	if (handle->kernel_consumer < 0) {
-		goto end;
-	}
 	ret = lttng_poll_add(poll_set, handle->kernel_consumer,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[rotation-thread] Failed to add kernel channel rotation pipe fd to pollset");
+		goto error;
+	}
+	ret = lttng_poll_add(poll_set, handle->client_rotate_pipe,
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
 		ERR("[rotation-thread] Failed to add kernel channel rotation pipe fd to pollset");
@@ -521,6 +525,215 @@ end:
 	return ret;
 }
 
+int handle_condition(
+		const struct lttng_condition *condition,
+		const struct lttng_evaluation *evaluation)
+{
+	int ret = 0;
+	const char *condition_session_name = NULL;
+	enum lttng_condition_type condition_type;
+	enum lttng_evaluation_status evaluation_status;
+	uint64_t consumed;
+
+	condition_type = lttng_condition_get_type(condition);
+
+	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED) {
+		ret = 1;
+		printf("error: condition type and buffer usage type are not the same\n");
+		goto end;
+	}
+
+	/* Fetch info to test */
+	ret = lttng_condition_buffer_usage_get_session_name(condition,
+			&condition_session_name);
+	if (ret) {
+		printf("error: session name could not be fetched\n");
+		ret = 1;
+		goto end;
+	}
+	evaluation_status = lttng_evaluation_session_usage_get_consumed(evaluation,
+			&consumed);
+	if (evaluation_status != LTTNG_EVALUATION_STATUS_OK) {
+		ERR("Failed to get evaluation");
+		ret = -1;
+		goto end;
+	}
+
+	printf("notification: %lu\n", consumed);
+end:
+	return ret;
+}
+
+static
+int subscribe_session_usage(struct ltt_session *session, uint64_t size)
+{
+	int ret;
+	struct lttng_notification_channel *notification_channel = NULL;
+	struct lttng_condition *condition = NULL;
+	struct lttng_action *action = NULL;
+	struct lttng_trigger *trigger = NULL;
+	enum lttng_condition_status condition_status;
+	enum lttng_notification_channel_status nc_status;
+
+	assert(session);
+
+	notification_channel = lttng_notification_channel_create(
+			lttng_session_daemon_notification_endpoint);
+	if (!notification_channel) {
+		printf("error: Could not create notification channel\n");
+		ret = 1;
+		goto end;
+	}
+
+	condition = lttng_condition_session_usage_consumed_create();
+	if (!condition) {
+		ERR("Create condition object");
+		ret = -1;
+		goto end;
+	}
+
+	condition_status = lttng_condition_session_usage_consumed_set_threshold(
+			condition, size);
+	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Could not set threshold");
+		ret = -1;
+		goto end;
+	}
+
+	condition_status = lttng_condition_session_usage_set_session_name(
+			condition, session->name);
+	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
+		ERR("Could not set session name");
+		ret = -1;
+		goto end;
+	}
+
+	action = lttng_action_notify_create();
+	if (!action) {
+		ERR("Could not create action notify");
+		ret = -1;
+		goto end;
+	}
+
+	trigger = lttng_trigger_create(condition, action);
+	if (!trigger) {
+		ERR("Could not create trigger");
+		ret = -1;
+		goto end;
+	}
+
+	ret = lttng_register_trigger(trigger);
+	if (ret < 0 && ret != -LTTNG_ERR_TRIGGER_EXISTS) {
+		ERR("Register trigger, %s\n", lttng_strerror(ret));
+		ret = -1;
+		goto end;
+	}
+
+	nc_status = lttng_notification_channel_subscribe(notification_channel,
+			condition);
+	if (nc_status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
+		ERR("Could not subscribe\n");
+		ret = -1;
+		goto end;
+	}
+
+	for (;;) {
+		struct lttng_notification *notification;
+		enum lttng_notification_channel_status status;
+		const struct lttng_evaluation *notification_evaluation;
+		const struct lttng_condition *notification_condition;
+
+		/* Receive the next notification. */
+		status = lttng_notification_channel_get_next_notification(
+				notification_channel,
+				&notification);
+
+		switch (status) {
+		case LTTNG_NOTIFICATION_CHANNEL_STATUS_OK:
+			break;
+		case LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED:
+			ret = 1;
+			printf("error: No drop should be observed during this test app\n");
+			goto end;
+		case LTTNG_NOTIFICATION_CHANNEL_STATUS_CLOSED:
+			/*
+			 * The notification channel has been closed by the
+			 * session daemon. This is typically caused by a session
+			 * daemon shutting down (cleanly or because of a crash).
+			 */
+			printf("error: Notification channel was closed\n");
+			ret = 1;
+			goto end;
+		default:
+			/* Unhandled conditions / errors. */
+			printf("error: Unknown notification channel status\n");
+			ret = 1;
+			goto end;
+		}
+
+		notification_condition = lttng_notification_get_condition(notification);
+		notification_evaluation = lttng_notification_get_evaluation(notification);
+
+		ret = handle_condition(notification_condition, notification_evaluation);
+
+		lttng_notification_destroy(notification);
+		if (ret != 0) {
+			goto end;
+		}
+	}
+
+	ret = 0;
+
+end:
+	return ret;
+}
+
+static
+int handle_manage_client(int fd, uint32_t revents,
+		struct rotation_thread_handle *handle,
+		struct rotation_thread_state *state)
+{
+	int ret = 0;
+	struct rotation_thread_msg msg;
+
+
+	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+		ret = lttng_poll_del(&state->events, fd);
+		if (ret) {
+			ERR("[rotation-thread] Failed to remove manage client pipe");
+			goto end;
+		}
+		goto end;
+	}
+
+	ret = lttng_read(fd, &msg, sizeof(msg));
+	if (ret < sizeof(msg)) {
+		PERROR("Read manage client data");
+		ret = -1;
+		goto end;
+	}
+
+	switch (msg.cmd) {
+	case ROTATION_THREAD_SUBSCRIBE_SESSION_USAGE:
+		ret = subscribe_session_usage(msg.subscribe_session_usage.session,
+				msg.subscribe_session_usage.size);
+		if (ret) {
+			ERR("[rotation-thread] Subscribe session usage");
+			goto end;
+		}
+		break;
+	default:
+		ERR("Wrong command");
+		ret = -1;
+		goto end;
+	}
+
+	ret = 0;
+	
+end:
+	return ret;
+}
+
 void *thread_rotation(void *data)
 {
 	int ret;
@@ -592,6 +805,12 @@ void *thread_rotation(void *data)
 						revents, handle, &state);
 				if (ret) {
 					ERR("[rotation-thread] Exit main loop");
+					goto error;
+				}
+			} else if (fd == handle->client_rotate_pipe) {
+				ret = handle_manage_client(fd, revents, handle, &state);
+				if (ret) {
+					ERR("[rotation-thread] manage client");
 					goto error;
 				}
 			}
