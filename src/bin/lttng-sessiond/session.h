@@ -173,6 +173,11 @@ struct ltt_session {
 	timer_t rotate_timer;
 	uint64_t rotate_timer_period;
 	uint64_t rotate_size;
+
+	/* FIXME: tmp, find a better place to put that */
+	struct lttng_condition *condition;
+	struct lttng_action *action;
+	struct lttng_trigger *trigger;
 };
 
 /* Prototypes */
