@@ -531,45 +531,6 @@ end:
 	return ret;
 }
 
-int handle_condition(
-		const struct lttng_condition *condition,
-		const struct lttng_evaluation *evaluation)
-{
-	int ret = 0;
-	const char *condition_session_name = NULL;
-	enum lttng_condition_type condition_type;
-	enum lttng_evaluation_status evaluation_status;
-	uint64_t consumed;
-
-	condition_type = lttng_condition_get_type(condition);
-
-	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED) {
-		ret = 1;
-		printf("error: condition type and session usage type are not the same\n");
-		goto end;
-	}
-
-	/* Fetch info to test */
-	ret = lttng_condition_session_usage_get_session_name(condition,
-			&condition_session_name);
-	if (ret) {
-		printf("error: session name could not be fetched\n");
-		ret = 1;
-		goto end;
-	}
-	evaluation_status = lttng_evaluation_session_usage_get_consumed(evaluation,
-			&consumed);
-	if (evaluation_status != LTTNG_EVALUATION_STATUS_OK) {
-		ERR("Failed to get evaluation");
-		ret = -1;
-		goto end;
-	}
-
-	printf("notification: %lu\n", consumed);
-end:
-	return ret;
-}
-
 static
 int subscribe_session_usage(struct ltt_session *session, uint64_t size)
 {
@@ -648,6 +609,57 @@ void unsubscribe_session_usage(struct ltt_session *session)
 	lttng_trigger_destroy(session->trigger);
 	lttng_condition_destroy(session->condition);
 	lttng_action_destroy(session->action);
+}
+
+int handle_condition(
+		const struct lttng_condition *condition,
+		const struct lttng_evaluation *evaluation)
+{
+	int ret = 0;
+	const char *condition_session_name = NULL;
+	enum lttng_condition_type condition_type;
+	enum lttng_evaluation_status evaluation_status;
+	uint64_t consumed;
+	struct ltt_session *session;
+
+	condition_type = lttng_condition_get_type(condition);
+
+	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED) {
+		ret = 1;
+		printf("error: condition type and session usage type are not the same\n");
+		goto end;
+	}
+
+	/* Fetch info to test */
+	ret = lttng_condition_session_usage_get_session_name(condition,
+			&condition_session_name);
+	if (ret) {
+		printf("error: session name could not be fetched\n");
+		ret = 1;
+		goto end;
+	}
+	evaluation_status = lttng_evaluation_session_usage_get_consumed(evaluation,
+			&consumed);
+	if (evaluation_status != LTTNG_EVALUATION_STATUS_OK) {
+		ERR("Failed to get evaluation");
+		ret = -1;
+		goto end;
+	}
+
+	session = session_find_by_name(condition_session_name);
+	if (!session) {
+		ret = -1;
+		ERR("Session not found");
+		goto end;
+	}
+
+	printf("notification: %lu\n", consumed);
+	unsubscribe_session_usage(session);
+	subscribe_session_usage(session, consumed + session->rotate_size);
+	ret = 0;
+
+end:
+	return ret;
 }
 
 /*
@@ -756,22 +768,17 @@ int handle_sampling_notification(int fd, uint32_t revents,
 	case LTTNG_NOTIFICATION_CHANNEL_STATUS_OK:
 		break;
 	case LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED:
-		ret = 1;
-		printf("error: No drop should be observed during this test app\n");
-		goto end;
+		/* Not an error, we will wait for the next one */
+		ret = 0;
+		goto end;;
 	case LTTNG_NOTIFICATION_CHANNEL_STATUS_CLOSED:
-		/*
-		 * The notification channel has been closed by the
-		 * session daemon. This is typically caused by a session
-		 * daemon shutting down (cleanly or because of a crash).
-		 */
-		printf("error: Notification channel was closed\n");
-		ret = 1;
+		ERR("Notification channel was closed\n");
+		ret = -1;
 		goto end;
 	default:
 		/* Unhandled conditions / errors. */
-		printf("error: Unknown notification channel status\n");
-		ret = 1;
+		ERR("Unknown notification channel status\n");
+		ret = -1;
 		goto end;
 	}
 
@@ -780,14 +787,13 @@ int handle_sampling_notification(int fd, uint32_t revents,
 
 	ret = handle_condition(notification_condition, notification_evaluation);
 
+end:
 	lttng_notification_destroy(notification);
 	if (ret != 0) {
 		goto end;
 	}
 
-	ret = 0;
 
-end:
 	return ret;
 }
 
