@@ -81,7 +81,7 @@ void lttng_rotate_session_attr_destroy(struct lttng_rotate_session_attr *attr);
  * Set the name of the session to rotate.
  */
 int lttng_rotate_session_attr_set_session_name(
-	struct lttng_rotate_session_attr *attr, const char *session_name);
+		struct lttng_rotate_session_attr *attr, const char *session_name);
 
 /*
  * Set the timer to periodically rotate the session.
