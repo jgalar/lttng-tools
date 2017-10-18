@@ -252,3 +252,38 @@ end:
 	return ret;
 }
 
+int lttng_rotate_get_current_path(const char *session_name,
+		char **chunk_path)
+{
+	struct lttcomm_session_msg lsm;
+	struct lttng_rotate_get_current_path *get_return = NULL;
+	int ret;
+
+	memset(&lsm, 0, sizeof(lsm));
+	lsm.cmd_type = LTTNG_ROTATE_GET_CURRENT_PATH;
+	lttng_ctl_copy_string(lsm.session.name, session_name,
+			sizeof(lsm.session.name));
+
+	ret = lttng_ctl_ask_sessiond(&lsm, (void **) &get_return);
+	if (ret < 0) {
+		ret = -1;
+		goto end;
+	}
+
+	if (get_return->status == LTTNG_ROTATE_NO_ROTATION) {
+		ret = 1;
+		goto end;
+	} else if (get_return->status != LTTNG_ROTATE_COMPLETED) {
+		ret = -1;
+		goto end;
+	}
+	*chunk_path = zmalloc(PATH_MAX * sizeof(char));
+	strncpy(*chunk_path, get_return->output_path, PATH_MAX);
+
+	ret = 0;
+
+end:
+	free(get_return);
+	return ret;
+
+}

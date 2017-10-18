@@ -373,6 +373,8 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 			goto end;
 		}
 		session->rotate_pending = false;
+		session->rotate_status = LTTNG_ROTATE_COMPLETED;
+		session->last_chunk_start_ts = session->current_chunk_start_ts;
 		if (session->rotate_pending_relay) {
 			ret = sessiond_timer_rotate_pending_start(
 					session,

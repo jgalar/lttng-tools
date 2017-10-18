@@ -83,4 +83,10 @@ struct lttng_rotate_pending_return {
 	char output_path[PATH_MAX];
 } LTTNG_PACKED;
 
+/* For the LTTNG_ROTATE_GET_CURRENT_PATH command. */
+struct lttng_rotate_get_current_path {
+	enum lttng_rotate_status status;
+	char output_path[PATH_MAX];
+} LTTNG_PACKED;
+
 #endif /* LTTNG_ROTATE_INTERNAL_ABI_H */

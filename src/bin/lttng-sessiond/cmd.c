@@ -2360,17 +2360,6 @@ error:
 }
 
 static
-const char *get_base_path(struct ltt_session *session,
-		struct consumer_output *consumer)
-{
-	if (session->net_handle > 0) {
-		return consumer->dst.net.base_dir;
-	} else {
-		return consumer->dst.session_root_path;
-	}
-}
-
-static
 int domain_mkdir(struct consumer_output *output, struct ltt_session *session,
 		uid_t uid, gid_t gid)
 {
@@ -2392,7 +2381,7 @@ int domain_mkdir(struct consumer_output *output, struct ltt_session *session,
 		goto end;
 	}
 
-	snprintf(path, PATH_MAX, "%s%s%s", get_base_path(session, output),
+	snprintf(path, PATH_MAX, "%s%s%s", session_get_base_path(session),
 			output->chunk_path, output->subdir);
 
 	rcu_read_lock();
@@ -2581,6 +2570,29 @@ int cmd_stop_trace(struct ltt_session *session)
 		goto error;
 	}
 
+	if (session->rotate_count > 0 && !session->rotate_pending) {
+		session->rotate_count++;
+		/*
+		 * The currently active tracing path is now the folder we
+		 * want to rename.
+		 */
+		snprintf(session->rotation_chunk.current_rotate_path,
+				PATH_MAX, "%s",
+				session->rotation_chunk.active_tracing_path);
+		ret = rename_complete_chunk(session, time(NULL));
+		if (ret < 0) {
+			ERR("Renaming session on destroy");
+		}
+		/*
+		 * We just renamed, the folder, we didn't do an actual rotation, so
+		 * the active tracing path is now the renamed folder and we have to
+		 * restore the rotate count.
+		 */
+		snprintf(session->rotation_chunk.active_tracing_path, PATH_MAX, "%s",
+				session->rotation_chunk.current_rotate_path);
+		session->rotate_count--;
+	}
+
 	/* Kernel tracer */
 	if (ksession && ksession->active) {
 		DBG("Stop kernel tracing");
@@ -2625,8 +2637,6 @@ int cmd_stop_trace(struct ltt_session *session)
 			goto error;
 		}
 	}
-
-	session->session_last_stop_ts = time(NULL);
 
 	/* Flag inactive after a successful stop. */
 	session->active = 0;
@@ -2865,22 +2875,6 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 
 	usess = session->ust_session;
 	ksess = session->kernel_session;
-
-	if (session->rotate_count > 0) {
-		session->rotate_count++;
-		/*
-		 * The currently active tracing path is now the folder we
-		 * want to rename.
-		 */
-		snprintf(session->rotation_chunk.current_rotate_path,
-				PATH_MAX, "%s",
-				session->rotation_chunk.active_tracing_path);
-		ret = rename_complete_chunk(session,
-				session->session_last_stop_ts);
-		if (ret < 0) {
-			ERR("Renaming session on destroy");
-		}
-	}
 
 	if (session->rotate_relay_pending_timer_enabled) {
 		sessiond_timer_rotate_pending_stop(session);
@@ -4270,7 +4264,7 @@ int cmd_set_session_shm_path(struct ltt_session *session,
  * Ask the consumer to rotate the session output directory.
  * The session lock must be held.
  *
- * Return 0 on success or else a LTTNG_ERR code.
+ * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return **rotate_return)
@@ -4308,9 +4302,9 @@ int cmd_rotate_session(struct ltt_session *session,
 
 		/* Either one of the two sessions is enough to get the root path. */
 		if (session->kernel_session) {
-			base_path = get_base_path(session, session->kernel_session->consumer);
+			base_path = session_get_base_path(session);
 		} else if (session->ust_session) {
-			base_path = get_base_path(session, session->ust_session->consumer);
+			base_path = session_get_base_path(session);
 		} else {
 			assert(0);
 		}
@@ -4353,7 +4347,7 @@ int cmd_rotate_session(struct ltt_session *session,
 		 */
 		snprintf(session->rotation_chunk.active_tracing_path,
 				PATH_MAX, "%s/%s-%" PRIu64,
-				get_base_path(session, session->kernel_session->consumer),
+				session_get_base_path(session),
 				datetime, session->rotate_count + 1);
 		/*
 		 * The sub-directory for the consumer
@@ -4373,7 +4367,7 @@ int cmd_rotate_session(struct ltt_session *session,
 	if (session->ust_session) {
 		snprintf(session->rotation_chunk.active_tracing_path,
 				PATH_MAX, "%s/%s-%" PRIu64,
-				get_base_path(session, session->ust_session->consumer),
+				session_get_base_path(session),
 				datetime, session->rotate_count + 1);
 		snprintf(session->ust_session->consumer->chunk_path,
 				PATH_MAX, "/%s-%" PRIu64, datetime,
@@ -4551,6 +4545,39 @@ int cmd_rotate_setup(struct ltt_session *session,
 	ret = LTTNG_OK;
 
 	goto end;
+
+end:
+	return ret;
+}
+
+/*
+ * Command ROTATE_GET_CURRENT_PATH from the lttng-ctl library.
+ *
+ * Configure the automatic rotation parameters.
+ * Set to -1ULL to disable them.
+ *
+ * Return LTTNG_OK on success or else a LTTNG_ERR code.
+ */
+int cmd_rotate_get_current_path(struct ltt_session *session,
+		struct lttng_rotate_get_current_path **get_return)
+{
+	int ret;
+
+	*get_return = zmalloc(sizeof(struct lttng_rotate_get_current_path));
+	if (!*get_return) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	if (session->rotate_count == 0) {
+		(*get_return)->status = LTTNG_ROTATE_NO_ROTATION;
+	} else {
+		(*get_return)->status = session->rotate_status;
+		snprintf((*get_return)->output_path, PATH_MAX, "%s",
+				session->rotation_chunk.current_rotate_path);
+	}
+
+	ret = LTTNG_OK;
 
 end:
 	return ret;

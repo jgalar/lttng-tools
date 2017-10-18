@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <assert.h>
 
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/mi-lttng.h>
@@ -178,6 +179,11 @@ static int rotate_tracing(char *session_name)
 
 		ret = CMD_SUCCESS;
 		goto end;
+	case LTTNG_ROTATE_NO_ROTATION:
+		/*
+		 * This is never set as a status.
+		 */
+		assert(0);
 	}
 
 error:

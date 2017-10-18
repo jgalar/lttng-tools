@@ -160,7 +160,6 @@ struct ltt_session {
 	 * with the current timestamp.
 	 */
 	time_t current_chunk_start_ts;
-	time_t session_last_stop_ts;
 	time_t last_begin_rotation_ts;
 	/*
 	 * Timer to check periodically if a relay has completed the last

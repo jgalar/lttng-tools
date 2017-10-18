@@ -45,6 +45,10 @@ enum lttng_rotate_status {
 	 * On error.
 	 */
 	LTTNG_ROTATE_ERROR = 3,
+	/*
+	 * If no rotation occured during this session.
+	 */
+	LTTNG_ROTATE_NO_ROTATION = 4,
 };
 
 /*
@@ -144,6 +148,20 @@ extern int lttng_rotate_session_pending(
  * Configure a session to rotate periodically or based on the size written.
  */
 extern int lttng_rotate_setup(struct lttng_rotate_session_attr *attr);
+
+/*
+ * Ask the sessiond where the data for this session is currently being written
+ * to. If rotations occured during a session, this call is useful to know the
+ * location of the last chunk.
+ *
+ * Return 0 and allocate chunk_path if rotations occured for this session, the
+ * caller needs to free chunk_path.
+ * Return 1 if no rotation occured during the session, chunk_path is left
+ * unallocated.
+ * Return -1 on error.
+ */
+extern int lttng_rotate_get_current_path(const char *session_name,
+		char **chunk_path);
 
 #ifdef __cplusplus
 }

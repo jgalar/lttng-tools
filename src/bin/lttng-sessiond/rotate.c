@@ -38,6 +38,7 @@
 #include "lttng-sessiond.h"
 #include "health-sessiond.h"
 #include "cmd.h"
+#include "utils.h"
 
 #include <urcu.h>
 #include <urcu/list.h>
@@ -196,7 +197,7 @@ error:
 int rename_complete_chunk(struct ltt_session *session, time_t ts)
 {
 	struct tm *timeinfo;
-	char datetime[16];
+	char datetime[16], start_datetime[16];
 	char *new_path = NULL;
 	int ret;
 
@@ -259,8 +260,12 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 		 * After the first rotation, all the trace data is already in
 		 * its own chunk folder, we just need to append the suffix.
 		 */
-		snprintf(new_path, PATH_MAX, "%s%s-%" PRIu64,
-				session->rotation_chunk.current_rotate_path,
+		/* Recreate the session->rotation_chunk.current_rotate_path */
+		timeinfo = localtime(&session->last_chunk_start_ts);
+		strftime(start_datetime, sizeof(start_datetime), "%Y%m%d-%H%M%S", timeinfo);
+		snprintf(new_path, PATH_MAX, "%s/%s-%s-%" PRIu64,
+				session_get_base_path(session),
+				start_datetime,
 				datetime, session->rotate_count);
 		ret = session_rename_chunk(session,
 				session->rotation_chunk.current_rotate_path,

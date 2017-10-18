@@ -3120,6 +3120,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 	case LTTNG_ROTATE_SESSION:
 	case LTTNG_ROTATE_PENDING:
 	case LTTNG_ROTATE_SETUP:
+	case LTTNG_ROTATE_GET_CURRENT_PATH:
 		need_domain = 0;
 		break;
 	default:
@@ -4301,6 +4302,27 @@ error_add_context:
 				cmd_ctx->lsm->u.rotate_setup.timer_us,
 				cmd_ctx->lsm->u.rotate_setup.size,
 				cmd_ctx->client_rotate_pipe);
+		break;
+	}
+	case LTTNG_ROTATE_GET_CURRENT_PATH:
+	{
+		struct lttng_rotate_get_current_path *get_return = NULL;
+
+		ret = cmd_rotate_get_current_path(cmd_ctx->session, &get_return);
+		if (ret < 0) {
+			ret = -ret;
+			goto error;
+		}
+
+		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, get_return,
+				sizeof(struct lttng_rotate_get_current_path));
+		free(get_return);
+		if (ret < 0) {
+			ret = -ret;
+			goto error;
+		}
+
+		ret = LTTNG_OK;
 		break;
 	}
 	default:
