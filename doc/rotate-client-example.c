@@ -40,9 +40,13 @@
 
 #define DEFAULT_DATA_AVAILABILITY_WAIT_TIME 200000  /* usec */
 
-static volatile int quit = 0;
+/* Uncomment to enable debug output. */
+//#define DEBUG
+#ifndef DEBUG
+#define printf(fmt, ...) (0)
+#endif
 
-static int cleanup_session(const char *session_name, const char *path);
+static volatile int quit = 0;
 
 static
 void sighandler(int signal)
@@ -103,7 +107,7 @@ end:
 }
 
 static
-int cleanup_session(const char *session_name, const char *path)
+int cleanup_session(const char *session_name)
 {
 	int ret;
 
@@ -203,7 +207,11 @@ int rotate_session(const char *session_name, const char *ext_program)
 	case LTTNG_ROTATE_COMPLETED:
 		lttng_rotate_session_get_output_path(handle, &path);
 		printf("Output files of session %s rotated to %s\n", session_name, path);
-		snprintf(cmd, PATH_MAX, "%s %s", ext_program, path);
+		ret = snprintf(cmd, PATH_MAX, "%s %s", ext_program, path);
+		if (ret < 0) {
+			fprintf(stderr, "Failed to prepare command string\n");
+			goto end;
+		}
 		ret = system(cmd);
 		goto end;
 	case LTTNG_ROTATE_STARTED:
@@ -227,6 +235,23 @@ end:
 	return ret;
 }
 
+static
+int cleanup_dir(const char *path)
+{
+	char cmd[PATH_MAX];
+	int ret;
+
+	ret = snprintf(cmd, PATH_MAX, "rm -rf %s", path);
+	if (ret < 0) {
+		fprintf(stderr, "Failed to prepare rm -rf command string\n");
+		goto end;
+	}
+	ret = system(cmd);
+
+end:
+	return ret;
+}
+
 void usage(const char *prog_name)
 {
 	fprintf(stderr, "Usage: %s <session-name> <delay-sec> <nr-rotate> <program>\n",
@@ -237,6 +262,7 @@ void usage(const char *prog_name)
 			"-1 for infinite until ctrl-c\n");
 	fprintf(stderr, "  <program>: program to run on each chunk, it must be "
 			"executable, and expect a trace folder as only argument\n");
+	fprintf(stderr, "\nThe trace folder is deleted when this program completes.\n");
 }
 
 int main(int argc, char **argv)
@@ -244,7 +270,7 @@ int main(int argc, char **argv)
 	int ret;
 	char tmppath[] = "/tmp/lttng-rotate-XXXXXX";
 	char *session_name, *path, *ext_program;
-	int delay, nr, i;
+	int delay, nr;
 
 	if (argc != 5) {
 		usage(argv[0]);
@@ -263,6 +289,11 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
+	if  (signal(SIGINT, sighandler) == SIG_ERR) {
+		perror("signal handler");
+		goto end;
+	}
+
 	path = mkdtemp(tmppath);
 	if (!path) {
 		fprintf(stderr, "Failed to create temporary path\n");
@@ -272,19 +303,24 @@ int main(int argc, char **argv)
 
 	ret = setup_session(session_name, path);
 	if (ret) {
-		goto end;
+		goto end_cleanup_dir;
 	}
 
 	if (nr > 0) {
+		unsigned int sleep_time;
+		int i;
+
 		for (i = 0; i < nr; i++) {
 			ret = rotate_session(session_name, ext_program);
 			if (ret) {
 				goto end_cleanup;
 			}
-			sleep(delay);
+			sleep_time = delay;
+			while (sleep_time > 0) {
+				sleep_time = sleep(sleep_time);
+			}
 		}
 	} else {
-		signal(SIGINT, sighandler);
 		for(;;) {
 			if (quit) {
 				break;
@@ -298,11 +334,12 @@ int main(int argc, char **argv)
 	}
 
 end_cleanup:
-	ret = cleanup_session(session_name, path);
+	ret = cleanup_session(session_name);
 	if (ret) {
 		goto end;
 	}
-
+end_cleanup_dir:
+	ret = cleanup_dir(path);
 end:
 	return ret;
 }
