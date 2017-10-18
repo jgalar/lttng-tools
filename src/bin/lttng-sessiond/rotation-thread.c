@@ -538,14 +538,14 @@ int subscribe_session_usage(struct ltt_session *session, uint64_t size)
 	enum lttng_condition_status condition_status;
 	enum lttng_notification_channel_status nc_status;
 
-	session->condition = lttng_condition_session_usage_consumed_create();
+	session->condition = lttng_condition_session_consumed_size_create();
 	if (!session->condition) {
 		ERR("Create condition object");
 		ret = -1;
 		goto end;
 	}
 
-	condition_status = lttng_condition_session_usage_consumed_set_threshold(
+	condition_status = lttng_condition_session_consumed_size_set_threshold(
 			session->condition, size);
 	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
 		ERR("Could not set threshold");
@@ -553,8 +553,9 @@ int subscribe_session_usage(struct ltt_session *session, uint64_t size)
 		goto end;
 	}
 
-	condition_status = lttng_condition_session_usage_set_session_name(
-			session->condition, session->name);
+	condition_status =
+			lttng_condition_session_consumed_size_set_session_name(
+				session->condition, session->name);
 	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
 		ERR("Could not set session name");
 		ret = -1;
@@ -624,21 +625,21 @@ int handle_condition(
 
 	condition_type = lttng_condition_get_type(condition);
 
-	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED) {
+	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE) {
 		ret = 1;
 		printf("error: condition type and session usage type are not the same\n");
 		goto end;
 	}
 
 	/* Fetch info to test */
-	ret = lttng_condition_session_usage_get_session_name(condition,
+	ret = lttng_condition_session_consumed_size_get_session_name(condition,
 			&condition_session_name);
 	if (ret) {
 		printf("error: session name could not be fetched\n");
 		ret = 1;
 		goto end;
 	}
-	evaluation_status = lttng_evaluation_session_usage_get_consumed(evaluation,
+	evaluation_status = lttng_evaluation_session_consumed_size_get_consumed_size(evaluation,
 			&consumed);
 	if (evaluation_status != LTTNG_EVALUATION_STATUS_OK) {
 		ERR("Failed to get evaluation");

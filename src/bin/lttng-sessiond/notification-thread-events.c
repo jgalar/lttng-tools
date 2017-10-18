@@ -32,7 +32,7 @@
 #include <lttng/notification/notification-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
-#include <lttng/condition/session-usage-internal.h>
+#include <lttng/condition/session-consumed-size-internal.h>
 #include <lttng/notification/channel-internal.h>
 
 #include <time.h>
@@ -307,15 +307,15 @@ unsigned long lttng_condition_buffer_usage_hash(
 }
 
 static
-unsigned long lttng_condition_session_usage_consumed_hash(
+unsigned long lttng_condition_session_consumed_size_hash(
 	struct lttng_condition *_condition)
 {
 	unsigned long hash = 0;
-	struct lttng_condition_session_usage *condition;
+	struct lttng_condition_session_consumed_size *condition;
 	uint64_t val;
 
 	condition = container_of(_condition,
-			struct lttng_condition_session_usage, parent);
+			struct lttng_condition_session_consumed_size, parent);
 
 	if (condition->session_name) {
 		hash ^= hash_key_str(condition->session_name, lttng_ht_seed);
@@ -337,8 +337,8 @@ unsigned long lttng_condition_hash(struct lttng_condition *condition)
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
 		return lttng_condition_buffer_usage_hash(condition);
-	case LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED:
-		return lttng_condition_session_usage_consumed_hash(condition);
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+		return lttng_condition_session_consumed_size_hash(condition);
 	default:
 		ERR("[notification-thread] Unexpected condition type caught");
 		abort();
