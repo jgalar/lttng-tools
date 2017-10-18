@@ -144,7 +144,6 @@ static int rotate_tracing(char *session_name)
 		goto end;
 	case LTTNG_ROTATE_STARTED:
 		MSG("Rotation started for session %s", session_name);
-		free(path);
 		if (lttng_opt_mi) {
 			ret = mi_print_session(session_name, 1);
 			if (ret) {
