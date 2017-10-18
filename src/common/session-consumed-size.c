@@ -16,7 +16,7 @@
  */
 
 #include <lttng/condition/condition-internal.h>
-#include <lttng/condition/session-usage-internal.h>
+#include <lttng/condition/session-consumed-size-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
 #include <assert.h>
@@ -24,48 +24,44 @@
 #include <float.h>
 #include <time.h>
 
-#define IS_USAGE_CONDITION(condition) ( \
-	lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED \
+#define IS_CONSUMED_SIZE_CONDITION(condition) ( \
+	lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE \
+	)
+
+#define IS_CONSUMED_SIZE_EVALUATION(evaluation) ( \
+	lttng_evaluation_get_type(evaluation) == LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE \
 	)
 
 static
-bool is_usage_evaluation(const struct lttng_evaluation *evaluation)
+void lttng_condition_session_consumed_size_destroy(struct lttng_condition *condition)
 {
-	enum lttng_condition_type type = lttng_evaluation_get_type(evaluation);
+	struct lttng_condition_session_consumed_size *consumed_size;
 
-	return type == LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED;
+	consumed_size = container_of(condition,
+			struct lttng_condition_session_consumed_size, parent);
+
+	free(consumed_size->session_name);
+	free(consumed_size);
 }
 
 static
-void lttng_condition_session_usage_destroy(struct lttng_condition *condition)
-{
-	struct lttng_condition_session_usage *usage;
-
-	usage = container_of(condition, struct lttng_condition_session_usage,
-			parent);
-
-	free(usage->session_name);
-	free(usage);
-}
-
-static
-bool lttng_condition_session_usage_validate(
+bool lttng_condition_session_consumed_size_validate(
 		const struct lttng_condition *condition)
 {
 	bool valid = false;
-	struct lttng_condition_session_usage *usage;
+	struct lttng_condition_session_consumed_size *consumed;
 
 	if (!condition) {
 		goto end;
 	}
 
-	usage = container_of(condition, struct lttng_condition_session_usage,
+	consumed = container_of(condition, struct lttng_condition_session_consumed_size,
 			parent);
-	if (!usage->session_name) {
+	if (!consumed->session_name) {
 		ERR("Invalid buffer condition: a target session name must be set.");
 		goto end;
 	}
-	if (!usage->consumed_threshold_bytes.set) {
+	if (!consumed->consumed_threshold_bytes.set) {
 		ERR("Invalid session condition: a threshold must be set.");
 		goto end;
 	}
@@ -76,37 +72,37 @@ end:
 }
 
 static
-ssize_t lttng_condition_session_usage_serialize(
+ssize_t lttng_condition_session_consumed_size_serialize(
 		const struct lttng_condition *condition, char *buf)
 {
-	struct lttng_condition_session_usage *usage;
+	struct lttng_condition_session_consumed_size *consumed;
 	ssize_t ret, size;
 	size_t session_name_len;
 
-	if (!condition || !IS_USAGE_CONDITION(condition)) {
+	if (!condition || !IS_CONSUMED_SIZE_CONDITION(condition)) {
 		ret = -1;
 		goto end;
 	}
 
-	DBG("Serializing session usage condition");
-	usage = container_of(condition, struct lttng_condition_session_usage,
+	DBG("Serializing session consumed condition");
+	consumed = container_of(condition, struct lttng_condition_session_consumed_size,
 			parent);
-	size = sizeof(struct lttng_condition_session_usage_comm);
-	session_name_len = strlen(usage->session_name) + 1;
+	size = sizeof(struct lttng_condition_session_consumed_size_comm);
+	session_name_len = strlen(consumed->session_name) + 1;
 	if (session_name_len > LTTNG_NAME_MAX) {
 		ret = -1;
 		goto end;
 	}
 	size += session_name_len;
 	if (buf) {
-		struct lttng_condition_session_usage_comm usage_comm = {
-			.consumed_threshold_bytes = usage->consumed_threshold_bytes.value,
+		struct lttng_condition_session_consumed_size_comm consumed_comm = {
+			.consumed_threshold_bytes = consumed->consumed_threshold_bytes.value,
 			.session_name_len = session_name_len,
 		};
 
-		memcpy(buf, &usage_comm, sizeof(usage_comm));
-		buf += sizeof(usage_comm);
-		memcpy(buf, usage->session_name, session_name_len);
+		memcpy(buf, &consumed_comm, sizeof(consumed_comm));
+		buf += sizeof(consumed_comm);
+		memcpy(buf, consumed->session_name, session_name_len);
 		buf += session_name_len;
 	}
 	ret = size;
@@ -115,14 +111,14 @@ end:
 }
 
 static
-bool lttng_condition_session_usage_is_equal(const struct lttng_condition *_a,
+bool lttng_condition_session_consumed_size_is_equal(const struct lttng_condition *_a,
 		const struct lttng_condition *_b)
 {
 	bool is_equal = false;
-	struct lttng_condition_session_usage *a, *b;
+	struct lttng_condition_session_consumed_size *a, *b;
 
-	a = container_of(_a, struct lttng_condition_session_usage, parent);
-	b = container_of(_b, struct lttng_condition_session_usage, parent);
+	a = container_of(_a, struct lttng_condition_session_consumed_size, parent);
+	b = container_of(_b, struct lttng_condition_session_consumed_size, parent);
 
 	if (a->consumed_threshold_bytes.set && b->consumed_threshold_bytes.set) {
 		uint64_t a_value, b_value;
@@ -144,20 +140,20 @@ end:
 	return is_equal;
 }
 
-struct lttng_condition *lttng_condition_session_usage_consumed_create(void)
+struct lttng_condition *lttng_condition_session_consumed_size_create(void)
 {
-	struct lttng_condition_session_usage *condition;
+	struct lttng_condition_session_consumed_size *condition;
 
-	condition = zmalloc(sizeof(struct lttng_condition_session_usage));
+	condition = zmalloc(sizeof(struct lttng_condition_session_consumed_size));
 	if (!condition) {
 		return NULL;
 	}
 
-	lttng_condition_init(&condition->parent, LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED);
-	condition->parent.validate = lttng_condition_session_usage_validate;
-	condition->parent.serialize = lttng_condition_session_usage_serialize;
-	condition->parent.equal = lttng_condition_session_usage_is_equal;
-	condition->parent.destroy = lttng_condition_session_usage_destroy;
+	lttng_condition_init(&condition->parent, LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE);
+	condition->parent.validate = lttng_condition_session_consumed_size_validate;
+	condition->parent.serialize = lttng_condition_session_consumed_size_serialize;
+	condition->parent.equal = lttng_condition_session_consumed_size_is_equal;
+	condition->parent.destroy = lttng_condition_session_consumed_size_destroy;
 	return &condition->parent;
 }
 
@@ -167,7 +163,7 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 {
 	ssize_t ret, condition_size;
 	enum lttng_condition_status status;
-	const struct lttng_condition_session_usage_comm *condition_comm;
+	const struct lttng_condition_session_consumed_size_comm *condition_comm;
 	const char *session_name;
 	struct lttng_buffer_view names_view;
 
@@ -177,7 +173,7 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 		goto end;
 	}
 
-	condition_comm = (const struct lttng_condition_session_usage_comm *) src_view->data;
+	condition_comm = (const struct lttng_condition_session_consumed_size_comm *) src_view->data;
 	names_view = lttng_buffer_view_from_view(src_view,
 			sizeof(*condition_comm), -1);
 
@@ -193,10 +189,10 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 		goto end;
 	}
 
-	status = lttng_condition_session_usage_consumed_set_threshold(condition,
+	status = lttng_condition_session_consumed_size_set_threshold(condition,
 			condition_comm->consumed_threshold_bytes);
 	if (status != LTTNG_CONDITION_STATUS_OK) {
-		ERR("Failed to initialize session usage condition threshold");
+		ERR("Failed to initialize session consumed condition threshold");
 		ret = -1;
 		goto end;
 	}
@@ -208,10 +204,10 @@ ssize_t init_condition_from_buffer(struct lttng_condition *condition,
 		goto end;
 	}
 
-	status = lttng_condition_session_usage_set_session_name(condition,
+	status = lttng_condition_session_consumed_size_set_session_name(condition,
 			session_name);
 	if (status != LTTNG_CONDITION_STATUS_OK) {
-		ERR("Failed to set buffer usage session name");
+		ERR("Failed to set buffer consumed session name");
 		ret = -1;
 		goto end;
 	}
@@ -229,13 +225,13 @@ end:
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_condition_session_usage_consumed_create_from_buffer(
+ssize_t lttng_condition_session_consumed_size_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_condition **_condition)
 {
 	ssize_t ret;
 	struct lttng_condition *condition =
-			lttng_condition_session_usage_consumed_create();
+			lttng_condition_session_consumed_size_create();
 
 	if (!_condition || !condition) {
 		ret = -1;
@@ -259,22 +255,22 @@ struct lttng_evaluation *create_evaluation_from_buffer(
 		enum lttng_condition_type type,
 		const struct lttng_buffer_view *view)
 {
-	const struct lttng_evaluation_session_usage_comm *comm =
-			(const struct lttng_evaluation_session_usage_comm *) view->data;
+	const struct lttng_evaluation_session_consumed_size_comm *comm =
+			(const struct lttng_evaluation_session_consumed_size_comm *) view->data;
 	struct lttng_evaluation *evaluation = NULL;
 
 	if (view->size < sizeof(*comm)) {
 		goto end;
 	}
 
-	evaluation = lttng_evaluation_session_usage_consumed_create(type,
+	evaluation = lttng_evaluation_session_consumed_size_create(type,
 			comm->session_consumed);
 end:
 	return evaluation;
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_session_usage_consumed_create_from_buffer(
+ssize_t lttng_evaluation_session_consumed_size_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_evaluation **_evaluation)
 {
@@ -287,14 +283,14 @@ ssize_t lttng_evaluation_session_usage_consumed_create_from_buffer(
 	}
 
 	evaluation = create_evaluation_from_buffer(
-			LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED, view);
+			LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE, view);
 	if (!evaluation) {
 		ret = -1;
 		goto error;
 	}
 
 	*_evaluation = evaluation;
-	ret = sizeof(struct lttng_evaluation_session_usage_comm);
+	ret = sizeof(struct lttng_evaluation_session_consumed_size_comm);
 	return ret;
 error:
 	lttng_evaluation_destroy(evaluation);
@@ -302,88 +298,88 @@ error:
 }
 
 enum lttng_condition_status
-lttng_condition_session_usage_consumed_get_threshold(
+lttng_condition_session_consumed_size_get_threshold(
 		const struct lttng_condition *condition,
 		uint64_t *consumed_threshold_bytes)
 {
-	struct lttng_condition_session_usage *usage;
+	struct lttng_condition_session_consumed_size *consumed;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !IS_USAGE_CONDITION(condition) || !consumed_threshold_bytes) {
+	if (!condition || !IS_CONSUMED_SIZE_CONDITION(condition) || !consumed_threshold_bytes) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
 
-	usage = container_of(condition, struct lttng_condition_session_usage,
+	consumed = container_of(condition, struct lttng_condition_session_consumed_size,
 			parent);
-	if (!usage->consumed_threshold_bytes.set) {
+	if (!consumed->consumed_threshold_bytes.set) {
 		status = LTTNG_CONDITION_STATUS_UNSET;
 		goto end;
 	}
-	*consumed_threshold_bytes = usage->consumed_threshold_bytes.value;
+	*consumed_threshold_bytes = consumed->consumed_threshold_bytes.value;
 end:
 	return status;
 }
 
 enum lttng_condition_status
-lttng_condition_session_usage_consumed_set_threshold(
+lttng_condition_session_consumed_size_set_threshold(
 		struct lttng_condition *condition, uint64_t consumed_threshold_bytes)
 {
-	struct lttng_condition_session_usage *usage;
+	struct lttng_condition_session_consumed_size *consumed;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !IS_USAGE_CONDITION(condition)) {
+	if (!condition || !IS_CONSUMED_SIZE_CONDITION(condition)) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
 
-	usage = container_of(condition, struct lttng_condition_session_usage,
+	consumed = container_of(condition, struct lttng_condition_session_consumed_size,
 			parent);
-	usage->consumed_threshold_bytes.set = true;
-	usage->consumed_threshold_bytes.value = consumed_threshold_bytes;
+	consumed->consumed_threshold_bytes.set = true;
+	consumed->consumed_threshold_bytes.value = consumed_threshold_bytes;
 end:
 	return status;
 }
 
 enum lttng_condition_status
-lttng_condition_session_usage_get_session_name(
+lttng_condition_session_consumed_size_get_session_name(
 		const struct lttng_condition *condition,
 		const char **session_name)
 {
-	struct lttng_condition_session_usage *usage;
+	struct lttng_condition_session_consumed_size *consumed;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !IS_USAGE_CONDITION(condition) || !session_name) {
+	if (!condition || !IS_CONSUMED_SIZE_CONDITION(condition) || !session_name) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
 
-	usage = container_of(condition, struct lttng_condition_session_usage,
+	consumed = container_of(condition, struct lttng_condition_session_consumed_size,
 			parent);
-	if (!usage->session_name) {
+	if (!consumed->session_name) {
 		status = LTTNG_CONDITION_STATUS_UNSET;
 		goto end;
 	}
-	*session_name = usage->session_name;
+	*session_name = consumed->session_name;
 end:
 	return status;
 }
 
 enum lttng_condition_status
-lttng_condition_session_usage_set_session_name(
+lttng_condition_session_consumed_size_set_session_name(
 		struct lttng_condition *condition, const char *session_name)
 {
 	char *session_name_copy;
-	struct lttng_condition_session_usage *usage;
+	struct lttng_condition_session_consumed_size *consumed;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
 
-	if (!condition || !IS_USAGE_CONDITION(condition) || !session_name ||
-			strlen(session_name) == 0) {
+	if (!condition || !IS_CONSUMED_SIZE_CONDITION(condition) ||
+			!session_name || strlen(session_name) == 0) {
 		status = LTTNG_CONDITION_STATUS_INVALID;
 		goto end;
 	}
 
-	usage = container_of(condition, struct lttng_condition_session_usage,
+	consumed = container_of(condition, struct lttng_condition_session_consumed_size,
 			parent);
 	session_name_copy = strdup(session_name);
 	if (!session_name_copy) {
@@ -391,81 +387,82 @@ lttng_condition_session_usage_set_session_name(
 		goto end;
 	}
 
-	if (usage->session_name) {
-		free(usage->session_name);
+	if (consumed->session_name) {
+		free(consumed->session_name);
 	}
-	usage->session_name = session_name_copy;
+	consumed->session_name = session_name_copy;
 end:
 	return status;
 }
 
 static
-ssize_t lttng_evaluation_session_usage_serialize(
+ssize_t lttng_evaluation_session_consumed_size_serialize(
 		struct lttng_evaluation *evaluation, char *buf)
 {
 	ssize_t ret;
-	struct lttng_evaluation_session_usage *usage;
+	struct lttng_evaluation_session_consumed_size *consumed;
 
-	usage = container_of(evaluation, struct lttng_evaluation_session_usage,
+	consumed = container_of(evaluation, struct lttng_evaluation_session_consumed_size,
 			parent);
 	if (buf) {
-		struct lttng_evaluation_session_usage_comm comm = {
-			.session_consumed = usage->session_consumed,
+		struct lttng_evaluation_session_consumed_size_comm comm = {
+			.session_consumed = consumed->session_consumed,
 		};
 
 		memcpy(buf, &comm, sizeof(comm));
 	}
 
-	ret = sizeof(struct lttng_evaluation_session_usage_comm);
+	ret = sizeof(struct lttng_evaluation_session_consumed_size_comm);
 	return ret;
 }
 
 static
-void lttng_evaluation_session_usage_destroy(
+void lttng_evaluation_session_consumed_size_destroy(
 		struct lttng_evaluation *evaluation)
 {
-	struct lttng_evaluation_session_usage *usage;
+	struct lttng_evaluation_session_consumed_size *consumed;
 
-	usage = container_of(evaluation, struct lttng_evaluation_session_usage,
+	consumed = container_of(evaluation, struct lttng_evaluation_session_consumed_size,
 			parent);
-	free(usage);
+	free(consumed);
 }
 
 LTTNG_HIDDEN
-struct lttng_evaluation *lttng_evaluation_session_usage_consumed_create(
+struct lttng_evaluation *lttng_evaluation_session_consumed_size_create(
 		enum lttng_condition_type type, uint64_t consumed)
 {
-	struct lttng_evaluation_session_usage *usage;
+	struct lttng_evaluation_session_consumed_size *consumed_eval;
 
-	usage = zmalloc(sizeof(struct lttng_evaluation_session_usage));
-	if (!usage) {
+	consumed_eval = zmalloc(sizeof(struct lttng_evaluation_session_consumed_size));
+	if (!consumed_eval) {
 		goto end;
 	}
 
-	usage->parent.type = type;
-	usage->session_consumed = consumed;
-	usage->parent.serialize = lttng_evaluation_session_usage_serialize;
-	usage->parent.destroy = lttng_evaluation_session_usage_destroy;
+	consumed_eval->parent.type = type;
+	consumed_eval->session_consumed = consumed;
+	consumed_eval->parent.serialize = lttng_evaluation_session_consumed_size_serialize;
+	consumed_eval->parent.destroy = lttng_evaluation_session_consumed_size_destroy;
 end:
-	return &usage->parent;
+	return &consumed_eval->parent;
 }
 
 enum lttng_evaluation_status
-lttng_evaluation_session_usage_get_consumed(
+lttng_evaluation_session_consumed_size_get_consumed_size(
 		const struct lttng_evaluation *evaluation,
 		uint64_t *session_consumed)
 {
-	struct lttng_evaluation_session_usage *usage;
+	struct lttng_evaluation_session_consumed_size *consumed;
 	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;
 
-	if (!evaluation || !is_usage_evaluation(evaluation) || !session_consumed) {
+	if (!evaluation || !IS_CONSUMED_SIZE_EVALUATION(evaluation) ||
+			!session_consumed) {
 		status = LTTNG_EVALUATION_STATUS_INVALID;
 		goto end;
 	}
 
-	usage = container_of(evaluation, struct lttng_evaluation_session_usage,
+	consumed = container_of(evaluation, struct lttng_evaluation_session_consumed_size,
 			parent);
-	*session_consumed = usage->session_consumed;
+	*session_consumed = consumed->session_consumed;
 end:
 	return status;
 }

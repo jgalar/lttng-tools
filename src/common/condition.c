@@ -17,7 +17,7 @@
 
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
-#include <lttng/condition/session-usage-internal.h>
+#include <lttng/condition/session-consumed-size-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
 #include <common/dynamic-buffer.h>
@@ -137,8 +137,8 @@ ssize_t lttng_condition_create_from_buffer(
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
 		create_from_buffer = lttng_condition_buffer_usage_high_create_from_buffer;
 		break;
-	case LTTNG_CONDITION_TYPE_SESSION_USAGE_CONSUMED:
-		create_from_buffer = lttng_condition_session_usage_consumed_create_from_buffer;
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+		create_from_buffer = lttng_condition_session_consumed_size_create_from_buffer;
 		break;
 	default:
 		ERR("Attempted to create condition of unknown type (%i)",

@@ -15,8 +15,8 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef LTTNG_CONDITION_SESSION_USAGE_H
-#define LTTNG_CONDITION_SESSION_USAGE_H
+#ifndef LTTNG_CONDITION_SESSION_CONSUMED_SIZE_H
+#define LTTNG_CONDITION_SESSION_CONSUMED_SIZE_H
 
 #include <lttng/condition/evaluation.h>
 #include <lttng/condition/condition.h>
@@ -31,39 +31,38 @@ struct lttng_condition;
 struct lttng_evaluation;
 
 /**
- * Session usage conditions allows an action to be taken whenever a session's
- * usage crosses a set threshold.
+ * Session consumed size conditions allow an action to be taken whenever a
+ * session's produced data size crosses a set threshold.
  *
  * These conditions are periodically evaluated against the current session
- * usage statistics. The period at which these conditions are evaluated is
+ * statistics. The period at which these conditions are evaluated is
  * governed by the channels' monitor timer.
  *
- * Session usage conditions have the following properties:
- *   - the exact name of the session in which the channel to be monitored is
- *     defined,
- *   - a total consumed threshold, expressed in bytes.
+ * Session consumed size conditions have the following properties:
+ *   - the exact name of the session to be monitored,
+ *   - a total consumed size threshold, expressed in bytes.
  *
  * Wildcards, regular expressions or other globbing mechanisms are not supported
- * in session usage condition properties.
+ * in session consumed size condition properties.
  */
 
 /*
- * Create a newly allocated consumed session usage condition.
+ * Create a newly allocated consumed session consumed size condition.
  *
- * A consumed session usage condition evaluates to true whenever the sum of all
- * the streams consumed positions is higher than a defined threshold. The
- * consumed positions are free running counters.
+ * A consumed session size condition evaluates to true whenever the sum of all
+ * its channels' consumed data size is higher than a set threshold. The
+ * consumed data sizes are free running counters.
  *
  * Returns a new condition on success, NULL on failure. This condition must be
  * destroyed using lttng_condition_destroy().
  */
 extern struct lttng_condition *
-lttng_condition_session_usage_consumed_create(void);
+lttng_condition_session_consumed_size_create(void);
 
 /*
- * Get the threshold of a consumed session usage condition.
+ * Get the threshold of a session consumed size condition.
  *
- * The consumed session usage condition's threshold must have been defined as
+ * The session consumed size condition's threshold must have been defined as
  * an absolute value expressed in bytes in order for this call to succeed.
  *
  * Returns LTTNG_CONDITION_STATUS_OK on success and a threshold expressed in
@@ -72,12 +71,12 @@ lttng_condition_session_usage_consumed_create(void);
  * bytes, was not set prior to this call.
  */
 extern enum lttng_condition_status
-lttng_condition_session_usage_consumed_get_threshold(
+lttng_condition_session_consumed_size_get_threshold(
 		const struct lttng_condition *condition,
 	        uint64_t *consumed_threshold_bytes);
 
 /*
- * Set the threshold of a consumed session usage condition.
+ * Set the threshold of a session consumed size usage condition.
  *
  * Setting a threshold overrides any previously set threshold.
  *
@@ -85,12 +84,12 @@ lttng_condition_session_usage_consumed_get_threshold(
  * if invalid paramenters are passed.
  */
 extern enum lttng_condition_status
-lttng_condition_session_usage_consumed_set_threshold(
+lttng_condition_session_consumed_size_set_threshold(
 		struct lttng_condition *condition,
 	        uint64_t consumed_threshold_bytes);
 
 /*
- * Get the session name property of a session usage condition.
+ * Get the session name property of a session consumed size condition.
  *
  * The caller does not assume the ownership of the returned session name. The
  * session name shall only only be used for the duration of the condition's
@@ -102,12 +101,12 @@ lttng_condition_session_usage_consumed_set_threshold(
  * was not set prior to this call.
  */
 extern enum lttng_condition_status
-lttng_condition_session_usage_get_session_name(
+lttng_condition_session_consumed_size_get_session_name(
 		const struct lttng_condition *condition,
 		const char **session_name);
 
 /*
- * Set the session name property of a session usage condition.
+ * Set the session name property of a session consumed size condition.
  *
  * The passed session name parameter will be copied to the condition.
  *
@@ -115,24 +114,24 @@ lttng_condition_session_usage_get_session_name(
  * if invalid paramenters are passed.
  */
 extern enum lttng_condition_status
-lttng_condition_session_usage_set_session_name(
+lttng_condition_session_consumed_size_set_session_name(
 		struct lttng_condition *condition,
 		const char *session_name);
 
 /**
- * lttng_evaluation_session_usage are specialised lttng_evaluations which
- * allow users to query a number of properties resulting from the evaluation
- * of a condition which evaluated to true.
+ * lttng_evaluation_session_consumed_size are specialised lttng_evaluations
+ * which allow users to query a number of properties resulting from the
+ * evaluation of a condition which evaluated to true.
  */
 
 /*
- * Get the session consumed property of a session usage evaluation.
+ * Get the session consumed property of a session consumed size evaluation.
  *
  * Returns LTTNG_CONDITION_STATUS_OK on success and a threshold expressed in
  * bytes, or LTTNG_CONDITION_STATUS_INVALID if an invalid parameter is passed.
  */
 extern enum lttng_evaluation_status
-lttng_evaluation_session_usage_get_consumed(
+lttng_evaluation_session_consumed_size_get_consumed_size(
 		const struct lttng_evaluation *evaluation,
 	        uint64_t *session_consumed);
 
@@ -140,4 +139,4 @@ lttng_evaluation_session_usage_get_consumed(
 }
 #endif
 
-#endif /* LTTNG_CONDITION_SESSION_USAGE_H */
+#endif /* LTTNG_CONDITION_SESSION_CONSUMED_SIZE_H */
