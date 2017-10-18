@@ -1576,8 +1576,6 @@ int rotate_truncate_stream(struct relay_stream *stream)
 	int ret, new_fd;
 	uint64_t diff, pos = 0;
 	char *buff = NULL;
-	uint32_t minor, major;
-	struct lttng_index_file *new_index_file;
 
 	assert(!stream->is_metadata);
 
@@ -1588,8 +1586,6 @@ int rotate_truncate_stream(struct relay_stream *stream)
 		goto end;
 	}
 
-	fprintf(stderr, "%d\n", stream->tracefile_size_current -
-			            stream->pos_after_last_complete_data_index);
 	assert((stream->tracefile_size_current -
 			stream->pos_after_last_complete_data_index) > 0);
 
@@ -1698,12 +1694,6 @@ int check_rotate_stream(struct relay_stream *stream)
 		DBG("Rotation after too much data has been written in tracefile "
 				"for stream %" PRIu64 ", need to truncate before "
 				"rotating", stream->stream_handle);
-		fprintf(stderr, "Rotation after too much data has been written in tracefile "
-				"for stream %" PRIu64 ", need to truncate before "
-				"rotating, rotate seq %lu\n", stream->stream_handle, stream->rotate_at_seq_num);
-		fprintf(stderr, "current pos: %lu, last safe pos: %lu\n",
-				stream->tracefile_size_current,
-				stream->pos_after_last_complete_data_index);
 		ret = rotate_truncate_stream(stream);
 		if (ret) {
 			ERR("Failed to truncate stream");
@@ -2267,14 +2257,6 @@ static int relay_recv_index(struct lttcomm_relayd_hdr *recv_hdr,
 		tracefile_array_commit_seq(stream->tfa);
 		stream->index_received_seqcount++;
 		stream->pos_after_last_complete_data_index += index->total_size;
-		fprintf(stderr, "idx stream %lu, pos %lu, content_size %lu, total_size %lu\n",
-				stream->stream_handle,
-				be64toh(index->index_data.offset),
-				be64toh(index_info.content_size),
-				index->total_size);
-
-		fprintf(stderr, "Stream %lu, ctrl flush index seq = %lu, safe_pos = %lu\n",
-				stream->stream_handle, net_seq_num, stream->pos_after_last_complete_data_index);
 	} else if (ret > 0) {
 		/* no flush. */
 		ret = 0;
@@ -2430,7 +2412,6 @@ static int relay_rotate_session_stream(struct lttcomm_relayd_hdr *recv_hdr,
 		ret = do_rotate_stream(stream);
 	} else {
 		stream->rotate_at_seq_num = be64toh(stream_info.rotate_at_seq_num);
-		fprintf(stderr, "cmd rotate\n");
 		ret = check_rotate_stream(stream);
 	}
 	if (ret < 0) {
@@ -3009,18 +2990,12 @@ static int relay_process_data(struct relay_connection *conn)
 	if (stream->prev_seq == -1ULL) {
 		new_stream = true;
 	}
-	fprintf(stderr, "Stream %lu, data in pos = %lu, seq = %lu\n",
-			stream->stream_handle, stream->tracefile_size_current, net_seq_num);
 	if (flushed) {
 		stream->pos_after_last_complete_data_index = stream->tracefile_size_current;
-		fprintf(stderr, "Stream %lu, flush data index, safe_pos %lu\n",
-				stream->stream_handle,
-				stream->pos_after_last_complete_data_index);
 	}
 
 	stream->prev_seq = net_seq_num;
 
-	fprintf(stderr, "Data check rotate\n");
 	ret = check_rotate_stream(stream);
 	if (ret < 0) {
 		ERR("Check rotate stream");
