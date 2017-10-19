@@ -232,6 +232,10 @@ void sessiond_rotate_timer_stop(struct ltt_session *session)
 
 	assert(session);
 
+	if (!session->rotate_timer_enabled) {
+		return;
+	}
+
 	ret = session_timer_stop(&session->rotate_timer,
 			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
 	if (ret == -1) {

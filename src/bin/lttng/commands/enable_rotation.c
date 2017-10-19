@@ -28,6 +28,7 @@
 
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/mi-lttng.h>
+#include <common/utils.h>
 
 #include "../command.h"
 #include <lttng/rotate.h>
@@ -116,8 +117,12 @@ int cmd_enable_rotation(int argc, const char **argv)
 		{
 			errno = 0;
 			opt_arg = poptGetOptArg(pc);
-			timer = strtoull(opt_arg, NULL, 0);
 			if (errno != 0 || !isdigit(opt_arg[0])) {
+				ERR("Wrong value in --timer parameter: %s", opt_arg);
+				ret = CMD_ERROR;
+				goto end;
+			}
+			if (utils_parse_duration_suffix(opt_arg, &timer) < 0 || !timer) {
 				ERR("Wrong value in --timer parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
@@ -129,9 +134,8 @@ int cmd_enable_rotation(int argc, const char **argv)
 		{
 			errno = 0;
 			opt_arg = poptGetOptArg(pc);
-			size = strtoull(opt_arg, NULL, 0);
-			if (errno != 0 || !isdigit(opt_arg[0])) {
-				ERR("Wrong value in --timer parameter: %s", opt_arg);
+			if (utils_parse_size_suffix(opt_arg, &size) < 0 || !size) {
+				ERR("Wrong value in --size parameter: %s", opt_arg);
 				ret = CMD_ERROR;
 				goto end;
 			}
