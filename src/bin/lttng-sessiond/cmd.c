@@ -4359,6 +4359,17 @@ int cmd_rotate_session(struct ltt_session *session,
 		fprintf(stderr, "active: %s, chunk: %s\n",
 				session->rotation_chunk.active_tracing_path,
 				session->kernel_session->consumer->chunk_path);
+		/*
+		 * Create the new chunk folder, before the rotation begins so we don't
+		 * race with the consumer/tracer activity.
+		 */
+		ret = domain_mkdir(session->kernel_session->consumer, session,
+				session->kernel_session->uid,
+				session->kernel_session->gid);
+		if (ret) {
+			ERR("Mkdir kernel");
+			goto end;
+		}
 		ret = kernel_rotate_session(session);
 		if (ret != LTTNG_OK) {
 			goto error;
@@ -4372,6 +4383,13 @@ int cmd_rotate_session(struct ltt_session *session,
 		snprintf(session->ust_session->consumer->chunk_path,
 				PATH_MAX, "/%s-%" PRIu64, datetime,
 				session->rotate_count + 1);
+		/*
+		 * Create the new chunk folder, before the rotation begins so we don't
+		 * race with the consumer/tracer activity.
+		 */
+		ret = domain_mkdir(session->ust_session->consumer, session,
+				session->ust_session->uid,
+				session->ust_session->gid);
 		ret = ust_app_rotate_session(session, &ust_active);
 		if (ret != LTTNG_OK) {
 			goto error;
@@ -4398,17 +4416,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		(*rotate_return)->status = LTTNG_ROTATE_STARTED;
 	}
 
-	/*
-	 * Create the new chunk folder, so we don't depend on the activity of the
-	 * tracer to create it. The tracer may have time to create it before we
-	 * arrive here, but we accept if it already exists.
-	 */
-	ret = session_mkdir(session);
-	if (ret) {
-		ERR("Create new chunk folder");
-		ret = LTTNG_ERR_UNK;
-		goto error;
-	}
 
 	DBG("Cmd rotate session %s, rotate_id %" PRIu64 " sent", session->name,
 			session->rotate_count);

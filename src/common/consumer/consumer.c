@@ -4062,13 +4062,20 @@ int lttng_consumer_rotate_channel(uint64_t key, char *path,
 	pthread_mutex_lock(&channel->lock);
 	channel->current_chunk_id = new_chunk_id;
 	snprintf(channel->pathname, PATH_MAX, "%s", path);
-	ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
-			channel->uid, channel->gid);
-	if (ret < 0) {
-		ERR("Trace directory creation error");
-		ret = -1;
-		pthread_mutex_unlock(&channel->lock);
-		goto end;
+	if (relayd_id == -1ULL) {
+		/*
+		 * The domain path (/ust or /kernel) has been created before, we
+		 * now need to create the last part of the path: the application/user
+		 * specific section (uid/1000/64-bit).
+		 */
+		ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
+				channel->uid, channel->gid);
+		if (ret < 0) {
+			ERR("Trace directory creation error");
+			ret = -1;
+			pthread_mutex_unlock(&channel->lock);
+			goto end;
+		}
 	}
 	pthread_mutex_unlock(&channel->lock);
 
