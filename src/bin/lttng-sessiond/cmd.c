@@ -4432,6 +4432,7 @@ int cmd_rotate_session(struct ltt_session *session,
 				goto end;
 			}
 			session->rotate_pending = false;
+			session->rotate_status = LTTNG_ROTATE_COMPLETED;
 		}
 	}
 
