@@ -13,8 +13,7 @@ function validate_test_chunks ()
 	ok $? "Chunk 1 exists"
 	ls $TRACE_PATH/${chunk_pattern}-2/${app_path}/metadata >/dev/null
 	ok $? "Chunk 2 exists"
-	# FIXME
-	ls $TRACE_PATH/${chunk_pattern}-3/${app_path}/metadata >/dev/null
+	ls $TRACE_PATH/${chunk_pattern}-3/${domain} >/dev/null
 	ok $? "Chunk 3 exists"
 
 	# Make sure we don't have anything else in the first 2 chunk directories
@@ -53,7 +52,7 @@ function validate_test_chunks ()
 	empty=$?
 	ok $empty "Trace folder is now empty"
 	if [ $empty -eq 0 ]; then
-   	# Only delete if successful
+ 	# Only delete if successful
 		rm -rf $TRACE_PATH/
 	fi
 }

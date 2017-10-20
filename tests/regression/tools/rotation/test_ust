@@ -60,8 +60,7 @@ function lttng_create_session_uri
 function rotate_ust_test ()
 {
 	TRACE_PATH=$1
-
-	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
+	app_path=$2
 
 	start_lttng_tracing_ok $SESSION_NAME
 	today=$(date +%Y%m%d)
@@ -85,86 +84,45 @@ function rotate_ust_test ()
 	test $today = $now
 	ok $? "Date did not change during the test"
 
-	validate_test_chunks "${TRACE_PATH}" $today "ust/uid/*/*/" ust
+	validate_test_chunks "${TRACE_PATH}" $today $app_path ust
 }
 
-function test_ust_streaming ()
+function test_ust_streaming_uid ()
 {
-	diag "Test UST streaming with session rotation"
+	diag "Test UST streaming with session rotation per UID"
 	lttng_create_session_uri
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
-	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/uid/*/*/"
 }
 
-function test_ust_local ()
+function test_ust_local_uid ()
 {
-	diag "Test UST local with session rotation"
+	diag "Test UST local with session rotation per UID"
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
-	rotate_ust_test "${TRACE_PATH}"
+	rotate_ust_test "${TRACE_PATH}" "ust/uid/*/*/"
 }
 
-function test_ust_pid ()
+function test_ust_streaming_pid ()
 {
-	local file_sync_after_first=$(mktemp -u)
-	local file_sync_before_last=$(mktemp -u)
+	diag "Test UST streaming with session rotation per PID"
+	lttng_create_session_uri
+	enable_channel_per_pid $SESSION_NAME "channel0"
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
 
-	diag "Test UST per-pid with metadata regeneration (expect failure)"
+	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/pid/*/"
+}
+
+function test_ust_local_pid ()
+{
+	diag "Test UST local with session rotation per PID"
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 	enable_channel_per_pid $SESSION_NAME "channel0"
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
 
-	$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT ${file_sync_after_first} ${file_sync_before_last} /dev/null 2>&1 &
-
-	start_lttng_tracing_ok $SESSION_NAME
-
-	touch ${file_sync_before_last}
-
-	# Wait for the applications started in background
-	wait
-	regenerate_metadata_fail $SESSION_NAME
-
-	stop_lttng_tracing_ok $SESSION_NAME
-	destroy_lttng_session_ok $SESSION_NAME
-	# Validate test
-	validate_trace $EVENT_NAME $TRACE_PATH
-	if [ $? -eq 0 ]; then
-		# Only delete if successful
-		rm -rf $TRACE_PATH
-	fi
-	rm -f ${file_sync_after_first}
-	rm -f ${file_sync_before_last}
-}
-
-function test_ust_live ()
-{
-	local file_sync_after_first=$(mktemp -u)
-	local file_sync_before_last=$(mktemp -u)
-
-	diag "Test UST live with metadata regeneration (expect failure)"
-	lttng_create_session_uri_live $SESSION_NAME $TRACE_PATH
-	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
-
-	$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT ${file_sync_after_first} ${file_sync_before_last} /dev/null 2>&1 &
-
-	start_lttng_tracing_ok $SESSION_NAME
-
-	touch ${file_sync_before_last}
-
-	# Wait for the applications started in background
-	wait
-	regenerate_metadata_fail $SESSION_NAME
-
-	stop_lttng_tracing_ok $SESSION_NAME
-	destroy_lttng_session_ok $SESSION_NAME
-	# Validate test
-	validate_trace $EVENT_NAME $TRACE_PATH
-	if [ $? -eq 0 ]; then
-		# Only delete if successful
-		rm -rf $TRACE_PATH
-	fi
-	rm -f ${file_sync_after_first}
-	rm -f ${file_sync_before_last}
+	rotate_ust_test "${TRACE_PATH}" "ust/pid/*/"
 }
 
 plan_tests $NUM_TESTS
@@ -174,8 +132,9 @@ print_test_banner "$TEST_DESC"
 start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
 
-tests=( test_ust_streaming test_ust_local )
-#tests=( test_ust_streaming test_ust_local test_ust_pid test_ust_live )
+#tests=( test_ust_streaming_uid test_ust_local_uid \
+#	test_ust_streaming_pid test_ust_local_pid )
+tests=( test_ust_streaming_uid test_ust_local_uid )
 
 for fct_test in ${tests[@]};
 do
