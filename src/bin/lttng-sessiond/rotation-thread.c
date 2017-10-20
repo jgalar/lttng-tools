@@ -244,16 +244,18 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 		ERR("[rotation-thread] Failed to add ust-64 channel rotation pipe fd to pollset");
 		goto error;
 	}
-	ret = lttng_poll_add(poll_set, handle->kernel_consumer,
-			LPOLLIN | LPOLLERR);
-	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add kernel channel rotation pipe fd to pollset");
-		goto error;
+	if (handle->kernel_consumer >= 0) {
+		ret = lttng_poll_add(poll_set, handle->kernel_consumer,
+				LPOLLIN | LPOLLERR);
+		if (ret < 0) {
+			ERR("[rotation-thread] Failed to add kernel channel rotation pipe fd to pollset");
+			goto error;
+		}
 	}
 	ret = lttng_poll_add(poll_set, handle->client_rotate_pipe,
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add kernel channel rotation pipe fd to pollset");
+		ERR("[rotation-thread] Failed to add manage client rotation pipe fd to pollset");
 		goto error;
 	}
 
