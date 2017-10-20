@@ -154,6 +154,7 @@ enum lttng_error_code {
 	LTTNG_ERR_ROTATE_NO_DATA         = 131, /* No data to rotate. */
 	LTTNG_ERR_ROTATE_TIMER_EXISTS    = 132, /* Rotate timer already setup for this session. */
 	LTTNG_ERR_ROTATE_SIZE_EXISTS     = 133, /* Rotate size already setup for this session. */
+	LTTNG_ERR_ROTATE_MULTIPLE_AFTER_STOP     = 134, /* Already rotated once after a stop. */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */

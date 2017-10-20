@@ -195,6 +195,7 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_ROTATE_NO_DATA) ] = "No trace data to rotate",
 	[ ERROR_INDEX(LTTNG_ERR_ROTATE_TIMER_EXISTS) ] = "Rotate timer already setup for this session",
 	[ ERROR_INDEX(LTTNG_ERR_ROTATE_SIZE_EXISTS) ] = "Rotate size already setup for this session",
+	[ ERROR_INDEX(LTTNG_ERR_ROTATE_MULTIPLE_AFTER_STOP) ] = "Already rotated once after a stop",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"

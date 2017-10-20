@@ -2532,6 +2532,12 @@ int cmd_start_trace(struct ltt_session *session)
 	session->has_been_started = 1;
 	session->active = 1;
 
+	/*
+	 * Clear the flag that indicates that a rotation was done while the
+	 * session was stopped.
+	 */
+	session->rotated_after_last_stop = 0;
+
 	if (session->rotate_timer_period) {
 		ret = sessiond_rotate_timer_start(session,
 				session->rotate_timer_period);
@@ -2546,6 +2552,33 @@ int cmd_start_trace(struct ltt_session *session)
 
 error:
 	return ret;
+}
+
+static
+void rename_active_chunk(struct ltt_session *session)
+{
+	int ret;
+
+	session->rotate_count++;
+	/*
+	 * The currently active tracing path is now the folder we
+	 * want to rename.
+	 */
+	snprintf(session->rotation_chunk.current_rotate_path,
+			PATH_MAX, "%s",
+			session->rotation_chunk.active_tracing_path);
+	ret = rename_complete_chunk(session, time(NULL));
+	if (ret < 0) {
+		ERR("Renaming active session chunk");
+	}
+	/*
+	 * We just renamed, the folder, we didn't do an actual rotation, so
+	 * the active tracing path is now the renamed folder and we have to
+	 * restore the rotate count.
+	 */
+	snprintf(session->rotation_chunk.active_tracing_path, PATH_MAX, "%s",
+			session->rotation_chunk.current_rotate_path);
+	session->rotate_count--;
 }
 
 /*
@@ -2571,26 +2604,7 @@ int cmd_stop_trace(struct ltt_session *session)
 	}
 
 	if (session->rotate_count > 0 && !session->rotate_pending) {
-		session->rotate_count++;
-		/*
-		 * The currently active tracing path is now the folder we
-		 * want to rename.
-		 */
-		snprintf(session->rotation_chunk.current_rotate_path,
-				PATH_MAX, "%s",
-				session->rotation_chunk.active_tracing_path);
-		ret = rename_complete_chunk(session, time(NULL));
-		if (ret < 0) {
-			ERR("Renaming session on destroy");
-		}
-		/*
-		 * We just renamed, the folder, we didn't do an actual rotation, so
-		 * the active tracing path is now the renamed folder and we have to
-		 * restore the rotate count.
-		 */
-		snprintf(session->rotation_chunk.active_tracing_path, PATH_MAX, "%s",
-				session->rotation_chunk.current_rotate_path);
-		session->rotate_count--;
+		rename_active_chunk(session);
 	}
 
 	/* Kernel tracer */
@@ -2882,6 +2896,10 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 
 	if (session->rotate_timer_enabled) {
 		sessiond_rotate_timer_stop(session);
+	}
+
+	if (session->rotated_after_last_stop) {
+		rename_active_chunk(session);
 	}
 
 	/* Clean kernel session teardown */
@@ -4296,6 +4314,15 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto error;
 	}
 
+	/*
+	 * After a stop, we only allow one rotation to occur, the other ones are
+	 * useless until a new start.
+	 */
+	if (session->rotated_after_last_stop) {
+		ret = -LTTNG_ERR_ROTATE_MULTIPLE_AFTER_STOP;
+		goto error;
+	}
+
 	/* Special case for the first rotation. */
 	if (session->rotate_count == 0) {
 		const char *base_path = NULL;
@@ -4356,9 +4383,6 @@ int cmd_rotate_session(struct ltt_session *session,
 		snprintf(session->kernel_session->consumer->chunk_path,
 				PATH_MAX, "/%s-%" PRIu64, datetime,
 				session->rotate_count + 1);
-		fprintf(stderr, "active: %s, chunk: %s\n",
-				session->rotation_chunk.active_tracing_path,
-				session->kernel_session->consumer->chunk_path);
 		/*
 		 * Create the new chunk folder, before the rotation begins so we don't
 		 * race with the consumer/tracer activity.
@@ -4409,6 +4433,10 @@ int cmd_rotate_session(struct ltt_session *session,
 			}
 			session->rotate_pending = false;
 		}
+	}
+
+	if (!session->active) {
+		session->rotated_after_last_stop = 1;
 	}
 
 	if (rotate_return) {

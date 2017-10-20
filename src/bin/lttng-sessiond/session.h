@@ -172,6 +172,7 @@ struct ltt_session {
 	timer_t rotate_timer;
 	uint64_t rotate_timer_period;
 	uint64_t rotate_size;
+	int rotated_after_last_stop:1;
 
 	/* FIXME: tmp, find a better place to put that */
 	struct lttng_condition *condition;
