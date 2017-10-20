@@ -24,7 +24,7 @@ SESSION_NAME=""
 
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=10
+NUM_TESTS=46
 
 source $TESTDIR/utils/utils.sh
 source $CURDIR/rotate_utils.sh
@@ -43,42 +43,10 @@ function lttng_create_session_uri
 	ok $? "Create session $SESSION_NAME"
 }
 
-function test_kernel_streaming ()
+function rotate_kernel_test ()
 {
-	diag "Test kernel streaming with metadata regeneration"
-	lttng_create_session_uri
-	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
-	start_lttng_tracing_ok $SESSION_NAME
+	TRACE_PATH=$1
 
-	today=$(date +%Y%m%d)
-	# First chunk contains 10 events.
-	echo -n "10" > /proc/lttng-test-filter-event
-	rotate_session_ok $SESSION_NAME
-
-	# Second chunk contains 20 events.
-	echo -n "20" > /proc/lttng-test-filter-event
-	stop_lttng_tracing_ok $SESSION_NAME
-
-	# Third chunk contains no event (rotate after stop).
-	rotate_session_ok $SESSION_NAME
-
-	destroy_lttng_session_ok $SESSION_NAME
-
-	# The tests on the chunk folder rely on the date staying the same during
-	# the duration of the test, if this fail we will now why the other checks
-	# fail afterwards. There is a short window of time where an automated test
-	# could fail because of that.
-	now=$(date +%Y%m%d)
-	test $today = $now
-	ok $? "Date did not change during the test"
-
-	validate_test_chunks "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" $today kernel kernel
-}
-
-function test_kernel_local ()
-{
-	diag "Test kernel local with session rotation"
-	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
 
@@ -105,6 +73,21 @@ function test_kernel_local ()
 	ok $? "Date did not change during the test"
 
 	validate_test_chunks $TRACE_PATH $today kernel kernel
+}
+
+function test_kernel_streaming ()
+{
+	diag "Test kernel streaming with session rotation"
+	lttng_create_session_uri
+	rotate_kernel_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+}
+
+function test_kernel_local ()
+{
+	diag "Test kernel local with session rotation"
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+
+	rotate_kernel_test "${TRACE_PATH}"
 }
 
 plan_tests $NUM_TESTS

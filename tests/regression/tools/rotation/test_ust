@@ -29,7 +29,7 @@ PID_RELAYD=0
 
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=33
+NUM_TESTS=46
 
 source $TESTDIR/utils/utils.sh
 source $CURDIR/rotate_utils.sh
@@ -57,10 +57,10 @@ function lttng_create_session_uri
 
 # MUST set TESTDIR before calling those functions
 
-function test_ust_streaming ()
+function rotate_ust_test ()
 {
-	diag "Test UST streaming with session rotation"
-	lttng_create_session_uri
+	TRACE_PATH=$1
+
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
 	start_lttng_tracing_ok $SESSION_NAME
@@ -85,38 +85,23 @@ function test_ust_streaming ()
 	test $today = $now
 	ok $? "Date did not change during the test"
 
-	validate_test_chunks "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" $today "ust/uid/*/*/" ust
+	validate_test_chunks "${TRACE_PATH}" $today "ust/uid/*/*/" ust
+}
+
+function test_ust_streaming ()
+{
+	diag "Test UST streaming with session rotation"
+	lttng_create_session_uri
+
+	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
 }
 
 function test_ust_local ()
 {
-	local file_sync_after_first=$(mktemp -u)
-	local file_sync_before_last=$(mktemp -u)
-
-	diag "Test UST local with metadata regeneration"
+	diag "Test UST local with session rotation"
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
-	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
-	$TESTAPP_BIN $NR_ITER $NR_USEC_WAIT ${file_sync_after_first} ${file_sync_before_last} /dev/null 2>&1 &
-
-	start_lttng_tracing_ok $SESSION_NAME
-
-	touch ${file_sync_before_last}
-
-	# Wait for the applications started in background
-	wait
-	regenerate_metadata_ok $SESSION_NAME
-
-	stop_lttng_tracing_ok $SESSION_NAME
-	destroy_lttng_session_ok $SESSION_NAME
-	# Validate test
-	validate_trace $EVENT_NAME $TRACE_PATH
-	if [ $? -eq 0 ]; then
-		# Only delete if successful
-		rm -rf $TRACE_PATH
-	fi
-	rm -f ${file_sync_after_first}
-	rm -f ${file_sync_before_last}
+	rotate_ust_test "${TRACE_PATH}"
 }
 
 function test_ust_pid ()
@@ -189,7 +174,7 @@ print_test_banner "$TEST_DESC"
 start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
 
-tests=( test_ust_streaming )
+tests=( test_ust_streaming test_ust_local )
 #tests=( test_ust_streaming test_ust_local test_ust_pid test_ust_live )
 
 for fct_test in ${tests[@]};
