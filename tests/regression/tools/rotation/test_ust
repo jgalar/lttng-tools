@@ -29,7 +29,7 @@ PID_RELAYD=0
 
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=46
+NUM_TESTS=90
 
 source $TESTDIR/utils/utils.sh
 source $CURDIR/rotate_utils.sh
@@ -59,7 +59,7 @@ function lttng_create_session_uri
 
 function rotate_ust_test ()
 {
-	TRACE_PATH=$1
+	local_path=$1
 	app_path=$2
 
 	start_lttng_tracing_ok $SESSION_NAME
@@ -84,7 +84,7 @@ function rotate_ust_test ()
 	test $today = $now
 	ok $? "Date did not change during the test"
 
-	validate_test_chunks "${TRACE_PATH}" $today $app_path ust
+	validate_test_chunks "${local_path}" $today $app_path ust
 }
 
 function test_ust_streaming_uid ()
@@ -94,6 +94,7 @@ function test_ust_streaming_uid ()
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
 	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/uid/*/*/"
+	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
 function test_ust_local_uid ()
@@ -113,6 +114,7 @@ function test_ust_streaming_pid ()
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
 
 	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/pid/*/"
+	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
 function test_ust_local_pid ()
@@ -132,9 +134,8 @@ print_test_banner "$TEST_DESC"
 start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
 
-#tests=( test_ust_streaming_uid test_ust_local_uid \
-#	test_ust_streaming_pid test_ust_local_pid )
-tests=( test_ust_streaming_uid test_ust_local_uid )
+tests=( test_ust_streaming_uid test_ust_local_uid \
+	test_ust_streaming_pid test_ust_local_pid )
 
 for fct_test in ${tests[@]};
 do

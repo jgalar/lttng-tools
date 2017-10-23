@@ -80,6 +80,7 @@ function test_kernel_streaming ()
 	diag "Test kernel streaming with session rotation"
 	lttng_create_session_uri
 	rotate_kernel_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
+	rm -rf ${TRACE_PATH}/${HOSTNAME} 2>/dev/null
 }
 
 function test_kernel_local ()
