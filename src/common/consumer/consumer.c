@@ -4256,10 +4256,12 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 	}
 
 	/* FIXME: chan_ro ? */
+	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 	ret = relayd_rotate_stream(&relayd->control_sock,
 			stream->relayd_stream_id, stream->channel_ro_pathname,
 			stream->chan->current_chunk_id,
 			stream->last_sequence_number);
+	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 
 end:
 	return ret;
@@ -4418,7 +4420,9 @@ int rotate_rename_relay(char *current_path, char *new_path, uint64_t relayd_id)
 		goto end;
 	}
 
+	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 	ret = relayd_rotate_rename(&relayd->control_sock, current_path, new_path);
+	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 
 end:
 	return ret;
@@ -4447,7 +4451,9 @@ int lttng_consumer_rotate_pending_relay(uint64_t session_id,
 		goto end;
 	}
 
+	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 	ret = relayd_rotate_pending(&relayd->control_sock, chunk_id);
+	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 
 end:
 	return ret;
@@ -4484,7 +4490,9 @@ int mkdir_relay(char *path, uint64_t relayd_id)
 		goto end;
 	}
 
+	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 	ret = relayd_mkdir(&relayd->control_sock, path);
+	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 
 end:
 	return ret;
