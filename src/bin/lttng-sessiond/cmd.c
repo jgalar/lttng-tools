@@ -4537,6 +4537,12 @@ int cmd_rotate_setup(struct ltt_session *session,
 
 	DBG("Cmd rotate setup session %s", session->name);
 
+	if (session->live_timer || session->snapshot_mode ||
+			!session->output_traces) {
+		ret = -LTTNG_ERR_ROTATE_NOT_AVAILABLE;
+		goto end;
+	}
+
 	if (timer_us && timer_us != -1ULL && session->rotate_timer_period) {
 		ret = LTTNG_ERR_ROTATE_TIMER_EXISTS;
 		goto end;

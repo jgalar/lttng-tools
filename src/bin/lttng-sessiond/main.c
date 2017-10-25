@@ -4302,6 +4302,10 @@ error_add_context:
 				cmd_ctx->lsm->u.rotate_setup.timer_us,
 				cmd_ctx->lsm->u.rotate_setup.size,
 				cmd_ctx->client_rotate_pipe);
+		if (ret < 0) {
+			ret = -ret;
+			goto error;
+		}
 		break;
 	}
 	case LTTNG_ROTATE_GET_CURRENT_PATH:
