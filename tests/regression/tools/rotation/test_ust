@@ -29,7 +29,7 @@ PID_RELAYD=0
 
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=134
+NUM_TESTS=146
 
 source $TESTDIR/utils/utils.sh
 source $CURDIR/rotate_utils.sh
@@ -188,6 +188,40 @@ function test_ust_streaming_timer_pid ()
 	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
+function test_incompatible_sessions ()
+{
+	diag "Check incompatible session types with rotation"
+
+	diag "Live session with rotate timer"
+	# Should not be able to enable a rotation timer with a live session
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $SESSION_NAME --live >/dev/null 2>&1
+	lttng_enable_rotation_timer_fail $SESSION_NAME 500ms
+	destroy_lttng_session_ok $SESSION_NAME
+
+	diag "Snapshot session with rotate timer"
+	# Should not be able to enable a rotation timer with a snapshot session
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $SESSION_NAME --snapshot >/dev/null 2>&1
+	lttng_enable_rotation_timer_fail $SESSION_NAME 500ms
+	destroy_lttng_session_ok $SESSION_NAME
+
+	diag "Live session with rotate"
+	# Should not be able to rotate a live session
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $SESSION_NAME --live >/dev/null 2>&1
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
+	start_lttng_tracing_ok $SESSION_NAME
+	rotate_session_fail $SESSION_NAME
+	destroy_lttng_session_ok $SESSION_NAME
+
+	diag "Snapshot session with rotate"
+	# Should not be able to rotate a snapshot session
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN create $SESSION_NAME --snapshot >/dev/null 2>&1
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
+	start_lttng_tracing_ok $SESSION_NAME
+	rotate_session_fail $SESSION_NAME
+	destroy_lttng_session_ok $SESSION_NAME
+
+}
+
 plan_tests $NUM_TESTS
 
 print_test_banner "$TEST_DESC"
@@ -198,7 +232,8 @@ start_lttng_sessiond
 tests=( test_ust_streaming_uid test_ust_local_uid \
 	test_ust_streaming_pid test_ust_local_pid \
 	test_ust_local_timer_uid test_ust_streaming_timer_uid \
-	test_ust_local_timer_pid test_ust_streaming_timer_pid )
+	test_ust_local_timer_pid test_ust_streaming_timer_pid \
+	test_incompatible_sessions )
 
 for fct_test in ${tests[@]};
 do
