@@ -1561,3 +1561,29 @@ function destructive_tests_enabled ()
 		return 1
 	fi
 }
+
+function lttng_enable_rotation_timer ()
+{
+	local expected_to_fail=$1
+	local sess_name=$2
+	local period=$3
+
+	$TESTDIR/../src/bin/lttng/$LTTNG_BIN enable-rotation -s $sess_name --timer $period 1> $OUTPUT_DEST 2> $ERROR_OUTPUT_DEST
+	ret=$?
+	if [[ $expected_to_fail -eq "1" ]]; then
+		test "$ret" -ne "0"
+		ok $? "Expected fail on rotate session $sess_name"
+	else
+		ok $ret "Rotate session $sess_name"
+	fi
+}
+
+function lttng_enable_rotation_timer_ok ()
+{
+	lttng_enable_rotation_timer 0 $@
+}
+
+function lttng_enable_rotation_timer_fail ()
+{
+	lttng_enable_rotation_timer 1 $@
+}

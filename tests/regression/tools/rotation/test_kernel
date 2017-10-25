@@ -24,7 +24,7 @@ SESSION_NAME=""
 
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=46
+NUM_TESTS=68
 
 source $TESTDIR/utils/utils.sh
 source $CURDIR/rotate_utils.sh
@@ -45,7 +45,7 @@ function lttng_create_session_uri
 
 function rotate_kernel_test ()
 {
-	TRACE_PATH=$1
+	local_path=$1
 
 	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
 	start_lttng_tracing_ok $SESSION_NAME
@@ -72,7 +72,7 @@ function rotate_kernel_test ()
 	test $today = $now
 	ok $? "Date did not change during the test"
 
-	validate_test_chunks $TRACE_PATH $today kernel kernel
+	validate_test_chunks $local_path $today kernel kernel 0
 }
 
 function test_kernel_streaming ()
@@ -80,7 +80,7 @@ function test_kernel_streaming ()
 	diag "Test kernel streaming with session rotation"
 	lttng_create_session_uri
 	rotate_kernel_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*"
-	rm -rf ${TRACE_PATH}/${HOSTNAME} 2>/dev/null
+	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
 function test_kernel_local ()
@@ -89,6 +89,29 @@ function test_kernel_local ()
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 
 	rotate_kernel_test "${TRACE_PATH}"
+}
+
+function test_kernel_local_timer ()
+{
+	diag "Test kernel local with session rotation timer"
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
+	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
+	start_lttng_tracing_ok $SESSION_NAME
+
+	rotate_timer_test "${TRACE_PATH}" 0
+}
+
+function test_kernel_streaming_timer ()
+{
+	diag "Test kernel remote with session rotation timer"
+	lttng_create_session_uri
+	lttng_enable_kernel_event $SESSION_NAME $EVENT_NAME
+	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
+	start_lttng_tracing_ok $SESSION_NAME
+
+	rotate_timer_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" 0
+	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
 plan_tests $NUM_TESTS
@@ -106,17 +129,14 @@ skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_
 	start_lttng_relayd "-o $TRACE_PATH"
 	start_lttng_sessiond
 	modprobe lttng-test
-	today=$(date +%Y%m%d)
 
-
-	tests=( test_kernel_streaming test_kernel_local )
+	tests=( test_kernel_streaming test_kernel_local test_kernel_local_timer test_kernel_streaming_timer)
 
 	for fct_test in ${tests[@]};
 	do
 		SESSION_NAME=$(randstring 16 0)
 		${fct_test}
 	done
-
 
 	rmmod lttng-test
 	stop_lttng_sessiond

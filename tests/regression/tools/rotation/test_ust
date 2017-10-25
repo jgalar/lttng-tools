@@ -29,7 +29,7 @@ PID_RELAYD=0
 
 TRACE_PATH=$(mktemp -d)
 
-NUM_TESTS=90
+NUM_TESTS=134
 
 source $TESTDIR/utils/utils.sh
 source $CURDIR/rotate_utils.sh
@@ -61,6 +61,7 @@ function rotate_ust_test ()
 {
 	local_path=$1
 	app_path=$2
+	per_pid=$3
 
 	start_lttng_tracing_ok $SESSION_NAME
 	today=$(date +%Y%m%d)
@@ -84,7 +85,7 @@ function rotate_ust_test ()
 	test $today = $now
 	ok $? "Date did not change during the test"
 
-	validate_test_chunks "${local_path}" $today $app_path ust
+	validate_test_chunks "${local_path}" $today $app_path ust $per_pid
 }
 
 function test_ust_streaming_uid ()
@@ -93,7 +94,7 @@ function test_ust_streaming_uid ()
 	lttng_create_session_uri
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
-	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/uid/*/*/"
+	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/uid/*/*/" 0
 	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
@@ -103,7 +104,8 @@ function test_ust_local_uid ()
 	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
 
-	rotate_ust_test "${TRACE_PATH}" "ust/uid/*/*/"
+	rotate_ust_test "${TRACE_PATH}" "ust/uid/*/*/" 0
+	rm -rf ${TRACE_PATH}
 }
 
 function test_ust_streaming_pid ()
@@ -113,7 +115,7 @@ function test_ust_streaming_pid ()
 	enable_channel_per_pid $SESSION_NAME "channel0"
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
 
-	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/pid/*/"
+	rotate_ust_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" "ust/pid/*/" 1
 	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
@@ -124,7 +126,66 @@ function test_ust_local_pid ()
 	enable_channel_per_pid $SESSION_NAME "channel0"
 	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
 
-	rotate_ust_test "${TRACE_PATH}" "ust/pid/*/"
+	rotate_ust_test "${TRACE_PATH}" "ust/pid/*/" 1
+	rm -rf ${TRACE_PATH}
+}
+
+function test_ust_local_timer_uid ()
+{
+	diag "Test ust local with session rotation timer per-uid"
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
+	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
+	start_lttng_tracing_ok $SESSION_NAME
+	# We just want the app to register, no event generated
+	$TESTAPP_BIN 0 0 /dev/null 2>&1
+
+	rotate_timer_test "${TRACE_PATH}" 0
+	rm -rf ${TRACE_PATH}
+}
+
+function test_ust_streaming_timer_uid ()
+{
+	diag "Test ust remote with session rotation timer per-uid"
+	lttng_create_session_uri
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME
+	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
+	start_lttng_tracing_ok $SESSION_NAME
+	# We just want the app to register, no event generated
+	$TESTAPP_BIN 0 0 /dev/null 2>&1
+
+	rotate_timer_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" 0
+	rm -rf ${TRACE_PATH}/${HOSTNAME}
+}
+
+function test_ust_local_timer_pid ()
+{
+	diag "Test ust local with session rotation timer per-pid"
+	create_lttng_session_ok $SESSION_NAME $TRACE_PATH
+	enable_channel_per_pid $SESSION_NAME "channel0"
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
+	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
+	start_lttng_tracing_ok $SESSION_NAME
+	# We just want the app to register, no event generated
+	$TESTAPP_BIN 0 0 /dev/null 2>&1
+
+	rotate_timer_test "${TRACE_PATH}" 1
+	rm -rf ${TRACE_PATH}
+}
+
+function test_ust_streaming_timer_pid ()
+{
+	diag "Test ust remote with session rotation timer per-pid"
+	lttng_create_session_uri
+	enable_channel_per_pid $SESSION_NAME "channel0"
+	enable_ust_lttng_event_ok $SESSION_NAME $EVENT_NAME "channel0"
+	lttng_enable_rotation_timer_ok $SESSION_NAME 500ms
+	start_lttng_tracing_ok $SESSION_NAME
+	# We just want the app to register, no event generated
+	$TESTAPP_BIN 0 0 /dev/null 2>&1
+
+	rotate_timer_test "${TRACE_PATH}/${HOSTNAME}/${SESSION_NAME}*" 1
+	rm -rf ${TRACE_PATH}/${HOSTNAME}
 }
 
 plan_tests $NUM_TESTS
@@ -135,7 +196,9 @@ start_lttng_relayd "-o $TRACE_PATH"
 start_lttng_sessiond
 
 tests=( test_ust_streaming_uid test_ust_local_uid \
-	test_ust_streaming_pid test_ust_local_pid )
+	test_ust_streaming_pid test_ust_local_pid \
+	test_ust_local_timer_uid test_ust_streaming_timer_uid \
+	test_ust_local_timer_pid test_ust_streaming_timer_pid )
 
 for fct_test in ${tests[@]};
 do
