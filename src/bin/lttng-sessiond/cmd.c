@@ -2497,11 +2497,13 @@ int cmd_start_trace(struct ltt_session *session)
 			ret = LTTNG_ERR_FATAL;
 			goto error;
 		}
-		ret = session_mkdir(session);
-		if (ret) {
-			ERR("Failed to create the session directories");
-			ret = LTTNG_ERR_FATAL;
-			goto error;
+		if (!session->snapshot_mode && !session->output_traces) {
+			ret = session_mkdir(session);
+			if (ret) {
+				ERR("Failed to create the session directories");
+				ret = LTTNG_ERR_FATAL;
+				goto error;
+			}
 		}
 	}
 
