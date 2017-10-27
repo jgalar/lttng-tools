@@ -51,31 +51,45 @@ static struct poptOption long_options[] = {
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
-static int mi_print_session(char *session_name, int enabled)
+static int mi_output_rotate(const char *status, const char *path,
+		const char *session_name)
 {
 	int ret;
 
-	/* Open session element */
-	ret = mi_lttng_writer_open_element(writer, config_element_session);
+	if (!lttng_opt_mi) {
+		ret = 0;
+		goto end;
+	}
+
+	ret = mi_lttng_writer_open_element(writer,
+			mi_lttng_element_rotation);
 	if (ret) {
 		goto end;
 	}
 
-	/* Print session name element */
-	ret = mi_lttng_writer_write_element_string(writer, config_element_name,
-			session_name);
+	ret = mi_lttng_writer_write_element_string(writer,
+			mi_lttng_element_rotate_session_name, session_name);
 	if (ret) {
 		goto end;
 	}
 
-	ret = mi_lttng_writer_write_element_bool(writer, config_element_enabled,
-			enabled);
+	ret = mi_lttng_writer_write_element_string(writer,
+			mi_lttng_element_rotate_status, status);
 	if (ret) {
 		goto end;
 	}
-
-	/* Close session element */
+	if (path) {
+		ret = mi_lttng_writer_write_element_string(writer,
+				mi_lttng_element_rotate_path, path);
+		if (ret) {
+			goto end;
+		}
+	}
+	/* Close  rotation element */
 	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto end;
+	}
 
 end:
 	return ret;
@@ -141,42 +155,38 @@ static int rotate_tracing(char *session_name)
 	case LTTNG_ROTATE_COMPLETED:
 		lttng_rotate_session_get_output_path(handle, &path);
 		MSG("Output files of session %s rotated to %s", session_name, path);
+		ret = mi_output_rotate("completed", path, session_name);
+		if (ret) {
+			ret = CMD_ERROR;
+			goto end;
+		}
 		ret = CMD_SUCCESS;
 		goto end;
 	case LTTNG_ROTATE_STARTED:
 		MSG("Rotation started for session %s", session_name);
-		if (lttng_opt_mi) {
-			ret = mi_print_session(session_name, 1);
-			if (ret) {
-				ret = CMD_ERROR;
-				goto error;
-			}
+		ret = mi_output_rotate("started", NULL, session_name);
+		if (ret) {
+			ret = CMD_ERROR;
+			goto end;
 		}
-
 		ret = CMD_SUCCESS;
 		goto end;
 	case LTTNG_ROTATE_EXPIRED:
 		MSG("Output files of session %s rotated, but handle expired", session_name);
-		if (lttng_opt_mi) {
-			ret = mi_print_session(session_name, 1);
-			if (ret) {
-				ret = CMD_ERROR;
-				goto error;
-			}
+		ret = mi_output_rotate("expired", NULL, session_name);
+		if (ret) {
+			ret = CMD_ERROR;
+			goto end;
 		}
-
 		ret = CMD_SUCCESS;
 		goto end;
 	case LTTNG_ROTATE_ERROR:
 		MSG("An error occurred with the rotation of session %s", session_name);
-		if (lttng_opt_mi) {
-			ret = mi_print_session(session_name, 1);
-			if (ret) {
-				ret = CMD_ERROR;
-				goto error;
-			}
+		ret = mi_output_rotate("error", NULL, session_name);
+		if (ret) {
+			ret = CMD_ERROR;
+			goto end;
 		}
-
 		ret = CMD_SUCCESS;
 		goto end;
 	case LTTNG_ROTATE_NO_ROTATION:
@@ -189,6 +199,7 @@ static int rotate_tracing(char *session_name)
 error:
 	ret = CMD_ERROR;
 end:
+
 	lttng_rotate_session_handle_destroy(handle);
 	lttng_rotate_session_attr_destroy(attr);
 	return ret;
@@ -239,9 +250,9 @@ int cmd_rotate(int argc, const char **argv)
 			goto end;
 		}
 
-		/* Open command element */
+		/* Open rotate command */
 		ret = mi_lttng_writer_command_open(writer,
-				mi_lttng_element_command_start);
+				mi_lttng_element_command_rotate);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -251,20 +262,16 @@ int cmd_rotate(int argc, const char **argv)
 		ret = mi_lttng_writer_open_element(writer,
 				mi_lttng_element_command_output);
 		if (ret) {
-			ret = CMD_ERROR;
 			goto end;
 		}
 
-		/*
-		 * Open sessions element
-		 * For validation purpose
-		 */
+		/* Open rotations element */
 		ret = mi_lttng_writer_open_element(writer,
-			config_element_sessions);
+				mi_lttng_element_rotations);
 		if (ret) {
-			ret = CMD_ERROR;
 			goto end;
 		}
+
 	}
 
 	command_ret = rotate_tracing(session_name);
@@ -276,13 +283,16 @@ int cmd_rotate(int argc, const char **argv)
 
 	/* Mi closing */
 	if (lttng_opt_mi) {
-		/* Close  sessions and output element */
-		ret = mi_lttng_close_multi_element(writer, 2);
+		/* Close  rotations element */
+		ret = mi_lttng_writer_close_element(writer);
 		if (ret) {
-			ret = CMD_ERROR;
 			goto end;
 		}
-
+		/* Close  output element */
+		ret = mi_lttng_writer_close_element(writer);
+		if (ret) {
+			goto end;
+		}
 		/* Success ? */
 		ret = mi_lttng_writer_write_element_bool(writer,
 				mi_lttng_element_command_success, success);

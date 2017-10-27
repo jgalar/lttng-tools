@@ -186,6 +186,13 @@ extern const char * const mi_lttng_element_snapshots;
 /* String related to track/untrack command */
 const char * const mi_lttng_element_track_untrack_all_wildcard;
 
+/* String related to a lttng_rotate */
+const char * const mi_lttng_element_rotation;
+const char * const mi_lttng_element_rotations;
+const char * const mi_lttng_element_rotate_status;
+const char * const mi_lttng_element_rotate_path;
+const char * const mi_lttng_element_rotate_session_name;
+
 /* Utility string function  */
 const char *mi_lttng_loglevel_string(int value, enum lttng_domain_type domain);
 const char *mi_lttng_logleveltype_string(enum lttng_loglevel_type value);
