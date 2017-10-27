@@ -563,7 +563,7 @@ THE SOFTWARE.
 	<!-- Maps to the rotate command -->
 	<xs:complexType name="rotation_type">
 		<xs:all>
-			<xs:element name="session_name" type="tns:name_type" minOccurs="0" />
+			<xs:element name="session" type="tns:name_type" minOccurs="0" />
 			<xs:element name="status" type="xs:string" />
 			<xs:element name="path" type="xs:string" minOccurs="0" />
 		</xs:all>
