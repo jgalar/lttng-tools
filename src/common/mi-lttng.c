@@ -182,6 +182,14 @@ const char * const mi_lttng_element_snapshots = "snapshots";
 /* String related to track/untrack command */
 const char * const mi_lttng_element_track_untrack_all_wildcard = "*";
 
+LTTNG_HIDDEN const char * const mi_lttng_element_session_name = "session_name";
+
+/* String related to rotate command */
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation = "rotation";
+LTTNG_HIDDEN const char * const mi_lttng_element_rotations = "rotations";
+LTTNG_HIDDEN const char * const mi_lttng_element_rotate_status = "status";
+LTTNG_HIDDEN const char * const mi_lttng_element_rotation_setup = "rotation_setup";
+
 /* Deprecated symbols preserved for ABI compatibility. */
 const char * const mi_lttng_context_type_perf_counter;
 const char * const mi_lttng_context_type_perf_cpu_counter;

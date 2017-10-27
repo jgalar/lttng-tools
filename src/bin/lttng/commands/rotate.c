@@ -61,19 +61,20 @@ static int mi_output_rotate(const char *status, const char *path,
 		goto end;
 	}
 
-	ret = mi_lttng_writer_open_element(writer, config_element_rotation);
+	ret = mi_lttng_writer_open_element(writer,
+			mi_lttng_element_rotation);
 	if (ret) {
 		goto end;
 	}
 
 	ret = mi_lttng_writer_write_element_string(writer,
-			config_element_session, session_name);
+			mi_lttng_element_session_name, session_name);
 	if (ret) {
 		goto end;
 	}
 
 	ret = mi_lttng_writer_write_element_string(writer,
-			config_element_rotate_status, status);
+			mi_lttng_element_rotate_status, status);
 	if (ret) {
 		goto end;
 	}
@@ -266,7 +267,7 @@ int cmd_rotate(int argc, const char **argv)
 
 		/* Open rotations element */
 		ret = mi_lttng_writer_open_element(writer,
-				config_element_rotations);
+				mi_lttng_element_rotations);
 		if (ret) {
 			goto end;
 		}

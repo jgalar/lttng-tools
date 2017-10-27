@@ -80,9 +80,6 @@ extern const char * const config_element_pid_tracker;
 extern const char * const config_element_trackers;
 extern const char * const config_element_targets;
 extern const char * const config_element_target_pid;
-extern const char * const config_element_rotation;
-extern const char * const config_element_rotations;
-extern const char * const config_element_rotate_status;
 extern const char * const config_element_rotation_timer_interval;
 extern const char * const config_element_rotation_size;
 
