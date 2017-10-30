@@ -85,7 +85,7 @@ static int mi_output_rotate(const char *status, const char *path,
 			goto end;
 		}
 	}
-	/* Close  rotation element */
+	/* Close rotation element */
 	ret = mi_lttng_writer_close_element(writer);
 	if (ret) {
 		goto end;

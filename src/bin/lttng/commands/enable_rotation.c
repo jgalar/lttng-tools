@@ -68,19 +68,68 @@ static int setup_rotate(char *session_name, uint64_t timer, uint64_t size)
 		goto error;
 	}
 
+	/* Open rotation_setup element */
+	ret = mi_lttng_writer_open_element(writer,
+			config_element_rotation_setup);
+	if (ret) {
+		goto error;
+	}
+
+	ret = mi_lttng_writer_write_element_string(writer,
+			mi_lttng_element_session_name, session_name);
+	if (ret) {
+		goto error;
+	}
+
 	if (timer) {
 		lttng_rotate_session_attr_set_timer(attr, timer);
 		MSG("Configuring session %s to rotate every %" PRIu64 " us",
 				session_name, timer);
+		ret = mi_lttng_writer_write_element_unsigned_int(writer,
+				config_element_rotation_timer_interval, timer);
+		if (ret) {
+			goto end;
+		}
 	}
 	if (size) {
 		lttng_rotate_session_attr_set_size(attr, size);
 		MSG("Configuring session %s to rotate every %" PRIu64 " bytes written",
 				session_name, size);
+		ret = mi_lttng_writer_write_element_unsigned_int(writer,
+				config_element_rotation_size, size);
+		if (ret) {
+			goto end;
+		}
 	}
 
 	ret = lttng_rotate_setup(attr);
+	if (ret) {
+		ret = mi_lttng_writer_write_element_string(writer,
+				mi_lttng_element_rotate_status, "error");
+		if (ret) {
+			goto end;
+		}
+		/* Close rotation_setup element */
+		ret = mi_lttng_writer_close_element(writer);
+		if (ret) {
+			goto end;
+		}
+		goto error;
+	}
 
+	ret = mi_lttng_writer_write_element_string(writer,
+			mi_lttng_element_rotate_status, "success");
+	if (ret) {
+		goto end;
+	}
+
+	/* Close rotation_setup element */
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto end;
+	}
+
+	ret = 0;
 	goto end;
 
 error:
@@ -167,7 +216,7 @@ int cmd_enable_rotation(int argc, const char **argv)
 
 		/* Open command element */
 		ret = mi_lttng_writer_command_open(writer,
-				mi_lttng_element_command_start);
+				mi_lttng_element_command_enable_rotation);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -176,17 +225,6 @@ int cmd_enable_rotation(int argc, const char **argv)
 		/* Open output element */
 		ret = mi_lttng_writer_open_element(writer,
 				mi_lttng_element_command_output);
-		if (ret) {
-			ret = CMD_ERROR;
-			goto end;
-		}
-
-		/*
-		 * Open sessions element
-		 * For validation purpose
-		 */
-		ret = mi_lttng_writer_open_element(writer,
-			config_element_sessions);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -209,13 +247,11 @@ int cmd_enable_rotation(int argc, const char **argv)
 
 	/* Mi closing */
 	if (lttng_opt_mi) {
-		/* Close  sessions and output element */
-		ret = mi_lttng_close_multi_element(writer, 2);
+		/* Close  output element */
+		ret = mi_lttng_writer_close_element(writer);
 		if (ret) {
-			ret = CMD_ERROR;
 			goto end;
 		}
-
 		/* Success ? */
 		ret = mi_lttng_writer_write_element_bool(writer,
 				mi_lttng_element_command_success, success);

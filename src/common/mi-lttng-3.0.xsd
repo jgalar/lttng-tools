@@ -579,9 +579,10 @@ THE SOFTWARE.
 	<!-- Maps to the enable-rotation command -->
 	<xs:complexType name="rotation_setup_type">
 		<xs:sequence>
-			<xs:element name="rotation_timer_interval" type="tns:uint64_type" default="0" minOccurs="0" /> <!-- micro-seconds -->
-			<xs:element name="rotation_size" type="tns:uint64_type" default="0" minOccurs="0" /> <!-- bytes -->
 			<xs:element name="session_name" type="tns:name_type" minOccurs="0" />
+			<xs:element name="rotation_size" type="tns:uint64_type" default="0" minOccurs="0" /> <!-- bytes -->
+			<xs:element name="rotation_timer_interval" type="tns:uint64_type" default="0" minOccurs="0" /> <!-- micro-seconds -->
+			<xs:element name="status" type="xs:string" />
 		</xs:sequence>
 	</xs:complexType>
 
@@ -632,6 +633,8 @@ THE SOFTWARE.
 			<xs:enumeration value="metadata" />
 			<xs:enumeration value="regenerate" />
 			<xs:enumeration value="rotate" />
+			<xs:enumeration value="enable-rotation" />
+			<xs:enumeration value="disable-rotation" />
 		</xs:restriction>
 	</xs:simpleType>
 

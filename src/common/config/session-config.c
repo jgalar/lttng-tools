@@ -131,8 +131,9 @@ const char * const config_element_trackers = "trackers";
 const char * const config_element_targets = "targets";
 const char * const config_element_target_pid = "pid_target";
 
-const char * const config_element_rotation_timer_interval = "rotation_timer_interval";
-const char * const config_element_rotation_size = "rotation_size";
+LTTNG_HIDDEN const char * const config_element_rotation_timer_interval = "rotation_timer_interval";
+LTTNG_HIDDEN const char * const config_element_rotation_size = "rotation_size";
+LTTNG_HIDDEN const char * const config_element_rotation_setup = "rotation_setup";
 
 const char * const config_domain_type_kernel = "KERNEL";
 const char * const config_domain_type_ust = "UST";

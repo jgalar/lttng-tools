@@ -62,8 +62,21 @@ static int setup_rotate(char *session_name, uint64_t timer, uint64_t size)
 		goto error;
 	}
 
+	/* Open rotation_setup element */
+	ret = mi_lttng_writer_open_element(writer,
+			config_element_rotation_setup);
+	if (ret) {
+		goto error;
+	}
+
 	ret = lttng_rotate_session_attr_set_session_name(attr, session_name);
 	if (ret < 0) {
+		goto error;
+	}
+
+	ret = mi_lttng_writer_write_element_string(writer,
+			mi_lttng_element_session_name, session_name);
+	if (ret) {
 		goto error;
 	}
 
@@ -78,6 +91,33 @@ static int setup_rotate(char *session_name, uint64_t timer, uint64_t size)
 
 	ret = lttng_rotate_setup(attr);
 
+	if (ret) {
+		ret = mi_lttng_writer_write_element_string(writer,
+				mi_lttng_element_rotate_status, "error");
+		if (ret) {
+			goto end;
+		}
+		/* Close rotation_setup element */
+		ret = mi_lttng_writer_close_element(writer);
+		if (ret) {
+			goto end;
+		}
+		goto error;
+	}
+
+	ret = mi_lttng_writer_write_element_string(writer,
+			mi_lttng_element_rotate_status, "success");
+	if (ret) {
+		goto end;
+	}
+
+	/* Close rotation_setup element */
+	ret = mi_lttng_writer_close_element(writer);
+	if (ret) {
+		goto end;
+	}
+
+	ret = 0;
 	goto end;
 
 error:
@@ -144,7 +184,7 @@ int cmd_disable_rotation(int argc, const char **argv)
 
 		/* Open command element */
 		ret = mi_lttng_writer_command_open(writer,
-				mi_lttng_element_command_start);
+				mi_lttng_element_command_disable_rotation);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -153,17 +193,6 @@ int cmd_disable_rotation(int argc, const char **argv)
 		/* Open output element */
 		ret = mi_lttng_writer_open_element(writer,
 				mi_lttng_element_command_output);
-		if (ret) {
-			ret = CMD_ERROR;
-			goto end;
-		}
-
-		/*
-		 * Open sessions element
-		 * For validation purpose
-		 */
-		ret = mi_lttng_writer_open_element(writer,
-			config_element_sessions);
 		if (ret) {
 			ret = CMD_ERROR;
 			goto end;
@@ -186,10 +215,9 @@ int cmd_disable_rotation(int argc, const char **argv)
 
 	/* Mi closing */
 	if (lttng_opt_mi) {
-		/* Close  sessions and output element */
-		ret = mi_lttng_close_multi_element(writer, 2);
+		/* Close  output element */
+		ret = mi_lttng_writer_close_element(writer);
 		if (ret) {
-			ret = CMD_ERROR;
 			goto end;
 		}
 
