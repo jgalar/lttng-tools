@@ -4546,9 +4546,15 @@ int cmd_rotate_setup(struct ltt_session *session,
 	if (timer_us && timer_us != -1ULL && session->rotate_timer_period) {
 		ret = LTTNG_ERR_ROTATE_TIMER_EXISTS;
 		goto end;
+	} else if (timer_us == -1ULL && !session->rotate_timer_period) {
+		ret = LTTNG_ERR_ROTATE_TIMER_EXISTS;
+		goto end;
 	}
 
 	if (size && size != -1ULL && session->rotate_size) {
+		ret = LTTNG_ERR_ROTATE_SIZE_EXISTS;
+		goto end;
+	} else if (size == -1ULL && !session->rotate_size) {
 		ret = LTTNG_ERR_ROTATE_SIZE_EXISTS;
 		goto end;
 	}
