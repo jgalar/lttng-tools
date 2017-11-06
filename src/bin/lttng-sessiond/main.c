@@ -218,12 +218,6 @@ static int apps_cmd_pipe[2] = { -1, -1 };
 
 int apps_cmd_notify_pipe[2] = { -1, -1 };
 
-/*
- * Pipe to wakeup the rotation thread when a timer related to the session
- * rotation feature fires.
- */
-static int rotate_timer_pipe[2] = { -1, -1 };
-
 /* Pthread, Mutexes and Semaphores */
 static pthread_t apps_thread;
 static pthread_t apps_notify_thread;
@@ -5783,6 +5777,40 @@ error:
 	return NULL;
 }
 
+static
+struct rotation_thread_timer_queue *create_rotate_timer_queue(void)
+{
+	struct rotation_thread_timer_queue *queue = NULL;
+
+	queue = zmalloc(sizeof(struct rotation_thread_timer_queue));
+	if (!queue) {
+		PERROR("Allocation of timer rotate queue");
+		goto end;
+	}
+
+	queue->event_pipe = lttng_pipe_open(FD_CLOEXEC|O_NONBLOCK);
+	CDS_INIT_LIST_HEAD(&queue->list);
+	pthread_mutex_init(&queue->lock, NULL);
+
+end:
+	return queue;
+}
+
+static
+void destroy_rotate_timer_queue(struct rotation_thread_timer_queue *queue)
+{
+	struct sessiond_rotation_timer *node, *tmp_node;
+
+	lttng_pipe_destroy(queue->event_pipe);
+	pthread_mutex_destroy(&queue->lock);
+	/* Clean up wait queue. */
+	cds_list_for_each_entry_safe(node, tmp_node, &queue->list, head) {
+		cds_list_del(&node->head);
+		free(node);
+	}
+	free(queue);
+}
+
 /*
  * main
  */
@@ -5801,6 +5829,7 @@ int main(int argc, char **argv)
 			*kernel_channel_rotate_pipe = NULL,
 			*client_rotate_pipe = NULL;
 	struct timer_thread_parameters timer_thread_ctx;
+	struct rotation_thread_timer_queue *rotation_timer_queue = NULL;
 
 	init_kernel_workarounds();
 
@@ -6120,20 +6149,16 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * Create the rotate_timer_pipe as non blocking because we have to
-	 * write in it from the sighandler of the timer thread.
+	 * The rotation_timer_queue structure is shared between the sessiond timer
+	 * thread and the rotation thread. The main() keeps the ownership and
+	 * destroys it when both threads have quit.
 	 */
-	ret = utils_create_pipe_cloexec_nonblock(rotate_timer_pipe);
-	if (ret < 0) {
-		ERR("Failed to create rotate pending pipe");
+	rotation_timer_queue = create_rotate_timer_queue();
+	if (!rotation_timer_queue) {
 		retval = -1;
 		goto exit_init_data;
 	}
-	/*
-	 * The write-side of the pipe is used by the timer thread to wakeup
-	 * the rotation thread when needed.
-	 */
-	timer_thread_ctx.rotate_timer_pipe = rotate_timer_pipe[1];
+	timer_thread_ctx.rotation_timer_queue = rotation_timer_queue;
 
 	/*
 	 * Pipe to send commands from the manage client thread to the rotation
@@ -6396,7 +6421,7 @@ int main(int argc, char **argv)
 			kernel_channel_rotate_pipe,
 			client_rotate_pipe,
 			thread_quit_pipe[0],
-			rotate_timer_pipe[0]);
+			rotation_timer_queue);
 	if (!rotation_thread_handle) {
 		retval = -1;
 		ERR("Failed to create rotation thread shared data");
@@ -6648,16 +6673,6 @@ exit_init_data:
 
 	if (rotation_thread_handle) {
 		rotation_thread_handle_destroy(rotation_thread_handle);
-		ret = close(rotate_timer_pipe[0]);
-		if (ret < 0) {
-			PERROR("Close rotate pending pipe");
-			retval = -1;
-		}
-		ret = close(rotate_timer_pipe[1]);
-		if (ret < 0) {
-			PERROR("Close rotate pending pipe");
-			retval = -1;
-		}
 	}
 
 	ret = pthread_join(rotation_thread, &status);
@@ -6676,6 +6691,12 @@ exit_init_data:
 			retval = -1;
 		}
 	}
+
+	/*
+	 * After the rotation and timer thread have quit, we can safely destroy
+	 * the rotation_timer_queue.
+	 */
+	destroy_rotate_timer_queue(rotation_timer_queue);
 
 	rcu_thread_offline();
 	rcu_unregister_thread();

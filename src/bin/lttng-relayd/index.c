@@ -368,7 +368,8 @@ int relay_index_switch_file(struct relay_index *index,
 
 	pthread_mutex_lock(&index->lock);
 	if (!index->index_file) {
-		ret = -1;
+		ERR("No index_file");
+		ret = 0;
 		goto end;
 	}
 
@@ -392,7 +393,7 @@ int relay_index_switch_all_file(struct relay_stream *stream)
 {
 	struct lttng_ht_iter iter;
 	struct relay_index *index;
-	int ret;
+	int ret = 0;
 
 	rcu_read_lock();
 	cds_lfht_for_each_entry(stream->indexes_ht->ht, &iter.iter,

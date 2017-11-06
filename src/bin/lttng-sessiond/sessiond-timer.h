@@ -43,12 +43,13 @@ struct timer_signal_data {
 };
 
 struct timer_thread_parameters {
-	int rotate_timer_pipe;
+	struct rotation_thread_timer_queue *rotation_timer_queue;
 };
 
 struct sessiond_rotation_timer {
 	uint64_t session_id;
 	unsigned int signal;
+	struct cds_list_head head; /* List member in struct rotation_thread_timer_queue */
 } LTTNG_PACKED;
 
 void *sessiond_timer_thread(void *data);

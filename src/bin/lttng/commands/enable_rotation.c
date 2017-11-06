@@ -68,65 +68,75 @@ static int setup_rotate(char *session_name, uint64_t timer, uint64_t size)
 		goto error;
 	}
 
-	/* Open rotation_setup element */
-	ret = mi_lttng_writer_open_element(writer,
-			config_element_rotation_setup);
-	if (ret) {
-		goto error;
-	}
+	if (lttng_opt_mi) {
+		/* Open rotation_setup element */
+		ret = mi_lttng_writer_open_element(writer,
+				config_element_rotation_setup);
+		if (ret) {
+			goto error;
+		}
 
-	ret = mi_lttng_writer_write_element_string(writer,
-			mi_lttng_element_session_name, session_name);
-	if (ret) {
-		goto error;
+		ret = mi_lttng_writer_write_element_string(writer,
+				mi_lttng_element_session_name, session_name);
+		if (ret) {
+			goto error;
+		}
 	}
 
 	if (timer) {
 		lttng_rotate_session_attr_set_timer(attr, timer);
 		MSG("Configuring session %s to rotate every %" PRIu64 " us",
 				session_name, timer);
-		ret = mi_lttng_writer_write_element_unsigned_int(writer,
-				config_element_rotation_timer_interval, timer);
-		if (ret) {
-			goto end;
+		if (lttng_opt_mi) {
+			ret = mi_lttng_writer_write_element_unsigned_int(writer,
+					config_element_rotation_timer_interval, timer);
+			if (ret) {
+				goto end;
+			}
 		}
 	}
 	if (size) {
 		lttng_rotate_session_attr_set_size(attr, size);
 		MSG("Configuring session %s to rotate every %" PRIu64 " bytes written",
 				session_name, size);
-		ret = mi_lttng_writer_write_element_unsigned_int(writer,
-				config_element_rotation_size, size);
-		if (ret) {
-			goto end;
+		if (lttng_opt_mi) {
+			ret = mi_lttng_writer_write_element_unsigned_int(writer,
+					config_element_rotation_size, size);
+			if (ret) {
+				goto end;
+			}
 		}
 	}
 
 	ret = lttng_rotate_setup(attr);
 	if (ret) {
+		if (lttng_opt_mi) {
+			ret = mi_lttng_writer_write_element_string(writer,
+					mi_lttng_element_rotate_status, "error");
+			if (ret) {
+				goto end;
+			}
+			/* Close rotation_setup element */
+			ret = mi_lttng_writer_close_element(writer);
+			if (ret) {
+				goto end;
+			}
+		}
+		goto error;
+	}
+
+	if (lttng_opt_mi) {
 		ret = mi_lttng_writer_write_element_string(writer,
-				mi_lttng_element_rotate_status, "error");
+				mi_lttng_element_rotate_status, "success");
 		if (ret) {
 			goto end;
 		}
+
 		/* Close rotation_setup element */
 		ret = mi_lttng_writer_close_element(writer);
 		if (ret) {
 			goto end;
 		}
-		goto error;
-	}
-
-	ret = mi_lttng_writer_write_element_string(writer,
-			mi_lttng_element_rotate_status, "success");
-	if (ret) {
-		goto end;
-	}
-
-	/* Close rotation_setup element */
-	ret = mi_lttng_writer_close_element(writer);
-	if (ret) {
-		goto end;
 	}
 
 	ret = 0;

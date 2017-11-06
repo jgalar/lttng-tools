@@ -1587,7 +1587,7 @@ int rotate_truncate_stream(struct relay_stream *stream)
 	}
 
 	assert((stream->tracefile_size_current -
-			stream->pos_after_last_complete_data_index) > 0);
+			stream->pos_after_last_complete_data_index) >= 0);
 
 	diff = stream->tracefile_size_current - stream->pos_after_last_complete_data_index;
 

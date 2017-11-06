@@ -28,6 +28,9 @@
 #include <pthread.h>
 #include "session.h"
 
+/*
+ * Commands between the thread_manage_client and rotation_thread.
+ */
 enum rotation_thread_commands {
 	ROTATION_THREAD_SUBSCRIBE_SESSION_USAGE = 0,
 };
@@ -54,6 +57,17 @@ struct rotation_channel_info {
 	struct cds_lfht_node rotate_channels_ht_node;
 };
 
+/*
+ * The timer thread enqueues struct sessiond_rotation_timer objects in the list
+ * and wake up the rotation thread. When the rotation thread wakes up, it
+ * empties the queue.
+ */
+struct rotation_thread_timer_queue {
+	struct lttng_pipe *event_pipe;
+	struct cds_list_head list;
+	pthread_mutex_t lock;
+};
+
 struct rotation_thread_handle {
 	/*
 	 * Read side of pipes used to communicate with the rotation thread.
@@ -64,10 +78,12 @@ struct rotation_thread_handle {
 	int kernel_consumer;
 	/* quit pipe */
 	int thread_quit_pipe;
-	/* Timer thread wakeup pipe */
-	int rotate_timer_pipe;
 	/* thread_manage_clients command pipe */
 	int client_rotate_pipe;
+
+	struct rotation_thread_timer_queue *rotation_timer_queue;
+	/* Timer thread wakeup pipe */
+	//int rotate_timer_pipe;
 };
 
 struct rotation_thread_state {
@@ -80,7 +96,8 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		struct lttng_pipe *ust64_channel_rotate_pipe,
 		struct lttng_pipe *kernel_channel_rotate_pipe,
 		struct lttng_pipe *client_rotate_pipe,
-		int thread_quit_pipe, int rotate_timer_pipe);
+		int thread_quit_pipe,
+		struct rotation_thread_timer_queue *rotation_timer_queue);
 
 void rotation_thread_handle_destroy(
 		struct rotation_thread_handle *handle);

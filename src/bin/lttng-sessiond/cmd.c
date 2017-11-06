@@ -2605,6 +2605,10 @@ int cmd_stop_trace(struct ltt_session *session)
 		goto error;
 	}
 
+	if (session->rotate_timer_enabled) {
+		sessiond_rotate_timer_stop(session);
+	}
+
 	if (session->rotate_count > 0 && !session->rotate_pending) {
 		rename_active_chunk(session);
 	}
@@ -4353,7 +4357,6 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	session->rotate_count++;
 	session->rotate_pending = true;
-	session->rotate_pending_relay_check_in_progress = false;
 	session->rotate_status = LTTNG_ROTATE_STARTED;
 
 	/*

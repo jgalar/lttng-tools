@@ -22,6 +22,7 @@
 
 #include "sessiond-timer.h"
 #include "health-sessiond.h"
+#include "rotation-thread.h"
 
 static struct timer_signal_data timer_signal = {
 	.tid = 0,
@@ -119,7 +120,7 @@ void sessiond_timer_signal_thread_qs(unsigned int signr)
  */
 static
 int session_timer_start(timer_t *timer_id, struct ltt_session *session,
-		unsigned int timer_interval_us, int signal)
+		unsigned int timer_interval_us, int signal, bool one_shot)
 {
 	int ret = 0, delete_ret;
 	struct sigevent sev;
@@ -138,8 +139,13 @@ int session_timer_start(timer_t *timer_id, struct ltt_session *session,
 
 	its.it_value.tv_sec = timer_interval_us / 1000000;
 	its.it_value.tv_nsec = (timer_interval_us % 1000000) * 1000;
-	its.it_interval.tv_sec = its.it_value.tv_sec;
-	its.it_interval.tv_nsec = its.it_value.tv_nsec;
+	if (one_shot) {
+		its.it_interval.tv_sec = 0;
+		its.it_interval.tv_nsec = 0;
+	} else {
+		its.it_interval.tv_sec = its.it_value.tv_sec;
+		its.it_interval.tv_nsec = its.it_value.tv_nsec;
+	}
 
 	ret = timer_settime(*timer_id, 0, &its, NULL);
 	if (ret == -1) {
@@ -181,9 +187,17 @@ int sessiond_timer_rotate_pending_start(struct ltt_session *session,
 {
 	int ret;
 
+	/*
+	 * We arm this timer in a one-shot mode so we don't have to disable it
+	 * explicitly (which could deadlock if the timer thread is blocked writing
+	 * in the rotation_timer_pipe).
+	 * Instead, we re-arm it if needed after the rotation_pending check as
+	 * returned. Also, this timer is usually only needed once, so there is no
+	 * need to go through the whole signal teardown scheme everytime.
+	 */
 	ret = session_timer_start(&session->rotate_relay_pending_timer,
 			session, interval_us,
-			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
+			LTTNG_SESSIOND_SIG_ROTATE_PENDING, true);
 	if (ret == 0) {
 		session->rotate_relay_pending_timer_enabled = true;
 	}
@@ -193,6 +207,7 @@ int sessiond_timer_rotate_pending_start(struct ltt_session *session,
 
 /*
  * Stop and delete the channel's live timer.
+ * Called with session and session_list locks held.
  */
 void sessiond_timer_rotate_pending_stop(struct ltt_session *session)
 {
@@ -203,7 +218,7 @@ void sessiond_timer_rotate_pending_stop(struct ltt_session *session)
 	ret = session_timer_stop(&session->rotate_relay_pending_timer,
 			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
 	if (ret == -1) {
-		ERR("Failed to stop live timer");
+		ERR("Failed to stop rotate_pending timer");
 	}
 
 	session->rotate_relay_pending_timer_enabled = false;
@@ -215,7 +230,7 @@ int sessiond_rotate_timer_start(struct ltt_session *session,
 	int ret;
 
 	ret = session_timer_start(&session->rotate_timer, session, interval_us,
-			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
+			LTTNG_SESSIOND_SIG_ROTATE_TIMER, false);
 	if (ret == 0) {
 		session->rotate_timer_enabled = true;
 	}
@@ -239,7 +254,7 @@ void sessiond_rotate_timer_stop(struct ltt_session *session)
 	ret = session_timer_stop(&session->rotate_timer,
 			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
 	if (ret == -1) {
-		ERR("Failed to stop live timer");
+		ERR("Failed to stop rotate timer");
 	}
 
 	session->rotate_timer_enabled = false;
@@ -266,60 +281,81 @@ int sessiond_timer_signal_init(void)
 }
 
 static
+int enqueue_timer_job(struct timer_thread_parameters *ctx,
+		struct ltt_session *session, unsigned int signal)
+{
+	int ret;
+	struct sessiond_rotation_timer *timer_data = NULL;
+	char *c = "!";
+
+	timer_data = zmalloc(sizeof(struct sessiond_rotation_timer));
+	if (!timer_data) {
+		PERROR("Allocation of timer data");
+		goto error;
+	}
+	timer_data->session_id = session->id;
+	timer_data->signal = signal;
+
+	pthread_mutex_lock(&ctx->rotation_timer_queue->lock);
+	cds_list_add_tail(&timer_data->head, &ctx->rotation_timer_queue->list);
+	pthread_mutex_unlock(&ctx->rotation_timer_queue->lock);
+
+	ret = lttng_write(
+			lttng_pipe_get_writefd(ctx->rotation_timer_queue->event_pipe),
+			c, 1);
+	if (ret < 0) {
+		/*
+		 * We do not want to block in the signal handler, the job has been
+		 * enqueued in the list, the wakeup pipe is probably full, the job
+		 * will be processed when the rotation_thread catches up.
+		 */
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			ret = 0;
+			goto end;
+		}
+		PERROR("Timer wakeup rotation thread");
+		goto error;
+	}
+
+	ret = 0;
+	goto end;
+
+error:
+	ret = -1;
+	free(timer_data);
+end:
+	return ret;
+}
+
+static
 void relay_rotation_pending_timer(struct timer_thread_parameters *ctx,
 		int sig, siginfo_t *si)
 {
 	int ret;
 	struct ltt_session *session = si->si_value.sival_ptr;
-	struct sessiond_rotation_timer timer_data;
 	assert(session);
 
-	/*
-	 * Avoid sending too many requests in case the relay is slower to
-	 * respond than the timer period.
-	 */
-	if (session->rotate_pending_relay_check_in_progress ||
-			!session->rotate_pending_relay) {
-		goto end;
-	}
-
-	session->rotate_pending_relay_check_in_progress = true;
-	memset(&timer_data, 0, sizeof(struct sessiond_rotation_timer));
-	timer_data.session_id = session->id;
-	timer_data.signal = LTTNG_SESSIOND_SIG_ROTATE_PENDING;
-	ret = lttng_write(ctx->rotate_timer_pipe, &timer_data,
-			sizeof(timer_data));
-	if (ret < sizeof(session->id)) {
+	ret = enqueue_timer_job(ctx, session, LTTNG_SESSIOND_SIG_ROTATE_PENDING);
+	if (ret) {
 		PERROR("wakeup rotate pipe");
 	}
-
-end:
-	return;
 }
 
 static
 void rotate_timer(struct timer_thread_parameters *ctx, int sig, siginfo_t *si)
 {
 	int ret;
+	/*
+	 * The session cannot be freed/destroyed while we are running this
+	 * signal handler.
+	 */
 	struct ltt_session *session = si->si_value.sival_ptr;
-	struct sessiond_rotation_timer timer_data;
 	assert(session);
 
-	/*
-	 * No rate limiting here, so if the timer fires too quickly, there will
-	 * be a backlog of timers queued up and the sessiond will try to catch
-	 * up.
-	 */
-	memset(&timer_data, 0, sizeof(struct sessiond_rotation_timer));
-	timer_data.session_id = session->id;
-	timer_data.signal = LTTNG_SESSIOND_SIG_ROTATE_TIMER;
-	ret = lttng_write(ctx->rotate_timer_pipe, &timer_data,
-			sizeof(timer_data));
-	if (ret < sizeof(session->id)) {
+	ret = enqueue_timer_job(ctx, session, LTTNG_SESSIOND_SIG_ROTATE_TIMER);
+	if (ret) {
 		PERROR("wakeup rotate pipe");
 	}
-
-	return;
 }
 
 /*
