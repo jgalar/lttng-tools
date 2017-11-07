@@ -95,7 +95,7 @@ struct notification_thread_handle {
  *             channels through their struct channel_info (ref-counting is used).
  *
  *   - triggers_ht:
- *             associated a condition to a struct lttng_trigger_ht_element.
+ *             associates a condition to a struct lttng_trigger_ht_element.
  *             The hash table holds the ownership of the
  *             lttng_trigger_ht_elements along with the triggers themselves.
  *
