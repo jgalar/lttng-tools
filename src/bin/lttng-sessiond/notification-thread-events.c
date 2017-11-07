@@ -2315,6 +2315,7 @@ int handle_notification_thread_channel_sample(
 		ret = send_evaluation_to_clients(trigger_list_element->trigger,
 				evaluation, client_list, state,
 				channel_info->uid, channel_info->gid);
+		lttng_evaluation_destroy(evaluation);
 		if (ret) {
 			goto end_unlock;
 		}
