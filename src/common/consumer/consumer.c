@@ -2362,20 +2362,36 @@ end:
 
 static
 int handle_rotate_wakeup_pipe(struct lttng_consumer_local_data *ctx,
-		struct lttng_pipe *stream_pipe)
+		struct lttng_pipe *stream_pipe, struct lttng_ht *ht)
 {
 	int ret;
 	ssize_t pipe_len;
+	uint64_t stream_key;
 	struct lttng_consumer_stream *stream;
 
-	pipe_len = lttng_pipe_read(stream_pipe, &stream, sizeof(stream));
-	if (pipe_len < sizeof(stream)) {
+	DBG("Rotate pipe wakeup");
+	pipe_len = lttng_pipe_read(stream_pipe, &stream_key, sizeof(stream->key));
+	if (pipe_len < sizeof(stream->key)) {
 		if (pipe_len < 0) {
-			PERROR("read metadata stream");
+			PERROR("read stream key");
 		}
-		ERR("Failed to read stream on metadata rotate pipe");
+		ERR("Failed to read stream key on rotate pipe");
 		ret = -1;
 		goto end;
+	}
+
+	rcu_read_lock();
+	pthread_mutex_lock(&consumer_data.lock);
+	stream = find_stream(stream_key, ht);
+	pthread_mutex_unlock(&consumer_data.lock);
+	if (!stream) {
+		/*
+		 * The stream has been destroyed before we had a chance to rotate it,
+		 * just return cleanly.
+		 */
+		DBG("Stream %" PRIu64 " not found for rotation", stream_key);
+		ret = 0;
+		goto end_unlock;
 	}
 
 	pthread_mutex_lock(&stream->lock);
@@ -2383,7 +2399,7 @@ int handle_rotate_wakeup_pipe(struct lttng_consumer_local_data *ctx,
 	pthread_mutex_unlock(&stream->lock);
 	if (ret < 0) {
 		ERR("Failed to rotate metadata stream");
-		goto end;
+		goto end_unlock;
 	}
 	ret = consumer_post_rotation(stream, ctx);
 	if (ret < 0) {
@@ -2393,6 +2409,8 @@ int handle_rotate_wakeup_pipe(struct lttng_consumer_local_data *ctx,
 
 	ret = 0;
 
+end_unlock:
+	rcu_read_unlock();
 end:
 	return ret;
 }
@@ -2533,8 +2551,9 @@ restart:
 				continue;
 			} else if (pollfd == lttng_pipe_get_readfd(ctx->consumer_metadata_rotate_pipe)) {
 				if (revents & LPOLLIN) {
+					DBG("handle_rotate_wakeup_pipe metadata thread");
 					ret = handle_rotate_wakeup_pipe(ctx,
-							ctx->consumer_metadata_rotate_pipe);
+							ctx->consumer_metadata_rotate_pipe, metadata_ht);
 					if (ret < 0) {
 						ERR("Failed to rotate metadata stream");
 						lttng_poll_del(&events,
@@ -2817,8 +2836,9 @@ void *consumer_thread_data_poll(void *data)
 
 		/* Handle consumer_data_rotate_pipe. */
 		if (pollfd[nb_fd + 2].revents & (POLLIN | POLLPRI)) {
+			DBG("handle_rotate_wakeup_pipe data thread");
 			ret = handle_rotate_wakeup_pipe(ctx,
-					ctx->consumer_data_rotate_pipe);
+					ctx->consumer_data_rotate_pipe, data_ht);
 			if (ret < 0) {
 				ERR("Failed to rotate metadata stream");
 				goto end;
@@ -4197,9 +4217,13 @@ int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 {
 	int ret;
 
+	DBG("Rotate local stream %" PRIu64 " (channel %" PRIu64 ")", stream->key,
+			stream->chan->key);
+
 	ret = close(stream->out_fd);
 	if (ret < 0) {
-		PERROR("Closing tracefile");
+		PERROR("Closing tracefile %d, stream %lu", stream->out_fd, stream->key);
+		assert(0);
 		goto error;
 	}
 
@@ -4207,6 +4231,7 @@ int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 			stream->channel_ro_tracefile_size, stream->tracefile_count_current,
 			stream->uid, stream->gid, NULL);
 	if (ret < 0) {
+		ERR("Rotate create stream file");
 		goto error;
 	}
 	stream->out_fd = ret;
@@ -4223,6 +4248,7 @@ int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 				stream->tracefile_count_current,
 				CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
 		if (!index_file) {
+			ERR("Create index file during rotation");
 			goto error;
 		}
 		stream->index_file = index_file;
@@ -4248,6 +4274,7 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 	int ret;
 	struct consumer_relayd_sock_pair *relayd;
 
+	DBG("Rotate relay stream");
 	relayd = consumer_find_relayd(stream->net_seq_idx);
 	if (!relayd) {
 		ERR("Failed to find relayd");
@@ -4278,12 +4305,15 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 {
 	int ret;
 
+	DBG("Consumer rotate stream %" PRIu64, stream->key);
+
 	if (stream->net_seq_idx != (uint64_t) -1ULL) {
 		ret = rotate_relay_stream(ctx, stream);
 	} else {
 		ret = rotate_local_stream(ctx, stream);
 	}
 	if (ret < 0) {
+		ERR("Rotate stream");
 		goto error;
 	}
 
@@ -4342,6 +4372,8 @@ int lttng_consumer_rotate_ready_streams(uint64_t key,
 
 	rcu_read_lock();
 
+	DBG("Consumer rotate ready streams in channel %" PRIu64, key);
+
 	channel = consumer_find_channel(key);
 	if (!channel) {
 		ERR("No channel found for key %" PRIu64, key);
@@ -4364,7 +4396,11 @@ int lttng_consumer_rotate_ready_streams(uint64_t key,
 		if (stream->rotate_ready == 0) {
 			continue;
 		}
-		ret = lttng_pipe_write(stream_pipe, &stream, sizeof(stream));
+		DBG("Consumer rotate ready stream %" PRIu64, stream->key);
+		/*
+		 * data and metadata streams are not in the same HT, need to differenciate
+		 */
+		ret = lttng_pipe_write(stream_pipe, &stream->key, sizeof(stream->key));
 		if (ret < 0) {
 			ERR("Failed to wakeup consumer rotate pipe");
 			goto end;

@@ -106,6 +106,7 @@ int consumer_socket_recv(struct consumer_socket *socket, void *msg, size_t len)
 	if (size <= 0) {
 		/* The above call will print a PERROR on error. */
 		DBG("Error when receiving data from the consumer socket %d", fd);
+		assert(0);
 		/*
 		 * At this point, the socket is not usable anymore thus closing it and
 		 * setting the file descriptor to -1 so it is not reused.

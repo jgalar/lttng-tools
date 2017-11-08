@@ -205,21 +205,49 @@ int sessiond_timer_rotate_pending_start(struct ltt_session *session,
 	return ret;
 }
 
+static
+void delete_timer_job(struct rotation_thread_timer_queue *rotation_timer_queue,
+		struct ltt_session *session, unsigned int signal)
+{
+	struct sessiond_rotation_timer *node, *tmp_node;
+
+	rcu_read_lock();
+	pthread_mutex_lock(&rotation_timer_queue->lock);
+	cds_list_for_each_entry_safe(node, tmp_node,
+			&rotation_timer_queue->list, head) {
+		if (node->session_id == session->id && node->signal == signal) {
+			cds_list_del(&node->head);
+			free(node);
+			goto end;
+		}
+	}
+	pthread_mutex_unlock(&rotation_timer_queue->lock);
+
+end:
+	rcu_read_unlock();
+	return;
+}
+
 /*
  * Stop and delete the channel's live timer.
  * Called with session and session_list locks held.
  */
-void sessiond_timer_rotate_pending_stop(struct ltt_session *session)
+void sessiond_timer_rotate_pending_stop(struct ltt_session *session,
+		struct rotation_thread_timer_queue *rotation_timer_queue)
 {
 	int ret;
 
 	assert(session);
 
+	DBG("Disabling timer rotate pending on session %" PRIu64, session->id);
 	ret = session_timer_stop(&session->rotate_relay_pending_timer,
 			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
 	if (ret == -1) {
 		ERR("Failed to stop rotate_pending timer");
 	}
+
+	delete_timer_job(rotation_timer_queue, session,
+			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
 
 	session->rotate_relay_pending_timer_enabled = false;
 }
@@ -241,7 +269,8 @@ int sessiond_rotate_timer_start(struct ltt_session *session,
 /*
  * Stop and delete the channel's live timer.
  */
-void sessiond_rotate_timer_stop(struct ltt_session *session)
+void sessiond_rotate_timer_stop(struct ltt_session *session,
+		struct rotation_thread_timer_queue *rotation_timer_queue)
 {
 	int ret;
 
@@ -251,11 +280,15 @@ void sessiond_rotate_timer_stop(struct ltt_session *session)
 		return;
 	}
 
+	DBG("Disabling rotation timer on session %" PRIu64, session->id);
 	ret = session_timer_stop(&session->rotate_timer,
 			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
 	if (ret == -1) {
 		ERR("Failed to stop rotate timer");
 	}
+
+	delete_timer_job(rotation_timer_queue, session,
+			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
 
 	session->rotate_timer_enabled = false;
 }
@@ -280,24 +313,56 @@ int sessiond_timer_signal_init(void)
 	return 0;
 }
 
+/*
+ * Called with the rotation_timer_queue lock and rcu_read_lock held.
+ * Return 1 if the same timer job already exists in the queue, 0 if not.
+ */
+static
+int check_duplicate_timer_job(struct timer_thread_parameters *ctx,
+		struct ltt_session *session, unsigned int signal)
+{
+	int ret = 0;
+	struct sessiond_rotation_timer *node;
+
+	cds_list_for_each_entry(node, &ctx->rotation_timer_queue->list, head) {
+		if (node->session_id == session->id && node->signal == signal) {
+			ret = 1;
+			goto end;
+		}
+	}
+
+end:
+	return ret;
+}
+
 static
 int enqueue_timer_job(struct timer_thread_parameters *ctx,
 		struct ltt_session *session, unsigned int signal)
 {
 	int ret;
-	struct sessiond_rotation_timer *timer_data = NULL;
 	char *c = "!";
 
-	timer_data = zmalloc(sizeof(struct sessiond_rotation_timer));
-	if (!timer_data) {
-		PERROR("Allocation of timer data");
-		goto error;
-	}
-	timer_data->session_id = session->id;
-	timer_data->signal = signal;
+	rcu_read_lock();
 
 	pthread_mutex_lock(&ctx->rotation_timer_queue->lock);
-	cds_list_add_tail(&timer_data->head, &ctx->rotation_timer_queue->list);
+	ret = check_duplicate_timer_job(ctx, session, signal);
+	if (ret == 0) {
+		struct sessiond_rotation_timer *timer_data = NULL;
+
+		timer_data = zmalloc(sizeof(struct sessiond_rotation_timer));
+		if (!timer_data) {
+			PERROR("Allocation of timer data");
+			goto error;
+		}
+		timer_data->session_id = session->id;
+		timer_data->signal = signal;
+		cds_list_add_tail(&timer_data->head, &ctx->rotation_timer_queue->list);
+	} else if (ret == 1) {
+		/* This timer job is already pending, we don't need to add it.  */
+		pthread_mutex_unlock(&ctx->rotation_timer_queue->lock);
+		ret = 0;
+		goto end;
+	}
 	pthread_mutex_unlock(&ctx->rotation_timer_queue->lock);
 
 	ret = lttng_write(
@@ -305,7 +370,7 @@ int enqueue_timer_job(struct timer_thread_parameters *ctx,
 			c, 1);
 	if (ret < 0) {
 		/*
-		 * We do not want to block in the signal handler, the job has been
+		 * We do not want to block in the timer handler, the job has been
 		 * enqueued in the list, the wakeup pipe is probably full, the job
 		 * will be processed when the rotation_thread catches up.
 		 */
@@ -322,8 +387,8 @@ int enqueue_timer_job(struct timer_thread_parameters *ctx,
 
 error:
 	ret = -1;
-	free(timer_data);
 end:
+	rcu_read_unlock();
 	return ret;
 }
 

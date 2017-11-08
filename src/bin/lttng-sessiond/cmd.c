@@ -2384,6 +2384,7 @@ int domain_mkdir(struct consumer_output *output, struct ltt_session *session,
 	snprintf(path, PATH_MAX, "%s%s%s", session_get_base_path(session),
 			output->chunk_path, output->subdir);
 
+	DBG("Domain mkdir %s for session %" PRIu64, path, session->id);
 	rcu_read_lock();
 	/*
 	 * We have to iterate to find a socket, but we only need to send the
@@ -2586,7 +2587,8 @@ void rename_active_chunk(struct ltt_session *session)
 /*
  * Command LTTNG_STOP_TRACE processed by the client thread.
  */
-int cmd_stop_trace(struct ltt_session *session)
+int cmd_stop_trace(struct ltt_session *session,
+		struct rotation_thread_timer_queue *rotation_timer_queue)
 {
 	int ret;
 	struct ltt_kernel_channel *kchan;
@@ -2605,8 +2607,12 @@ int cmd_stop_trace(struct ltt_session *session)
 		goto error;
 	}
 
+	if (session->rotate_relay_pending_timer_enabled) {
+		sessiond_timer_rotate_pending_stop(session, rotation_timer_queue);
+	}
+
 	if (session->rotate_timer_enabled) {
-		sessiond_rotate_timer_stop(session);
+		sessiond_rotate_timer_stop(session, rotation_timer_queue);
 	}
 
 	if (session->rotate_count > 0 && !session->rotate_pending) {
@@ -2884,7 +2890,8 @@ error:
  *
  * Called with session lock held.
  */
-int cmd_destroy_session(struct ltt_session *session, int wpipe)
+int cmd_destroy_session(struct ltt_session *session, int wpipe,
+		struct rotation_thread_timer_queue *rotation_timer_queue)
 {
 	int ret;
 	struct ltt_ust_session *usess;
@@ -2897,11 +2904,11 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe)
 	ksess = session->kernel_session;
 
 	if (session->rotate_relay_pending_timer_enabled) {
-		sessiond_timer_rotate_pending_stop(session);
+		sessiond_timer_rotate_pending_stop(session, rotation_timer_queue);
 	}
 
 	if (session->rotate_timer_enabled) {
-		sessiond_rotate_timer_stop(session);
+		sessiond_rotate_timer_stop(session, rotation_timer_queue);
 	}
 
 	if (session->rotated_after_last_stop) {
@@ -4301,9 +4308,11 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	assert(session);
 
+	DBG("Rotate session %" PRIu64, session->id);
 	if (rotate_return) {
 		*rotate_return = zmalloc(sizeof(struct lttng_rotate_session_return));
 		if (!*rotate_return) {
+			PERROR("Alloc rotate_return");
 			ret = -ENOMEM;
 			goto end;
 		}
@@ -4317,6 +4326,7 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	if (session->rotate_pending || session->rotate_pending_relay) {
 		ret = -LTTNG_ERR_ROTATE_PENDING;
+		DBG("Rotate already in progress");
 		goto error;
 	}
 
@@ -4354,6 +4364,7 @@ int cmd_rotate_session(struct ltt_session *session,
 				PATH_MAX, "%s",
 				session->rotation_chunk.active_tracing_path);
 	}
+	DBG("Current rotate path %s", session->rotation_chunk.active_tracing_path);
 
 	session->rotate_count++;
 	session->rotate_pending = true;
@@ -4532,7 +4543,8 @@ end:
  * Return 0 on success or else a LTTNG_ERR code.
  */
 int cmd_rotate_setup(struct ltt_session *session,
-		uint64_t timer_us, uint64_t size, int client_rotate_pipe)
+		uint64_t timer_us, uint64_t size, int client_rotate_pipe,
+		struct rotation_thread_timer_queue *rotation_timer_queue)
 {
 	int ret;
 
@@ -4577,7 +4589,7 @@ int cmd_rotate_setup(struct ltt_session *session,
 			}
 		}
 	} else if (timer_us == -1ULL && session->rotate_timer_period > 0) {
-		sessiond_rotate_timer_stop(session);
+		sessiond_rotate_timer_stop(session, rotation_timer_queue);
 		session->rotate_timer_period = 0;
 	}
 

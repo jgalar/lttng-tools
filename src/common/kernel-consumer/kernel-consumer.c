@@ -1137,6 +1137,8 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	}
 	case LTTNG_CONSUMER_ROTATE_CHANNEL:
 	{
+		DBG("Consumer rotate channel %" PRIu64, msg.u.rotate_channel.key);
+
 		ret = lttng_consumer_rotate_channel(msg.u.rotate_channel.key,
 				msg.u.rotate_channel.pathname,
 				msg.u.rotate_channel.relayd_id,
