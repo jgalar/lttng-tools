@@ -201,6 +201,7 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 	char *new_path = NULL;
 	int ret;
 
+	DBG("Renaming complete chunk for session %s", session->name);
 	timeinfo = localtime(&ts);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
 

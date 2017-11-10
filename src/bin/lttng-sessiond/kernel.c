@@ -1143,7 +1143,8 @@ int kernel_rotate_session(struct ltt_session *session)
 	assert(ksess);
 	assert(ksess->consumer);
 
-	DBG("Rotate kernel session started");
+	DBG("Rotate kernel session %s started (session %" PRIu64 ")",
+			session->name, session->id);
 
 	rcu_read_lock();
 
@@ -1173,6 +1174,7 @@ int kernel_rotate_session(struct ltt_session *session)
 				goto error;
 			}
 
+			DBG("Rotate channel %d, session %s", chan->fd, session->name);
 			ret = consumer_rotate_channel(socket, chan->fd,
 					ksess->uid, ksess->gid, ksess->consumer,
 					ksess->consumer->subdir, 0, session->rotate_count,

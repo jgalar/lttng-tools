@@ -270,6 +270,7 @@ int kernel_consumer_add_stream(struct consumer_socket *sock,
 	int ret;
 	struct lttcomm_consumer_msg lkm;
 	struct consumer_output *consumer;
+	struct ltt_session *sess;
 
 	assert(channel);
 	assert(stream);
@@ -277,8 +278,13 @@ int kernel_consumer_add_stream(struct consumer_socket *sock,
 	assert(session->consumer);
 	assert(sock);
 
-	DBG("Sending stream %d of channel %s to kernel consumer",
-			stream->fd, channel->channel->name);
+	rcu_read_lock();
+	sess = session_find_by_id(session->id);
+	assert(session);
+
+	DBG("Sending stream %d of channel %s (%d) in session %s to kernel consumer",
+			stream->fd, channel->channel->name, channel->fd, sess->name);
+	rcu_read_unlock();
 
 	/* Get consumer output pointer */
 	consumer = session->consumer;

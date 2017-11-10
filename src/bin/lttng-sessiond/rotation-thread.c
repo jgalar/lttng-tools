@@ -388,6 +388,7 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 				goto end_unlock_session;
 			}
 		}
+		DBG("Rotation completed for session %s", session->name);
 	}
 
 	ret = 0;
@@ -459,7 +460,13 @@ int rotate_timer(struct ltt_session *session)
 		goto end;
 	}
 
-	DBG("[rotation-thread] Rotate timer on session %" PRIu64, session->id);
+	/* Ignore this timer if a rotation is already in progress. */
+	if (!session->rotate_pending || session->rotate_pending_relay) {
+		ret = 0;
+		goto end;
+	}
+
+	DBG("[rotation-thread] Rotate timer on session %s", session->name);
 
 	ret = cmd_rotate_session(session, NULL);
 	if (ret == -LTTNG_ERR_ROTATE_PENDING) {

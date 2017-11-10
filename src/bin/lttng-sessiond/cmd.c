@@ -2510,6 +2510,7 @@ int cmd_start_trace(struct ltt_session *session)
 
 	/* Kernel tracing */
 	if (ksession != NULL) {
+		DBG("Start kernel tracing session %s", session->name);
 		ret = start_kernel_session(ksession, kernel_tracer_fd);
 		if (ret != LTTNG_OK) {
 			goto error;
@@ -2597,6 +2598,7 @@ int cmd_stop_trace(struct ltt_session *session,
 
 	assert(session);
 
+	DBG("Begin stop session %s (id %" PRIu64 ")", session->name, session->id);
 	/* Short cut */
 	ksession = session->kernel_session;
 	usess = session->ust_session;
@@ -2648,6 +2650,8 @@ int cmd_stop_trace(struct ltt_session *session,
 		}
 
 		ksession->active = 0;
+		DBG("Kernel session stopped %s (id %" PRIu64 ")", session->name,
+				session->id);
 	}
 
 	if (usess && usess->active) {
@@ -2902,6 +2906,8 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe,
 
 	usess = session->ust_session;
 	ksess = session->kernel_session;
+
+	DBG("Begin destroy session %s (id %" PRIu64 ")", session->name, session->id);
 
 	if (session->rotate_relay_pending_timer_enabled) {
 		sessiond_timer_rotate_pending_stop(session, rotation_timer_queue);
@@ -3292,6 +3298,8 @@ int cmd_data_pending(struct ltt_session *session)
 
 	assert(session);
 
+	DBG("Data pending for session %s", session->name);
+
 	/* Session MUST be stopped to ask for data availability. */
 	if (session->active) {
 		ret = LTTNG_ERR_SESSION_STARTED;
@@ -3317,6 +3325,7 @@ int cmd_data_pending(struct ltt_session *session)
 	 * A rotation is still pending, we have to wait.
 	 */
 	if (session->rotate_pending) {
+		DBG("Rotate still pending for session %s", session->name);
 		ret = 1;
 		goto error;
 	}
@@ -4308,7 +4317,6 @@ int cmd_rotate_session(struct ltt_session *session,
 
 	assert(session);
 
-	DBG("Rotate session %" PRIu64, session->id);
 	if (rotate_return) {
 		*rotate_return = zmalloc(sizeof(struct lttng_rotate_session_return));
 		if (!*rotate_return) {
@@ -4329,6 +4337,8 @@ int cmd_rotate_session(struct ltt_session *session,
 		DBG("Rotate already in progress");
 		goto error;
 	}
+
+	DBG("Rotate session %s (%" PRIu64 ")", session->name, session->id);
 
 	/*
 	 * After a stop, we only allow one rotation to occur, the other ones are
@@ -4364,7 +4374,7 @@ int cmd_rotate_session(struct ltt_session *session,
 				PATH_MAX, "%s",
 				session->rotation_chunk.active_tracing_path);
 	}
-	DBG("Current rotate path %s", session->rotation_chunk.active_tracing_path);
+	DBG("Current rotate path %s", session->rotation_chunk.current_rotate_path);
 
 	session->rotate_count++;
 	session->rotate_pending = true;

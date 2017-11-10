@@ -187,6 +187,7 @@ int sessiond_timer_rotate_pending_start(struct ltt_session *session,
 {
 	int ret;
 
+	DBG("Enabling rotate pending timer on session %" PRIu64, session->id);
 	/*
 	 * We arm this timer in a one-shot mode so we don't have to disable it
 	 * explicitly (which could deadlock if the timer thread is blocked writing
@@ -257,6 +258,7 @@ int sessiond_rotate_timer_start(struct ltt_session *session,
 {
 	int ret;
 
+	DBG("Enabling rotation timer on session %" PRIu64, session->id);
 	ret = session_timer_start(&session->rotate_timer, session, interval_us,
 			LTTNG_SESSIOND_SIG_ROTATE_TIMER, false);
 	if (ret == 0) {
