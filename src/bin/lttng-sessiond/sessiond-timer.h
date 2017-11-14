@@ -57,13 +57,11 @@ int sessiond_timer_signal_init(void);
 
 int sessiond_timer_rotate_pending_start(struct ltt_session *session, unsigned int
 		interval_us);
-void sessiond_timer_rotate_pending_stop(struct ltt_session *session,
-		struct rotation_thread_timer_queue *rotation_timer_queue);
+void sessiond_timer_rotate_pending_stop(struct ltt_session *session);
 
 int sessiond_rotate_timer_start(struct ltt_session *session,
 		unsigned int interval_us);
 
-void sessiond_rotate_timer_stop(struct ltt_session *session,
-		struct rotation_thread_timer_queue *rotation_timer_queue);
+void sessiond_rotate_timer_stop(struct ltt_session *session);
 
 #endif /* SESSIOND_TIMER_H */

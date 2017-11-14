@@ -354,9 +354,13 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 	session_lock_list();
 	session = session_find_by_id(channel_info->session_id);
 	if (!session) {
-		ERR("[rotation-thread] Session %" PRIu64 " not found",
+		/*
+		 * The session may have been destroyed before we had a chance to
+		 * perform this action, return gracefully.
+		 */
+		DBG("[rotation-thread] Session %" PRIu64 " not found",
 				channel_info->session_id);
-		ret = -1;
+		ret = 0;
 		goto end_unlock_session_list;
 	}
 
@@ -534,7 +538,7 @@ int handle_rotate_timer_pipe(uint32_t revents,
 		session_lock_list();
 		session = session_find_by_id(timer_data->session_id);
 		if (!session) {
-			ERR("[rotation-thread] Session %" PRIu64 " not found",
+			DBG("[rotation-thread] Session %" PRIu64 " not found",
 					timer_data->session_id);
 			/*
 			 * This is a non-fatal error, and we cannot report it to the
@@ -913,7 +917,7 @@ void *thread_rotation(void *data)
 				ret = handle_channel_rotation_pipe(fd,
 						revents, handle, &state);
 				if (ret) {
-					ERR("[rotation-thread] Exit main loop");
+					ERR("[rotation-thread] Handle channel rotation pipe");
 					goto error;
 				}
 			} else if (fd == handle->client_rotate_pipe) {
@@ -934,6 +938,7 @@ void *thread_rotation(void *data)
 	}
 exit:
 error:
+	DBG("[rotation-thread] Exit");
 	fini_thread_state(&state);
 	health_unregister(health_sessiond);
 	rcu_thread_offline();

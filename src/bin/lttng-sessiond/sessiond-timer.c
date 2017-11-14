@@ -206,35 +206,11 @@ int sessiond_timer_rotate_pending_start(struct ltt_session *session,
 	return ret;
 }
 
-static
-void delete_timer_job(struct rotation_thread_timer_queue *rotation_timer_queue,
-		struct ltt_session *session, unsigned int signal)
-{
-	struct sessiond_rotation_timer *node, *tmp_node;
-
-	rcu_read_lock();
-	pthread_mutex_lock(&rotation_timer_queue->lock);
-	cds_list_for_each_entry_safe(node, tmp_node,
-			&rotation_timer_queue->list, head) {
-		if (node->session_id == session->id && node->signal == signal) {
-			cds_list_del(&node->head);
-			free(node);
-			goto end;
-		}
-	}
-	pthread_mutex_unlock(&rotation_timer_queue->lock);
-
-end:
-	rcu_read_unlock();
-	return;
-}
-
 /*
  * Stop and delete the channel's live timer.
  * Called with session and session_list locks held.
  */
-void sessiond_timer_rotate_pending_stop(struct ltt_session *session,
-		struct rotation_thread_timer_queue *rotation_timer_queue)
+void sessiond_timer_rotate_pending_stop(struct ltt_session *session)
 {
 	int ret;
 
@@ -246,9 +222,6 @@ void sessiond_timer_rotate_pending_stop(struct ltt_session *session,
 	if (ret == -1) {
 		ERR("Failed to stop rotate_pending timer");
 	}
-
-	delete_timer_job(rotation_timer_queue, session,
-			LTTNG_SESSIOND_SIG_ROTATE_PENDING);
 
 	session->rotate_relay_pending_timer_enabled = false;
 }
@@ -271,8 +244,7 @@ int sessiond_rotate_timer_start(struct ltt_session *session,
 /*
  * Stop and delete the channel's live timer.
  */
-void sessiond_rotate_timer_stop(struct ltt_session *session,
-		struct rotation_thread_timer_queue *rotation_timer_queue)
+void sessiond_rotate_timer_stop(struct ltt_session *session)
 {
 	int ret;
 
@@ -288,9 +260,6 @@ void sessiond_rotate_timer_stop(struct ltt_session *session,
 	if (ret == -1) {
 		ERR("Failed to stop rotate timer");
 	}
-
-	delete_timer_job(rotation_timer_queue, session,
-			LTTNG_SESSIOND_SIG_ROTATE_TIMER);
 
 	session->rotate_timer_enabled = false;
 }
@@ -480,6 +449,7 @@ void *sessiond_timer_thread(void *data)
 	}
 
 end:
+	DBG("[timer-thread] Exit");
 	health_unregister(health_sessiond);
 	rcu_thread_offline();
 	rcu_unregister_thread();

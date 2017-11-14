@@ -2588,8 +2588,7 @@ void rename_active_chunk(struct ltt_session *session)
 /*
  * Command LTTNG_STOP_TRACE processed by the client thread.
  */
-int cmd_stop_trace(struct ltt_session *session,
-		struct rotation_thread_timer_queue *rotation_timer_queue)
+int cmd_stop_trace(struct ltt_session *session)
 {
 	int ret;
 	struct ltt_kernel_channel *kchan;
@@ -2610,11 +2609,11 @@ int cmd_stop_trace(struct ltt_session *session,
 	}
 
 	if (session->rotate_relay_pending_timer_enabled) {
-		sessiond_timer_rotate_pending_stop(session, rotation_timer_queue);
+		sessiond_timer_rotate_pending_stop(session);
 	}
 
 	if (session->rotate_timer_enabled) {
-		sessiond_rotate_timer_stop(session, rotation_timer_queue);
+		sessiond_rotate_timer_stop(session);
 	}
 
 	if (session->rotate_count > 0 && !session->rotate_pending) {
@@ -2894,8 +2893,7 @@ error:
  *
  * Called with session lock held.
  */
-int cmd_destroy_session(struct ltt_session *session, int wpipe,
-		struct rotation_thread_timer_queue *rotation_timer_queue)
+int cmd_destroy_session(struct ltt_session *session, int wpipe)
 {
 	int ret;
 	struct ltt_ust_session *usess;
@@ -2910,11 +2908,11 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe,
 	DBG("Begin destroy session %s (id %" PRIu64 ")", session->name, session->id);
 
 	if (session->rotate_relay_pending_timer_enabled) {
-		sessiond_timer_rotate_pending_stop(session, rotation_timer_queue);
+		sessiond_timer_rotate_pending_stop(session);
 	}
 
 	if (session->rotate_timer_enabled) {
-		sessiond_rotate_timer_stop(session, rotation_timer_queue);
+		sessiond_rotate_timer_stop(session);
 	}
 
 	if (session->rotated_after_last_stop) {
@@ -4553,8 +4551,7 @@ end:
  * Return 0 on success or else a LTTNG_ERR code.
  */
 int cmd_rotate_setup(struct ltt_session *session,
-		uint64_t timer_us, uint64_t size, int client_rotate_pipe,
-		struct rotation_thread_timer_queue *rotation_timer_queue)
+		uint64_t timer_us, uint64_t size, int client_rotate_pipe)
 {
 	int ret;
 
@@ -4599,7 +4596,7 @@ int cmd_rotate_setup(struct ltt_session *session,
 			}
 		}
 	} else if (timer_us == -1ULL && session->rotate_timer_period > 0) {
-		sessiond_rotate_timer_stop(session, rotation_timer_queue);
+		sessiond_rotate_timer_stop(session);
 		session->rotate_timer_period = 0;
 	}
 

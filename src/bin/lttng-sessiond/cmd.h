@@ -35,8 +35,7 @@ int cmd_create_session_uri(char *name, struct lttng_uri *uris,
 		size_t nb_uri, lttng_sock_cred *creds, unsigned int live_timer);
 int cmd_create_session_snapshot(char *name, struct lttng_uri *uris,
 		size_t nb_uri, lttng_sock_cred *creds);
-int cmd_destroy_session(struct ltt_session *session, int wpipe,
-		struct rotation_thread_timer_queue *rotation_timer_queue);
+int cmd_destroy_session(struct ltt_session *session, int wpipe);
 
 /* Channel commands */
 int cmd_disable_channel(struct ltt_session *session,
@@ -68,8 +67,7 @@ int cmd_enable_event(struct ltt_session *session, struct lttng_domain *domain,
 
 /* Trace session action commands */
 int cmd_start_trace(struct ltt_session *session);
-int cmd_stop_trace(struct ltt_session *session,
-		struct rotation_thread_timer_queue *rotation_timer_queue);
+int cmd_stop_trace(struct ltt_session *session);
 
 /* Consumer commands */
 int cmd_register_consumer(struct ltt_session *session,
@@ -127,8 +125,7 @@ int cmd_rotate_pending(struct ltt_session *session,
 		struct lttng_rotate_pending_return **pending_return,
 		uint64_t rotate_id);
 int cmd_rotate_setup(struct ltt_session *session, uint64_t timer_us,
-		uint64_t size, int client_rotate_pipe,
-		struct rotation_thread_timer_queue *rotation_timer_queue);
+		uint64_t size, int client_rotate_pipe);
 int cmd_rotate_get_current_path(struct ltt_session *session,
 		struct lttng_rotate_get_current_path **get_return);
 
