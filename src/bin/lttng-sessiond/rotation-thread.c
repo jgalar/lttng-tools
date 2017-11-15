@@ -626,17 +626,17 @@ int subscribe_session_usage(struct ltt_session *session, uint64_t size)
 		goto end;
 	}
 
-	ret = lttng_register_trigger(session->trigger);
-	if (ret < 0 && ret != -LTTNG_ERR_TRIGGER_EXISTS) {
-		ERR("Register trigger, %s\n", lttng_strerror(ret));
-		ret = -1;
-		goto end;
-	}
-
 	nc_status = lttng_notification_channel_subscribe(
 			notification_channel, session->condition);
 	if (nc_status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
 		ERR("Could not subscribe\n");
+		ret = -1;
+		goto end;
+	}
+
+	ret = lttng_register_trigger(session->trigger);
+	if (ret < 0 && ret != -LTTNG_ERR_TRIGGER_EXISTS) {
+		ERR("Register trigger, %s\n", lttng_strerror(ret));
 		ret = -1;
 		goto end;
 	}
