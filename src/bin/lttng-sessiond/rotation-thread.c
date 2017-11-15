@@ -477,7 +477,7 @@ int rotate_timer(struct ltt_session *session)
 		ret = 0;
 		goto end;
 	} else if (ret != LTTNG_OK) {
-		fprintf(stderr, "Ret: %d\n", ret);
+		ERR("[rotation-thread] Rotate on timer");
 		ret = -1;
 		goto end;
 	}
@@ -676,7 +676,7 @@ int handle_condition(
 
 	if (condition_type != LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE) {
 		ret = 1;
-		printf("error: condition type and session usage type are not the same\n");
+		ERR("[rotation-thread] Condition type and session usage type are not the same\n");
 		goto end;
 	}
 
@@ -684,30 +684,48 @@ int handle_condition(
 	ret = lttng_condition_session_consumed_size_get_session_name(condition,
 			&condition_session_name);
 	if (ret) {
-		printf("error: session name could not be fetched\n");
+		ERR("[rotation-thread] Session name could not be fetched\n");
 		ret = 1;
 		goto end;
 	}
 	evaluation_status = lttng_evaluation_session_consumed_size_get_consumed_size(evaluation,
 			&consumed);
 	if (evaluation_status != LTTNG_EVALUATION_STATUS_OK) {
-		ERR("Failed to get evaluation");
+		ERR("[rotation-thread] Failed to get evaluation");
 		ret = -1;
 		goto end;
 	}
 
+	session_lock_list();
 	session = session_find_by_name(condition_session_name);
 	if (!session) {
 		ret = -1;
-		ERR("Session not found");
+		session_unlock_list();
+		ERR("[rotation-thread] Session not found");
 		goto end;
 	}
+	session_lock(session);
+	session_unlock_list();
 
-	printf("notification: %lu\n", consumed);
 	unsubscribe_session_usage(session);
-	subscribe_session_usage(session, consumed + session->rotate_size);
+	ret = cmd_rotate_session(session, NULL);
+	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
+		ret = 0;
+		goto end_unlock;
+	} else if (ret != LTTNG_OK) {
+		ERR("[rotation-thread] Rotate on size notification");
+		ret = -1;
+		goto end_unlock;
+	}
+	ret = subscribe_session_usage(session, consumed + session->rotate_size);
+	if (ret) {
+		ERR("[rotation-thread] Subscribe session usage");
+		goto end_unlock;
+	}
 	ret = 0;
 
+end_unlock:
+	session_unlock(session);
 end:
 	return ret;
 }
@@ -741,7 +759,7 @@ int handle_manage_client(int fd, uint32_t revents,
 		notification_channel = lttng_notification_channel_create(
 				lttng_session_daemon_notification_endpoint);
 		if (!notification_channel) {
-			printf("error: Could not create notification channel\n");
+			ERR("[rotation-thread] Could not create notification channel");
 			ret = 1;
 			goto end;
 		}
