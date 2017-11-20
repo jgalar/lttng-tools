@@ -41,6 +41,7 @@
 #include "cmd.h"
 #include "session.h"
 #include "sessiond-timer.h"
+#include "notification-thread-commands.h"
 
 #include <urcu.h>
 #include <urcu/list.h>
@@ -125,12 +126,6 @@ void rotation_thread_handle_destroy(
 			PERROR("close kernel consumer channel rotation pipe");
 		}
 	}
-	if (handle->client_rotate_pipe >= 0) {
-		ret = close(handle->client_rotate_pipe);
-		if (ret) {
-			PERROR("close client command rotation pipe");
-		}
-	}
 
 end:
 	free(handle);
@@ -142,7 +137,8 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		struct lttng_pipe *kernel_channel_rotate_pipe,
 		struct lttng_pipe *client_rotate_pipe,
 		int thread_quit_pipe,
-		struct rotation_thread_timer_queue *rotation_timer_queue)
+		struct rotation_thread_timer_queue *rotation_timer_queue,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	struct rotation_thread_handle *handle;
 
@@ -181,18 +177,10 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 	} else {
 		handle->kernel_consumer = -1;
 	}
-	if (client_rotate_pipe) {
-		handle->client_rotate_pipe =
-				lttng_pipe_release_readfd(
-					client_rotate_pipe);
-		if (handle->client_rotate_pipe < 0) {
-			goto error;
-		}
-	} else {
-		handle->client_rotate_pipe = -1;
-	}
+	handle->client_rotate_pipe = client_rotate_pipe;
 	handle->thread_quit_pipe = thread_quit_pipe;
 	handle->rotation_timer_queue = rotation_timer_queue;
+	handle->notification_thread_handle = notification_thread_handle;
 
 end:
 	return handle;
@@ -254,7 +242,7 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 			goto error;
 		}
 	}
-	ret = lttng_poll_add(poll_set, handle->client_rotate_pipe,
+	ret = lttng_poll_add(poll_set, handle->client_rotate_pipe->fd[0],
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
 		ERR("[rotation-thread] Failed to add manage client rotation pipe fd to pollset");
@@ -581,12 +569,14 @@ end:
 }
 
 static
-int subscribe_session_usage(struct ltt_session *session, uint64_t size)
+int subscribe_session_usage(struct ltt_session *session, uint64_t size,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 	enum lttng_condition_status condition_status;
 	enum lttng_notification_channel_status nc_status;
 
+	fprintf(stderr, "sub\n");
 	session->condition = lttng_condition_session_consumed_size_create();
 	if (!session->condition) {
 		ERR("Create condition object");
@@ -629,14 +619,15 @@ int subscribe_session_usage(struct ltt_session *session, uint64_t size)
 	nc_status = lttng_notification_channel_subscribe(
 			notification_channel, session->condition);
 	if (nc_status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
-		ERR("Could not subscribe\n");
+		ERR("Could not subscribe");
 		ret = -1;
 		goto end;
 	}
 
-	ret = lttng_register_trigger(session->trigger);
+	ret = notification_thread_command_register_trigger(
+			notification_thread_handle, session->trigger);
 	if (ret < 0 && ret != -LTTNG_ERR_TRIGGER_EXISTS) {
-		ERR("Register trigger, %s\n", lttng_strerror(ret));
+		ERR("Register trigger, %s", lttng_strerror(ret));
 		ret = -1;
 		goto end;
 	}
@@ -648,22 +639,28 @@ end:
 }
 
 static
-void unsubscribe_session_usage(struct ltt_session *session)
+void unsubscribe_session_usage(struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle)
 {
-	lttng_unregister_trigger(session->trigger);
+	int ret;
 
-	if (lttng_notification_channel_unsubscribe(notification_channel,
-				session->condition)) {
-		ERR("Session unsubscribe error");
+	ret = lttng_notification_channel_unsubscribe(notification_channel,
+			session->condition);
+	if (ret != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
+		ERR("Session unsubscribe error: %d", ret);
 	}
-	lttng_trigger_destroy(session->trigger);
-	lttng_condition_destroy(session->condition);
-	lttng_action_destroy(session->action);
+
+	ret = notification_thread_command_unregister_trigger(                         
+			notification_thread_handle, session->trigger);
+	if (ret != LTTNG_OK) {
+		ERR("Session unregister trigger error");
+	}
 }
 
 int handle_condition(
 		const struct lttng_condition *condition,
-		const struct lttng_evaluation *evaluation)
+		const struct lttng_evaluation *evaluation,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret = 0;
 	const char *condition_session_name = NULL;
@@ -707,7 +704,7 @@ int handle_condition(
 	session_lock(session);
 	session_unlock_list();
 
-	unsubscribe_session_usage(session);
+	unsubscribe_session_usage(session, notification_thread_handle);
 	ret = cmd_rotate_session(session, NULL);
 	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
 		ret = 0;
@@ -717,7 +714,8 @@ int handle_condition(
 		ret = -1;
 		goto end_unlock;
 	}
-	ret = subscribe_session_usage(session, consumed + session->rotate_size);
+	ret = subscribe_session_usage(session, consumed + session->rotate_size,
+			notification_thread_handle);
 	if (ret) {
 		ERR("[rotation-thread] Subscribe session usage");
 		goto end_unlock;
@@ -734,20 +732,26 @@ end:
  * Handle messages coming from the sessiond (thread_manage_client).
  */
 static
-int handle_manage_client(int fd, uint32_t revents,
-		struct rotation_thread_handle *handle,
-		struct rotation_thread_state *state,
+int handle_manage_client(struct lttng_pipe *client_rotate_pipe, uint32_t revents,
+		struct rotation_thread_handle *handle, struct rotation_thread_state *state,
 		struct lttng_poll_event *poll_set)
 {
 	int ret = 0;
 	struct rotation_thread_msg msg;
 
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-		ret = lttng_poll_del(&state->events, fd);
+		ret = lttng_poll_del(&state->events, client_rotate_pipe->fd[0]);
 		if (ret) {
 			ERR("[rotation-thread] Failed to remove manage client pipe");
 			goto end;
 		}
+		goto end;
+	}
+
+	ret = lttng_pipe_read(client_rotate_pipe, &msg, sizeof(msg));
+	if (ret < sizeof(msg)) {
+		PERROR("Read manage client data");
+		ret = -1;
 		goto end;
 	}
 
@@ -771,13 +775,6 @@ int handle_manage_client(int fd, uint32_t revents,
 		}
 	}
 
-	ret = lttng_read(fd, &msg, sizeof(msg));
-	if (ret < sizeof(msg)) {
-		PERROR("Read manage client data");
-		ret = -1;
-		goto end;
-	}
-
 	switch (msg.cmd) {
 	case ROTATION_THREAD_SUBSCRIBE_SESSION_USAGE:
 	{
@@ -785,23 +782,28 @@ int handle_manage_client(int fd, uint32_t revents,
 		struct ltt_session *session = msg.subscribe_session_usage.session;
 
 		assert(session);
+		session_lock(session);
 
 		if (!session->rotate_size && size != -1ULL) {
-			ret = subscribe_session_usage(session, size);
+			ret = subscribe_session_usage(session, size,
+					handle->notification_thread_handle);
 			if (ret) {
 				ERR("[rotation-thread] Subscribe session usage");
+				session_unlock(session);
 				goto end;
 			}
 			session->rotate_size = size;
 		} else if (session->rotate_size && size == -1ULL) {
-			unsubscribe_session_usage(session);
+			unsubscribe_session_usage(session, handle->notification_thread_handle);
 			session->rotate_size = 0;
 		} else {
 			ERR("[rotation-thread] Invalid size parameter, current rotate_size: %"
 					PRIu64 ", new size: %" PRIu64, session->rotate_size, size);
 			ret = -1;
+			session_unlock(session);
 			goto end;
 		}
+		session_unlock(session);
 		break;
 	}
 	default:
@@ -811,7 +813,7 @@ int handle_manage_client(int fd, uint32_t revents,
 	}
 
 	ret = 0;
-	
+
 end:
 	return ret;
 }
@@ -853,7 +855,8 @@ int handle_sampling_notification(int fd, uint32_t revents,
 	notification_condition = lttng_notification_get_condition(notification);
 	notification_evaluation = lttng_notification_get_evaluation(notification);
 
-	ret = handle_condition(notification_condition, notification_evaluation);
+	ret = handle_condition(notification_condition, notification_evaluation,
+			handle->notification_thread_handle);
 
 end:
 	lttng_notification_destroy(notification);
@@ -938,9 +941,9 @@ void *thread_rotation(void *data)
 					ERR("[rotation-thread] Handle channel rotation pipe");
 					goto error;
 				}
-			} else if (fd == handle->client_rotate_pipe) {
-				ret = handle_manage_client(fd, revents, handle, &state,
-						&state.events);
+			} else if (fd == handle->client_rotate_pipe->fd[0]) {
+				ret = handle_manage_client(handle->client_rotate_pipe, revents,
+						handle, &state, &state.events);
 				if (ret) {
 					ERR("[rotation-thread] manage client");
 					goto error;

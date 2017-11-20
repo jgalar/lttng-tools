@@ -79,11 +79,12 @@ struct rotation_thread_handle {
 	/* quit pipe */
 	int thread_quit_pipe;
 	/* thread_manage_clients command pipe */
-	int client_rotate_pipe;
+	struct lttng_pipe *client_rotate_pipe;
 
 	struct rotation_thread_timer_queue *rotation_timer_queue;
-	/* Timer thread wakeup pipe */
-	//int rotate_timer_pipe;
+
+	/* Access to the notification thread cmd_queue */
+	struct notification_thread_handle *notification_thread_handle;
 };
 
 struct rotation_thread_state {
@@ -97,7 +98,8 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		struct lttng_pipe *kernel_channel_rotate_pipe,
 		struct lttng_pipe *client_rotate_pipe,
 		int thread_quit_pipe,
-		struct rotation_thread_timer_queue *rotation_timer_queue);
+		struct rotation_thread_timer_queue *rotation_timer_queue,
+		struct notification_thread_handle *notification_thread_handle);
 
 void rotation_thread_handle_destroy(
 		struct rotation_thread_handle *handle);

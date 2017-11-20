@@ -5734,20 +5734,6 @@ static
 void manage_client_handle_destroy(
 		struct manage_client_handle *handle)
 {
-	int ret;
-
-	if (!handle) {
-		goto end;
-	}
-
-	if (handle->client_rotate_pipe >= 0) {
-		ret = close(handle->client_rotate_pipe);
-		if (ret) {
-			PERROR("close client rotate pipe");
-		}
-	}
-
-end:
 	free(handle);
 }
 
@@ -5757,26 +5743,16 @@ struct manage_client_handle *manage_client_handle_create(
 {
 	struct manage_client_handle *handle;
 
+	assert(client_rotate_pipe);
+
 	handle = zmalloc(sizeof(*handle));
 	if (!handle) {
 		goto end;
 	}
-
-	if (client_rotate_pipe) {
-		handle->client_rotate_pipe = lttng_pipe_release_writefd(
-				client_rotate_pipe);
-		if (handle->client_rotate_pipe < 0) {
-			goto error;
-		}
-	} else {
-		handle->client_rotate_pipe = -1;
-	}
+	handle->client_rotate_pipe = client_rotate_pipe;
 
 end:
 	return handle;
-error:
-	manage_client_handle_destroy(handle);
-	return NULL;
 }
 
 static
@@ -6424,7 +6400,8 @@ int main(int argc, char **argv)
 			kernel_channel_rotate_pipe,
 			client_rotate_pipe,
 			thread_quit_pipe[0],
-			rotation_timer_queue);
+			rotation_timer_queue,
+			notification_thread_handle);
 	if (!rotation_thread_handle) {
 		retval = -1;
 		ERR("Failed to create rotation thread shared data");
