@@ -576,7 +576,7 @@ int subscribe_session_usage(struct ltt_session *session, uint64_t size,
 	enum lttng_condition_status condition_status;
 	enum lttng_notification_channel_status nc_status;
 
-	fprintf(stderr, "sub\n");
+	fprintf(stderr, "sub %lu\n", size);
 	session->condition = lttng_condition_session_consumed_size_create();
 	if (!session->condition) {
 		ERR("Create condition object");
@@ -644,6 +644,7 @@ void unsubscribe_session_usage(struct ltt_session *session,
 {
 	int ret;
 
+	fprintf(stderr, "unsub\n");
 	ret = lttng_notification_channel_unsubscribe(notification_channel,
 			session->condition);
 	if (ret != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
