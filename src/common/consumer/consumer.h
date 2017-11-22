@@ -604,16 +604,6 @@ struct lttng_consumer_local_data {
 	 * its rotation (write-only).
 	 */
 	int channel_rotate_pipe;
-	/*
-	 * Pipe to wakeup the data thread if a stream needs to rotated
-	 * immediately (vs waiting for more data).
-	 */
-	struct lttng_pipe *consumer_data_rotate_pipe;
-	/*
-	 * Pipe to wakeup the metadata thread if a stream needs to rotated
-	 * immediately (vs waiting for more data).
-	 */
-	struct lttng_pipe *consumer_metadata_rotate_pipe;
 };
 
 /*

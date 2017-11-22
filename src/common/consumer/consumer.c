@@ -1135,8 +1135,6 @@ static int update_poll_array(struct lttng_consumer_local_data *ctx,
 	(*pollfd)[i + 1].fd = lttng_pipe_get_readfd(ctx->consumer_wakeup_pipe);
 	(*pollfd)[i + 1].events = POLLIN | POLLPRI;
 
-	(*pollfd)[i + 2].fd = lttng_pipe_get_readfd(ctx->consumer_data_rotate_pipe);
-	(*pollfd)[i + 2].events = POLLIN | POLLPRI;
 	return i;
 }
 
@@ -1348,16 +1346,6 @@ struct lttng_consumer_local_data *lttng_consumer_create(
 		goto error_wakeup_pipe;
 	}
 
-	ctx->consumer_data_rotate_pipe = lttng_pipe_open(0);
-	if (!ctx->consumer_data_rotate_pipe) {
-		goto error_data_rotate_pipe;
-	}
-
-	ctx->consumer_metadata_rotate_pipe = lttng_pipe_open(0);
-	if (!ctx->consumer_metadata_rotate_pipe) {
-		goto error_metadata_rotate_pipe;
-	}
-
 	ret = pipe(ctx->consumer_should_quit);
 	if (ret < 0) {
 		PERROR("Error creating recv pipe");
@@ -1384,10 +1372,6 @@ error_metadata_pipe:
 error_channel_pipe:
 	utils_close_pipe(ctx->consumer_should_quit);
 error_quit_pipe:
-	lttng_pipe_destroy(ctx->consumer_metadata_rotate_pipe);
-error_metadata_rotate_pipe:
-	lttng_pipe_destroy(ctx->consumer_data_rotate_pipe);
-error_data_rotate_pipe:
 	lttng_pipe_destroy(ctx->consumer_wakeup_pipe);
 error_wakeup_pipe:
 	lttng_pipe_destroy(ctx->consumer_data_pipe);
@@ -1476,8 +1460,6 @@ void lttng_consumer_destroy(struct lttng_consumer_local_data *ctx)
 	lttng_pipe_destroy(ctx->consumer_data_pipe);
 	lttng_pipe_destroy(ctx->consumer_metadata_pipe);
 	lttng_pipe_destroy(ctx->consumer_wakeup_pipe);
-	lttng_pipe_destroy(ctx->consumer_data_rotate_pipe);
-	lttng_pipe_destroy(ctx->consumer_metadata_rotate_pipe);
 	utils_close_pipe(ctx->consumer_should_quit);
 
 	unlink(ctx->consumer_command_sock_path);
@@ -2306,6 +2288,7 @@ int rotate_notify_sessiond(struct lttng_consumer_local_data *ctx,
 	} else {
 		DBG("Sent channel rotation notification for channel key %"
 				PRIu64, key);
+		ret = 0;
 	}
 
 	return ret;
@@ -2360,61 +2343,6 @@ end:
 	return ret;
 }
 
-static
-int handle_rotate_wakeup_pipe(struct lttng_consumer_local_data *ctx,
-		struct lttng_pipe *stream_pipe, struct lttng_ht *ht)
-{
-	int ret;
-	ssize_t pipe_len;
-	uint64_t stream_key;
-	struct lttng_consumer_stream *stream;
-
-	DBG("Rotate pipe wakeup");
-	pipe_len = lttng_pipe_read(stream_pipe, &stream_key, sizeof(stream->key));
-	if (pipe_len < sizeof(stream->key)) {
-		if (pipe_len < 0) {
-			PERROR("read stream key");
-		}
-		ERR("Failed to read stream key on rotate pipe");
-		ret = -1;
-		goto end;
-	}
-
-	rcu_read_lock();
-	pthread_mutex_lock(&consumer_data.lock);
-	stream = find_stream(stream_key, ht);
-	pthread_mutex_unlock(&consumer_data.lock);
-	if (!stream) {
-		/*
-		 * The stream has been destroyed before we had a chance to rotate it,
-		 * just return cleanly.
-		 */
-		DBG("Stream %" PRIu64 " not found for rotation", stream_key);
-		ret = 0;
-		goto end_unlock;
-	}
-
-	pthread_mutex_lock(&stream->lock);
-	ret = lttng_consumer_rotate_stream(ctx, stream);
-	pthread_mutex_unlock(&stream->lock);
-	if (ret < 0) {
-		ERR("Failed to rotate metadata stream");
-		goto end_unlock;
-	}
-	ret = consumer_post_rotation(stream, ctx);
-	if (ret < 0) {
-		ERR("Failed after a rotation");
-		ret = -1;
-	}
-
-	ret = 0;
-
-end_unlock:
-	rcu_read_unlock();
-end:
-	return ret;
-}
-
 /*
  * Thread polls on metadata file descriptor and write them on disk or on the
  * network.
@@ -2443,7 +2371,7 @@ void *consumer_thread_metadata_poll(void *data)
 	DBG("Thread metadata poll started");
 
 	/* Size is set to 1 for the consumer_metadata pipe */
-	ret = lttng_poll_create(&events, 3, LTTNG_CLOEXEC);
+	ret = lttng_poll_create(&events, 2, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		ERR("Poll set creation failed");
 		goto end_poll;
@@ -2451,12 +2379,6 @@ void *consumer_thread_metadata_poll(void *data)
 
 	ret = lttng_poll_add(&events,
 			lttng_pipe_get_readfd(ctx->consumer_metadata_pipe), LPOLLIN);
-	if (ret < 0) {
-		goto end;
-	}
-
-	ret = lttng_poll_add(&events,
-			lttng_pipe_get_readfd(ctx->consumer_metadata_rotate_pipe), LPOLLIN);
 	if (ret < 0) {
 		goto end;
 	}
@@ -2548,35 +2470,6 @@ restart:
 				}
 
 				/* Handle other stream */
-				continue;
-			} else if (pollfd == lttng_pipe_get_readfd(ctx->consumer_metadata_rotate_pipe)) {
-				if (revents & LPOLLIN) {
-					DBG("handle_rotate_wakeup_pipe metadata thread");
-					ret = handle_rotate_wakeup_pipe(ctx,
-							ctx->consumer_metadata_rotate_pipe, metadata_ht);
-					if (ret < 0) {
-						ERR("Failed to rotate metadata stream");
-						lttng_poll_del(&events,
-								lttng_pipe_get_readfd(
-									ctx->consumer_metadata_rotate_pipe));
-						lttng_pipe_read_close(
-								ctx->consumer_metadata_rotate_pipe);
-						goto end;
-					}
-				} else if (revents & (LPOLLERR | LPOLLHUP)) {
-					DBG("Metadata rotate pipe hung up");
-					/*
-					 * Remove the pipe from the poll set and continue the loop
-					 * since their might be data to consume.
-					 */
-					lttng_poll_del(&events,
-							lttng_pipe_get_readfd(ctx->consumer_metadata_rotate_pipe));
-					lttng_pipe_read_close(ctx->consumer_metadata_rotate_pipe);
-					continue;
-				} else {
-					ERR("Unexpected poll events %u for sock %d", revents, pollfd);
-					goto end;
-				}
 				continue;
 			}
 
@@ -2720,12 +2613,11 @@ void *consumer_thread_data_poll(void *data)
 			local_stream = NULL;
 
 			/*
-			 * Allocate for all fds + 3:
+			 * Allocate for all fds + 2:
 			 *   +1 for the consumer_data_pipe
 			 *   +1 for wake up pipe
-			 *   +1 for consumer_data_rotate_pipe.
 			 */
-			nb_pipes_fd = 3;
+			nb_pipes_fd = 2;
 			pollfd = zmalloc((consumer_data.stream_count + nb_pipes_fd) * sizeof(struct pollfd));
 			if (pollfd == NULL) {
 				PERROR("pollfd malloc");
@@ -2832,17 +2724,6 @@ void *consumer_thread_data_poll(void *data)
 			}
 			/* We've been awakened to handle stream(s). */
 			ctx->has_wakeup = 0;
-		}
-
-		/* Handle consumer_data_rotate_pipe. */
-		if (pollfd[nb_fd + 2].revents & (POLLIN | POLLPRI)) {
-			DBG("handle_rotate_wakeup_pipe data thread");
-			ret = handle_rotate_wakeup_pipe(ctx,
-					ctx->consumer_data_rotate_pipe, data_ht);
-			if (ret < 0) {
-				ERR("Failed to rotate metadata stream");
-				goto end;
-			}
 		}
 
 		/* Take care of high priority channels first. */
@@ -2963,7 +2844,6 @@ end:
 	 * the read side.
 	 */
 	(void) lttng_pipe_write_close(ctx->consumer_metadata_pipe);
-	(void) lttng_pipe_write_close(ctx->consumer_metadata_rotate_pipe);
 
 error_testpoint:
 	if (err) {
@@ -4366,7 +4246,6 @@ int lttng_consumer_rotate_ready_streams(uint64_t key,
 	int ret;
 	struct lttng_consumer_channel *channel;
 	struct lttng_consumer_stream *stream;
-	struct lttng_pipe *stream_pipe;
 	struct lttng_ht_iter iter;
 	struct lttng_ht *ht = consumer_data.stream_per_chan_id_ht;
 
@@ -4381,28 +4260,30 @@ int lttng_consumer_rotate_ready_streams(uint64_t key,
 		goto end;
 	}
 
-	if (channel->metadata_stream) {
-		stream_pipe = ctx->consumer_metadata_rotate_pipe;
-	} else {
-		stream_pipe = ctx->consumer_data_rotate_pipe;
-	}
-
 	cds_lfht_for_each_entry_duplicate(ht->ht,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
 			ht->match_fct, &channel->key, &iter.iter,
 			stream, node_channel_id.node) {
 		health_code_update();
 
+		pthread_mutex_lock(&stream->lock);
+
 		if (stream->rotate_ready == 0) {
+			pthread_mutex_unlock(&stream->lock);
 			continue;
 		}
+		fprintf(stderr, "ready1\n");
 		DBG("Consumer rotate ready stream %" PRIu64, stream->key);
-		/*
-		 * data and metadata streams are not in the same HT, need to differenciate
-		 */
-		ret = lttng_pipe_write(stream_pipe, &stream->key, sizeof(stream->key));
-		if (ret < 0) {
-			ERR("Failed to wakeup consumer rotate pipe");
+
+		ret = lttng_consumer_rotate_stream(ctx, stream);
+		pthread_mutex_unlock(&stream->lock);
+		if (ret) {
+			ERR("Rotate ready stream");
+			goto end;
+		}
+		ret = consumer_post_rotation(stream, ctx);
+		if (ret) {
+			ERR("Post rotate ready stream");
 			goto end;
 		}
 	}

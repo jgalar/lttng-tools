@@ -2674,6 +2674,20 @@ int lttng_ustconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		}
 	}
 
+	/*
+	 * If the stream was flagged to be ready for rotation before we extract the
+	 * next packet, rotate it now.
+	 */
+	if (stream->rotate_ready) {
+		DBG("Rotate stream before extracting data");
+		rotation_ret = lttng_consumer_rotate_stream(ctx, stream);
+		if (rotation_ret < 0) {
+			ERR("Stream rotation error");
+			ret = -1;
+			goto error;
+		}
+	}
+
 retry:
 	/* Get the next subbuffer */
 	err = ustctl_get_next_subbuf(ustream);

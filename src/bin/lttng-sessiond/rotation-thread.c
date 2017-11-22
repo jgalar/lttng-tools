@@ -453,7 +453,7 @@ int rotate_timer(struct ltt_session *session)
 	}
 
 	/* Ignore this timer if a rotation is already in progress. */
-	if (!session->rotate_pending || session->rotate_pending_relay) {
+	if (session->rotate_pending || session->rotate_pending_relay) {
 		ret = 0;
 		goto end;
 	}
