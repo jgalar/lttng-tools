@@ -26,9 +26,11 @@ struct lttng_condition;
 
 enum lttng_condition_type {
 	LTTNG_CONDITION_TYPE_UNKNOWN = -1,
-	LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW = 102,
-	LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH = 101,
 	LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE = 100,
+	LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH = 101,
+	LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW = 102,
+	LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING = 103,
+	LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED = 104,
 };
 
 enum lttng_condition_status {
@@ -49,7 +51,7 @@ extern enum lttng_condition_type lttng_condition_get_type(
 		const struct lttng_condition *condition);
 
 /*
- * Destroy (frees) a condition object.
+ * Destroy (release) a condition object.
  */
 extern void lttng_condition_destroy(struct lttng_condition *condition);
 

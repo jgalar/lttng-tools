@@ -187,16 +187,19 @@ bool lttng_condition_buffer_usage_is_equal(const struct lttng_condition *_a,
 		}
 	}
 
+	/* Both session names must be set or both must be unset. */
 	if ((a->session_name && !b->session_name) ||
 			(!a->session_name && b->session_name)) {
 		goto end;
 	}
 
-	if (a->channel_name && b->channel_name) {
-		if (strcmp(a->channel_name, b->channel_name)) {
-			goto end;
-		}
-	}	if ((a->channel_name && !b->channel_name) ||
+	if (a->session_name && b->session_name &&
+			strcmp(a->session_name, b->session_name)) {
+		goto end;
+	}
+
+	/* Both channel names must be set or both must be unset. */
+	if ((a->channel_name && !b->channel_name) ||
 			(!a->channel_name && b->channel_name)) {
 		goto end;
 	}
