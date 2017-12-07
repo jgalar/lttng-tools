@@ -575,8 +575,8 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_ALREADY_SUBSCRIBED, "Subscribe to a condition for which subscription was already done");
 
 	/* Wait for notification to happen */
-	lttng_start_tracing(session_name);
 	stop_consumer(argv);
+	lttng_start_tracing(session_name);
 
 	/* Wait for high notification */
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
@@ -611,9 +611,9 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	notification = NULL;
 
 	/* Stop consumer to force a high notification */
+	stop_consumer(argv);
 	resume_application();
 	lttng_start_tracing(session_name);
-	stop_consumer(argv);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
@@ -634,10 +634,10 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	lttng_notification_destroy(notification);
 	notification = NULL;
 
+	stop_consumer(argv);
 	resume_application();
 	/* Stop consumer to force a high notification */
 	lttng_start_tracing(session_name);
-	stop_consumer(argv);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
