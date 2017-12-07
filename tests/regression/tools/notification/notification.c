@@ -61,28 +61,27 @@ pid_t app_pid = -1;
 const char *app_state_file = NULL;
 
 static
-void wait_on_file(const char *path, bool file_exist)
+void wait_on_file(const char *path, bool wait_on_file_exist)
 {
-	if (!path) {
-		return;
-	}
+	assert(path);
 	for (;;) {
 		int ret;
 		struct stat buf;
 
 		ret = stat(path, &buf);
 		if (ret == -1 && errno == ENOENT) {
-			if (file_exist) {
+			if (wait_on_file_exist) {
 				(void) poll(NULL, 0, 10);	/* 10 ms delay */
 				continue;			/* retry */
 			}
-			break; /* File does not exist */
+			/* File does not exist */
+		        return;
 		}
 		if (ret) {
 			perror("stat");
 			exit(EXIT_FAILURE);
 		}
-		break;	/* found */
+		return;	/* found */
 	}
 }
 
@@ -93,15 +92,15 @@ int write_pipe(const char *path, uint8_t data)
 
 	fd = open(path, O_WRONLY | O_NONBLOCK);
 	if (fd < 0) {
-		perror("Could not open consumer control named pipe");
+	        diag("Could not open consumer control named pipe");
 		goto end;
 	}
 
 	ret = write(fd, &data , sizeof(data));
 	if (ret < 1) {
-		perror("Named pipe write failed");
+	        diag("Named pipe write failed");
 		if (close(fd)) {
-			perror("Named pipe close failed");
+		        diag("Named pipe close failed");
 		}
 		ret = -1;
 		goto end;
@@ -109,7 +108,7 @@ int write_pipe(const char *path, uint8_t data)
 
 	ret = close(fd);
 	if (ret < 0) {
-		perror("Name pipe closing failed");
+	        diag("Name pipe closing failed");
 		ret = -1;
 		goto end;
 	}
@@ -121,7 +120,8 @@ int stop_consumer(const char **argv)
 {
 	int ret = 0;
 	for (int i = named_pipe_args_start; i < nb_args; i++) {
-		ret = write_pipe(argv[i], 49);
+		diag("Pausing consumer by writting to pipe %s", argv[i]);
+		ret = write_pipe(argv[i], 1);
 	}
 	return ret;
 }
@@ -130,6 +130,7 @@ int resume_consumer(const char **argv)
 {
 	int ret = 0;
 	for (int i = named_pipe_args_start; i < nb_args; i++) {
+		diag("Resuming consumer by writting to pipe %s", argv[i]);
 		ret = write_pipe(argv[i], 0);
 	}
 	return ret;
@@ -146,6 +147,7 @@ int suspend_application()
 		goto error;
 	}
 
+	diag("Suspending application...");
 	/*
 	 * Send SIGUSR1 to application instructing it to bypass tracepoint.
 	 */
@@ -157,7 +159,7 @@ int suspend_application()
 	}
 
 	wait_on_file(app_state_file, true);
-
+	diag("Suspending application done");
 error:
 	return ret;
 
@@ -168,6 +170,7 @@ int resume_application()
 	int ret;
 	struct stat buf;
 
+	diag("Resuming application...");
 	ret = stat(app_state_file, &buf);
 	if (ret == -1 && errno == ENOENT) {
 		fail("State file does not exist");
@@ -186,7 +189,7 @@ int resume_application()
 	}
 
 	wait_on_file(app_state_file, false);
-
+	diag("Resuming application done");
 error:
 	return ret;
 
@@ -213,7 +216,7 @@ void test_triggers_buffer_usage_condition(const char *session_name,
 
 	/* Test: register a trigger */
 	unsigned int test_vector_size = 5;
-	for (unsigned int  i = 0; i < pow(2,test_vector_size); i++) {
+	for (unsigned int  i = 0; i < pow(2, test_vector_size); i++) {
 		int loop_ret = 0;
 		char *test_tuple_string = NULL;
 		unsigned int mask_position = 0;
@@ -372,6 +375,48 @@ loop_cleanup:
 
 end:
 	lttng_action_destroy(action);
+}
+
+void print_next_notification_result(
+		enum lttng_notification_channel_status nc_status,
+		struct lttng_notification *notification)
+{
+        char *condition_type_str;
+	const struct lttng_condition *condition;
+	const struct lttng_evaluation *evaluation;
+
+	diag("notification channel get next notification status is = %i", (int) nc_status);
+	if (!notification) {
+		diag("notification is NULL?!... BYE!");
+		return;
+	}
+
+	condition = lttng_notification_get_condition(notification);
+	if (!condition) {
+		diag("condition is NULL?!... BYYYYYE!");
+		return;
+	}
+
+	evaluation = lttng_notification_get_evaluation(notification);
+	if (!evaluation) {
+		diag("evaluation is NULL?!... BYYYYYE!");
+		return;
+	}
+
+	switch (lttng_condition_get_type(condition)) {
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+		condition_type_str = strdup("low usage");
+		break;
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+		condition_type_str = strdup("high usage");
+		break;
+	default:
+		(void) asprintf(&condition_type_str, "Unexpected (%i)", (int) lttng_condition_get_type(condition));
+		break;
+	}
+
+	diag("Received %s condition type", condition_type_str);
+	free(condition_type_str);
 }
 
 void test_notification_channel(const char *session_name, const char *channel_name, const enum lttng_domain_type domain_type, const char **argv)
@@ -576,10 +621,12 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 
 	/* Wait for notification to happen */
 	stop_consumer(argv);
+	diag("Starting tracing 1");
 	lttng_start_tracing(session_name);
 
 	/* Wait for high notification */
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
+	print_next_notification_result(nc_status, notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK
 			&& notification
 			&& lttng_condition_get_type(lttng_notification_get_condition(notification)) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH,
@@ -589,6 +636,7 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 
 	suspend_application();
 	resume_consumer(argv);
+	diag("Stopping tracing 1");
 	lttng_stop_tracing(session_name);
 
 	/*
@@ -603,6 +651,7 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK, "subscribe with pending notification");
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
+	print_next_notification_result(nc_status, notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK
 			&& notification
 			&& lttng_condition_get_type(lttng_notification_get_condition(notification)) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW,
@@ -613,9 +662,11 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	/* Stop consumer to force a high notification */
 	stop_consumer(argv);
 	resume_application();
+	diag("Starting tracing 2");
 	lttng_start_tracing(session_name);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
+	print_next_notification_result(nc_status, notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
 			lttng_condition_get_type(lttng_notification_get_condition(notification)) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH,
 			"High notification received after intermediary communication");
@@ -625,9 +676,11 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	suspend_application();
 	/* Resume consumer to allow event consumption */
 	resume_consumer(argv);
+	diag("Stopping tracing 2");
 	lttng_stop_tracing(session_name);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
+	print_next_notification_result(nc_status, notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
 			lttng_condition_get_type(lttng_notification_get_condition(notification)) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW,
 			"Low notification received after re-subscription");
@@ -637,9 +690,11 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 	stop_consumer(argv);
 	resume_application();
 	/* Stop consumer to force a high notification */
+	diag("Starting tracing 3");
 	lttng_start_tracing(session_name);
 
 	nc_status = lttng_notification_channel_get_next_notification(notification_channel, &notification);
+	print_next_notification_result(nc_status, notification);
 	ok(nc_status == LTTNG_NOTIFICATION_CHANNEL_STATUS_OK && notification &&
 			lttng_condition_get_type(lttng_notification_get_condition(notification)) == LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH,
 			"High notification");
@@ -648,6 +703,7 @@ void test_notification_channel(const char *session_name, const char *channel_nam
 
 	/* Resume consumer to allow event consumption */
 	resume_consumer(argv);
+	diag("Stopping tracing 3");
 	lttng_stop_tracing(session_name);
 
 	nc_status = lttng_notification_channel_unsubscribe(notification_channel, low_condition);
