@@ -381,9 +381,11 @@ void print_next_notification_result(
 		enum lttng_notification_channel_status nc_status,
 		struct lttng_notification *notification)
 {
-        char *condition_type_str;
+        char *condition_type_str = NULL;
+	char *evaluation_type_str = NULL;
 	const struct lttng_condition *condition;
 	const struct lttng_evaluation *evaluation;
+	uint64_t usage = -1ULL;
 
 	diag("notification channel get next notification status is = %i", (int) nc_status);
 	if (!notification) {
@@ -416,7 +418,28 @@ void print_next_notification_result(
 	}
 
 	diag("Received %s condition type", condition_type_str);
+
+	switch (lttng_evaluation_get_type(evaluation)) {
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+	        evaluation_type_str = strdup("low usage");
+		break;
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+		evaluation_type_str = strdup("high usage");
+		break;
+	default:
+		(void) asprintf(&evaluation_type_str, "Unexpected (%i)", (int) lttng_condition_get_type(condition));
+		break;
+	}
+
+	diag("Received %s evaluation type", evaluation_type_str);
+
+	if (lttng_evaluation_buffer_usage_get_usage(evaluation, &usage) == LTTNG_EVALUATION_STATUS_OK) {
+		diag("Usage reported by evaluation is %" PRIu64 " bytes", usage);
+	}
+
+end:
 	free(condition_type_str);
+	free(evaluation_type_str);
 }
 
 void test_notification_channel(const char *session_name, const char *channel_name, const enum lttng_domain_type domain_type, const char **argv)
