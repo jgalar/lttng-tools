@@ -47,6 +47,7 @@
 #include <lttng/notification/channel.h>
 #include <lttng/notification/notification.h>
 #include <lttng/trigger/trigger.h>
+#include <lttng/lttng.h>
 
 #include <tap/tap.h>
 
