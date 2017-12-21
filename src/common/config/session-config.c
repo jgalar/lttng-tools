@@ -133,6 +133,7 @@ const char * const config_element_targets = "targets";
 const char * const config_element_target_pid = "pid_target";
 
 LTTNG_HIDDEN const char * const config_element_rotation_timer_interval = "rotation_timer_interval";
+LTTNG_HIDDEN const char * const config_element_rotation_size = "rotation_size";
 LTTNG_HIDDEN const char * const config_element_rotation_setup = "rotation_setup";
 
 const char * const config_domain_type_kernel = "KERNEL";
@@ -2518,7 +2519,8 @@ int process_session_node(xmlNodePtr session_node, const char *session_name,
 {
 	int ret, started = -1, snapshot_mode = -1;
 	uint64_t live_timer_interval = UINT64_MAX,
-			 rotation_timer_interval = 0;
+			 rotation_timer_interval = 0,
+			 rotation_size = 0;
 	xmlChar *name = NULL;
 	xmlChar *shm_path = NULL;
 	xmlNodePtr domains_node = NULL;
@@ -2632,6 +2634,24 @@ int process_session_node(xmlNodePtr session_node, const char *session_name,
 					goto error;
 				}
 			}
+			if (!strcmp((const char *) attributes_child->name,
+				config_element_rotation_size)) {
+				/* rotation_size */
+				xmlChar *rotation_size_content =
+					xmlNodeGetContent(attributes_child);
+				if (!rotation_size_content) {
+					ret = -LTTNG_ERR_NOMEM;
+					goto error;
+				}
+
+				ret = parse_uint(rotation_size_content, &rotation_size);
+				free(rotation_size_content);
+				if (ret) {
+					ret = -LTTNG_ERR_LOAD_INVALID_CONFIG;
+					goto error;
+				}
+			}
+
 		}
 	}
 
@@ -2769,7 +2789,7 @@ domain_init_error:
 		}
 	}
 
-	if (rotation_timer_interval) {
+	if (rotation_timer_interval || rotation_size) {
 		struct lttng_rotate_session_attr *rotate_attr = lttng_rotate_session_attr_create();
 
 		if (!rotate_attr) {
@@ -2781,6 +2801,7 @@ domain_init_error:
 			goto error;
 		}
 		lttng_rotate_session_attr_set_timer(rotate_attr, rotation_timer_interval);
+		lttng_rotate_session_attr_set_size(rotate_attr, rotation_size);
 		ret = lttng_rotate_setup(rotate_attr);
 		lttng_rotate_session_attr_destroy(rotate_attr);
 		if (ret) {
