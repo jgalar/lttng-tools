@@ -218,12 +218,20 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 {
 	struct tm *timeinfo;
 	char datetime[16], start_datetime[16];
+	struct tm lt = {0};
 	char *new_path = NULL;
 	int ret;
+	char gmt_offset[7];
 
 	DBG("Renaming complete chunk for session %s", session->name);
-	timeinfo = localtime(&ts);
+	timeinfo = localtime_r(&ts, &lt);
 	strftime(datetime, sizeof(datetime), "%Y%m%d-%H%M%S", timeinfo);
+
+	if (lt.tm_gmtoff > 0) {
+		snprintf(gmt_offset, 7, "GMT+%ld", lt.tm_gmtoff/3600);
+	} else {
+		snprintf(gmt_offset, 7, "GMT%ld", lt.tm_gmtoff/3600);
+	}
 
 	new_path = zmalloc(PATH_MAX * sizeof(char));
 	if (!new_path) {
@@ -244,10 +252,10 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 		 * session_root_path, so we need to create the chunk folder
 		 * and move the domain-specific folders inside it.
 		 */
-		ret = snprintf(new_path, PATH_MAX, "%s/%s-%s-%" PRIu64,
+		ret = snprintf(new_path, PATH_MAX, "%s/%s-%s-%s-%" PRIu64,
 				session->rotation_chunk.current_rotate_path,
 				start_time,
-				datetime, session->rotate_count);
+				datetime, gmt_offset, session->rotate_count);
 		if (ret < 0) {
 			ERR("Format tmppath");
 			ret = -1;
@@ -289,10 +297,10 @@ int rename_complete_chunk(struct ltt_session *session, time_t ts)
 		/* Recreate the session->rotation_chunk.current_rotate_path */
 		timeinfo = localtime(&session->last_chunk_start_ts);
 		strftime(start_datetime, sizeof(start_datetime), "%Y%m%d-%H%M%S", timeinfo);
-		ret = snprintf(new_path, PATH_MAX, "%s/%s-%s-%" PRIu64,
+		ret = snprintf(new_path, PATH_MAX, "%s/%s-%s-%s-%" PRIu64,
 				session_get_base_path(session),
 				start_datetime,
-				datetime, session->rotate_count);
+				datetime, gmt_offset, session->rotate_count);
 		if (ret < 0) {
 			ERR("Format new_path");
 			ret = -1;

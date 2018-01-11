@@ -2,8 +2,8 @@ function set_chunk_pattern ()
 {
 	# Need to call this function after $today has been set.
 
-	# YYYYMMDD-HHMMSS-YYYYMMDD-HHMMSS
-	export chunk_pattern="${today}-[0-9][0-9][0-9][0-9][0-9][0-9]-${today}-[0-9][0-9][0-9][0-9][0-9][0-9]"
+	# YYYYMMDD-HHMMSS-YYYYMMDD-HHMMSS-GMT
+	export chunk_pattern="${today}-[0-9][0-9][0-9][0-9][0-9][0-9]-${today}-[0-9][0-9][0-9][0-9][0-9][0-9]-GMT*"
 }
 
 function validate_test_chunks ()
