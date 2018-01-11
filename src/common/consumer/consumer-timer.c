@@ -683,7 +683,15 @@ int sample_channel_positions(struct lttng_consumer_channel *channel,
 		usage = produced - consumed;
 		high = (usage > high) ? usage : high;
 		low = (usage < low) ? usage : low;
-		*_total_consumed += consumed;
+
+		/*
+		 * We don't use consumed here for 2 reasons:
+		 *  - output_written takes into account the padding written in the
+		 *    tracefiles when we stop the session;
+		 *  - the consumed position is not the accurate representation of what
+		 *    was extracted from a buffer in overwrite mode.
+		 */
+		*_total_consumed += stream->output_written;
 	next:
 		pthread_mutex_unlock(&stream->lock);
 	}
