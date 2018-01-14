@@ -26,11 +26,33 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <tap/tap.h>
+#include <lttng/rotate.h>
+#include <lttng/notification/channel.h>
+#include <lttng/endpoint.h>
+
+#define TEST_COUNT 12
+
+struct session {
+	const char *name;
+	struct lttng_rotate_session_attr *attr;
+};
+
+int setup_rotation_trigger(struct session *session,
+		struct lttng_notification_channel *notification_channel)
+{
+	int ret;
+
+	
+end:
+	return ret;
+}
 
 int main(int argc, const char *argv[])
 {
 	int ret = 0;
-	const char *name;
+	struct session session;
+	struct lttng_notification_channel *notification_channel = NULL;
 
 	if (argc != 3) {
 		puts("Usage: rotation SESSION_NAME SESSION_OUTPUT_PATH");
@@ -38,8 +60,39 @@ int main(int argc, const char *argv[])
 		goto error;
 	}
 
-	
+	session.name = argv[1];
+
+	ret = plan_tests(TEST_COUNT);
+	if (ret) {
+		goto error;
+	}
+
+	session.attr = lttng_rotate_session_attr_create();
+	ok(session.attr, "Create rotate session attr");
+	if (!session.attr) {
+		ret = -1;
+		goto error;
+	}
+
+	ret = lttng_rotate_session_attr_set_session_name(session.attr,
+			session.name);
+	ok(ret == 0, "Set rotate session name attribute to %s", session.name);
+
+	notification_channel = lttng_notification_channel_create(
+			lttng_session_daemon_notification_endpoint);
+	if (!notification_channel) {
+		diag("Failed to create notification channel");
+		ret = -1;
+		goto error;
+	}
+
+	ret = setup_rotation_trigger(&session, notification_channel);
+	if (ret) {
+		goto error;
+	}
 error:
+	lttng_rotate_session_attr_destroy(session.attr);
+	lttng_notification_channel_destroy(notification_channel);
 	return ret;
 }
 

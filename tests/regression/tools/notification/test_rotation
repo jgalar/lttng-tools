@@ -55,6 +55,7 @@ done
 $CURDIR/rotation $SESSION_NAME $SESSION_OUTPUT_PATH
 if [ $? -ne 0 ]; then
 	diag "Failed to run rotation notification client"
+	exit 1
 fi
 
 stop_lttng_sessiond_notap
