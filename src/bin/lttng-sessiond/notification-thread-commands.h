@@ -24,6 +24,7 @@
 #include "notification-thread.h"
 #include "notification-thread-internal.h"
 #include "notification-thread-events.h"
+#include "consumer.h"
 #include <common/waiter.h>
 
 struct notification_thread_data;
@@ -36,6 +37,8 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_DESTROY_SESSION,
 	NOTIFICATION_COMMAND_TYPE_ADD_CHANNEL,
 	NOTIFICATION_COMMAND_TYPE_REMOVE_CHANNEL,
+	NOTIFICATION_COMMAND_TYPE_BEGIN_ROTATION,
+	NOTIFICATION_COMMAND_TYPE_END_ROTATION,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 };
 
@@ -73,6 +76,28 @@ struct notification_thread_command {
 			uint64_t key;
 			enum lttng_domain_type domain;
 		} remove_channel;
+		/* Mark session rotation beginning. */
+		struct {
+			struct {
+				const char *name;
+				uid_t uid;
+				gid_t gid;
+			} session;
+			uint64_t id;
+		} begin_rotation;
+		/* Mark session rotation end. */
+		struct {
+			const char *session_name;
+			uint64_t id;
+			enum consumer_dst_type destination_type;
+			/*
+			 * path is relative to the relayd output
+			 * if destination_type is CONSUMER_DST_NET.
+			 * path is absolute if destination_type is
+			 * CONSUMER_DST_LOCAL.
+			 */
+			const char *path;
+		} end_rotation;
 	} parameters;
 
 	/* lttng_waiter on which to wait for command reply (optional). */
@@ -104,6 +129,16 @@ enum lttng_error_code notification_thread_command_add_channel(
 enum lttng_error_code notification_thread_command_remove_channel(
 		struct notification_thread_handle *handle,
 		uint64_t key, enum lttng_domain_type domain);
+
+enum lttng_error_code notification_thread_command_begin_session_rotation(
+		struct notification_thread_handle *handle,
+		const char *session_name, uid_t uid, gid_t gid, uint64_t id);
+
+enum lttng_error_code notification_thread_command_end_session_rotation(
+		struct notification_thread_handle *handle,
+		const char *session_name, uint64_t id,
+		enum consumer_dst_type destination_type,
+		const char *path);
 
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle);

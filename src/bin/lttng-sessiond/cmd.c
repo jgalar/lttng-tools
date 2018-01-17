@@ -4331,13 +4331,15 @@ int cmd_set_session_shm_path(struct ltt_session *session,
  * Return LTTNG_OK on success or else a LTTNG_ERR code.
  */
 int cmd_rotate_session(struct ltt_session *session,
-		struct lttng_rotate_session_return **rotate_return, bool manual)
+		struct lttng_rotate_session_return **rotate_return, bool manual,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 	struct tm *timeinfo;
 	char datetime[16];
 	time_t now;
 	bool ust_active = false;
+	enum lttng_error_code notification_ret;
 
 	assert(session);
 
@@ -4537,6 +4539,14 @@ int cmd_rotate_session(struct ltt_session *session,
 	if (rotate_return) {
 		(*rotate_return)->rotate_id = session->rotate_count;
 		(*rotate_return)->status = LTTNG_ROTATE_STARTED;
+	}
+
+	notification_ret = notification_thread_command_begin_session_rotation(
+			notification_thread_handle, session->name, session->uid,
+			session->gid, session->rotate_count);
+	if (notification_ret != LTTNG_OK) {
+		ERR("Failed to notify of beginning of rotation of session \"%s\"",
+				session->name);
 	}
 
 	DBG("Cmd rotate session %s, rotate_id %" PRIu64 " sent", session->name,

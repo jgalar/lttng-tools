@@ -210,6 +210,62 @@ end:
 	return ret_code;
 }
 
+enum lttng_error_code notification_thread_command_begin_session_rotation(
+		struct notification_thread_handle *handle,
+		const char *session_name, uid_t uid, gid_t gid,
+		uint64_t rotation_id)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_BEGIN_ROTATION;
+	cmd.parameters.begin_rotation.session.name = session_name;
+	cmd.parameters.begin_rotation.session.uid = uid;
+	cmd.parameters.begin_rotation.session.gid = gid;
+	cmd.parameters.begin_rotation.id = rotation_id;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
+enum lttng_error_code notification_thread_command_end_session_rotation(
+		struct notification_thread_handle *handle,
+		const char *session_name,
+		uint64_t rotation_id,
+		enum consumer_dst_type destination_type,
+		const char *path)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_END_ROTATION;
+	cmd.parameters.end_rotation.session_name = session_name;
+	cmd.parameters.end_rotation.id = rotation_id;
+	cmd.parameters.end_rotation.destination_type = destination_type;
+	cmd.parameters.end_rotation.path = path;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle)
 {

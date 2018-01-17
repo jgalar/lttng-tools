@@ -325,19 +325,147 @@ ssize_t lttng_condition_session_rotation_completed_create_from_buffer(
 
 static
 struct lttng_evaluation *lttng_evaluation_session_rotation_create(
-		enum lttng_condition_type type, uint64_t id, const char *uri)
+		enum lttng_condition_type type, uint64_t id,
+		struct lttng_trace_chunk_archive_location *location)
 {
 	struct lttng_evaluation_session_rotation *evaluation;
 
 	evaluation = zmalloc(sizeof(struct lttng_evaluation_session_rotation));
 	if (!evaluation) {
-		return NULL;
+		goto error;
 	}
 
 	memcpy(&evaluation->parent, &rotation_evaluation_template,
-			sizeof(*evaluation));
+			sizeof(rotation_evaluation_template));
+	if (type == LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED &&
+			!location) {
+		goto error;
+	}
+	if (type == LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING &&
+			location) {
+		goto error;
+	}
 	lttng_evaluation_init(&evaluation->parent, type);
+	evaluation->location = location;
+	evaluation->id = id;
 	return &evaluation->parent;
+error:
+	lttng_evaluation_destroy(&evaluation->parent);
+	return NULL;
+}
+
+LTTNG_HIDDEN
+void lttng_trace_chunk_archive_location_destroy(
+		struct lttng_trace_chunk_archive_location *location)
+{
+	if (!location) {
+		return;
+	}
+	free(location->path);
+	free(location);
+}
+
+static
+struct lttng_trace_chunk_archive_location *
+lttng_trace_chunk_archive_location_create(
+		enum lttng_trace_chunk_archive_location_type type,
+		const char *path)
+{
+	struct lttng_trace_chunk_archive_location *location = NULL;
+
+	if (!path) {
+		goto end;
+	}
+
+	switch (type) {
+	case LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_LOCAL:
+	case LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_RELAYD:
+		break;
+	default:
+		abort();
+	}
+
+	location = zmalloc(sizeof(*location));
+	if (!location) {
+		goto end;
+	}
+
+	location->type = type;
+	location->path = strdup(path);
+	if (!location->path) {
+		goto error;
+	}
+end:
+	return location;
+error:
+	lttng_trace_chunk_archive_location_destroy(location);
+	return NULL;
+}
+
+LTTNG_HIDDEN
+struct lttng_trace_chunk_archive_location *
+lttng_trace_chunk_archive_location_local_create(const char *path)
+{
+	return lttng_trace_chunk_archive_location_create(
+			LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_LOCAL, path);
+}
+
+LTTNG_HIDDEN
+struct lttng_trace_chunk_archive_location *
+lttng_trace_chunk_archive_location_relayd_create(const char *path)
+{
+	return lttng_trace_chunk_archive_location_create(
+			LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_RELAYD, path);
+}
+
+static
+struct lttng_trace_chunk_archive_location *
+create_trace_chunk_archive_location_from_buffer(
+		const struct lttng_buffer_view *view)
+{
+	struct lttng_trace_chunk_archive_location *location = NULL;
+	const struct lttng_trace_chunk_archive_location_comm *location_comm;
+	struct lttng_buffer_view location_path_view;
+	const char *path;
+
+	if (view->size < sizeof(*location_comm)) {
+		/*
+		 * Not enough space left in buffer to contain a
+		 * location.
+		 */
+		goto end;
+	}
+
+	location_comm = (const struct lttng_trace_chunk_archive_location_comm *) view->data;
+	location_path_view = lttng_buffer_view_from_view(
+			view, sizeof(*location_comm), -1);
+	/*
+	 * Ensure that the remainder of the received buffer can
+	 * accomodate the path that is advertised.
+	 */
+	if (location_path_view.size < location_comm->path_len) {
+		goto end;
+	}
+
+	path = (const char *) location_path_view.data;
+	if (path[location_comm->path_len - 1] != '\0') {
+		goto end;
+	}
+
+	switch ((enum lttng_trace_chunk_archive_location_type) location_comm->type) {
+	case LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_LOCAL:
+		location = lttng_trace_chunk_archive_location_local_create(
+				path);
+		break;
+	case LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_RELAYD:
+		location = lttng_trace_chunk_archive_location_relayd_create(
+				path);
+		break;
+	default:
+		goto end;
+	}
+end:
+	return location;
 }
 
 static
@@ -346,6 +474,7 @@ struct lttng_evaluation *create_evaluation_from_buffer(
 		const struct lttng_buffer_view *view)
 {
 	struct lttng_evaluation *evaluation = NULL;
+	struct lttng_trace_chunk_archive_location *location = NULL;
 	const struct lttng_evaluation_session_rotation_comm *comm =
 			(const struct lttng_evaluation_session_rotation_comm *) view->data;
 
@@ -353,20 +482,34 @@ struct lttng_evaluation *create_evaluation_from_buffer(
 		goto end;
 	}
 
-	if (view->size < (sizeof(*comm) + comm->uri_len)) {
-		goto end;
-	}
+	if (type == LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED) {
+		/*
+		 * A session rotation completed evaluation has a
+		 * lttng_trace_chunk_archive_location.
+		 */
+		const struct lttng_buffer_view location_view =
+				lttng_buffer_view_from_view(view, sizeof(*comm),
+				-1);
 
-	if (comm->uri[comm->uri_len - 1] != '\0') {
-		goto end;
-	}
-
-	if (strlen(comm->uri) != comm->uri_len - 1) {
-		goto end;
+		location = create_trace_chunk_archive_location_from_buffer(
+				&location_view);
+		if (!location) {
+			goto end;
+		}
 	}
 
 	evaluation = lttng_evaluation_session_rotation_create(type, comm->id,
-			comm->uri);
+			location);
+	if (!evaluation) {
+		lttng_trace_chunk_archive_location_destroy(location);
+	} else {
+		struct lttng_evaluation_session_rotation *rotation_evaluation =
+				container_of(evaluation,
+				struct lttng_evaluation_session_rotation,
+				parent);
+
+		rotation_evaluation->owns_location = true;
+	}
 end:
 	return evaluation;
 }
@@ -421,20 +564,21 @@ ssize_t lttng_evaluation_session_rotation_completed_create_from_buffer(
 
 LTTNG_HIDDEN
 struct lttng_evaluation *lttng_evaluation_session_rotation_ongoing_create(
-		uint64_t id, const char *uri)
+		uint64_t id)
 {
 	return lttng_evaluation_session_rotation_create(
 			LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING, id,
-			uri);
+			NULL);
 }
 
 LTTNG_HIDDEN
 struct lttng_evaluation *lttng_evaluation_session_rotation_completed_create(
-		uint64_t id, const char *uri)
+		uint64_t id,
+		struct lttng_trace_chunk_archive_location *location)
 {
 	return lttng_evaluation_session_rotation_create(
 			LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED, id,
-			uri);
+		        location);
 }
 
 enum lttng_condition_status
@@ -495,23 +639,39 @@ ssize_t lttng_evaluation_session_rotation_serialize(
 {
 	ssize_t ret;
 	struct lttng_evaluation_session_rotation *rotation;
-	size_t uri_len;
+	const char *location_path = NULL;
+	size_t location_path_len;
 
 	rotation = container_of(evaluation,
 			struct lttng_evaluation_session_rotation, parent);
-	uri_len = strlen(rotation->uri) + 1;
+	ret = sizeof(struct lttng_evaluation_session_rotation_comm);
 
-	if (buf) {
-		struct lttng_evaluation_session_rotation_comm comm = {
-			.id = rotation->id,
-			.uri_len = uri_len,
-		};
-
-		memcpy(buf, &comm, sizeof(comm));
-		memcpy(buf + sizeof(comm), rotation->uri, uri_len);
+	if (rotation->location) {
+		location_path = rotation->location->path;
+		location_path_len = strlen(rotation->location->path) + 1;
+		ret += sizeof(struct lttng_trace_chunk_archive_location_comm) +
+				location_path_len;
 	}
 
-	ret = sizeof(struct lttng_evaluation_session_rotation_comm) + uri_len;
+	if (buf) {
+		struct lttng_evaluation_session_rotation_comm evaluation_comm = {
+			.id = rotation->id,
+		};
+
+		memcpy(buf, &evaluation_comm, sizeof(evaluation_comm));
+		buf += sizeof(evaluation_comm);
+		if (rotation->location) {
+			struct lttng_trace_chunk_archive_location_comm location_comm = {
+				.type = (uint8_t) rotation->location->type,
+				.path_len = location_path_len,
+			};
+
+			memcpy(buf, &location_comm, sizeof(location_comm));
+			buf += sizeof(location_comm);
+			memcpy(buf, location_path, location_path_len);
+		}
+	}
+
 	return ret;
 }
 
@@ -523,7 +683,7 @@ void lttng_evaluation_session_rotation_destroy(
 
 	rotation = container_of(evaluation,
 			struct lttng_evaluation_session_rotation, parent);
-	free(rotation->uri);
+	lttng_trace_chunk_archive_location_destroy(rotation->location);
 	free(rotation);
 }
 
@@ -547,22 +707,26 @@ end:
 }
 
 enum lttng_evaluation_status
-lttng_evaluation_session_rotation_get_location(
+lttng_evaluation_session_rotation_completed_get_location(
 		const struct lttng_evaluation *evaluation,
-		const char **rotation_uri)
+		const struct lttng_trace_chunk_archive_location **location)
 {
 	const struct lttng_evaluation_session_rotation *rotation;
 	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;
 
-	if (!evaluation || !rotation_uri ||
-			!is_rotation_evaluation(evaluation)) {
+	if (!evaluation || !location ||
+			evaluation->type != LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED) {
 		status = LTTNG_EVALUATION_STATUS_INVALID;
 		goto end;
 	}
 
 	rotation = container_of(evaluation,
 			struct lttng_evaluation_session_rotation, parent);
-	*rotation_uri = rotation->uri;
+	if (!rotation->location) {
+		status = LTTNG_EVALUATION_STATUS_UNSET;
+		goto end;
+	}
+	*location = rotation->location;
 end:
 	return status;
 }

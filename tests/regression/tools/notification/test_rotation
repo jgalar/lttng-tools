@@ -23,7 +23,8 @@ TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 
 SESSION_NAME="my_session"
-SESSION_OUTPUT_PATH=$(mktemp -d)/output
+TMP_DIR=$(mktemp -d)
+SESSION_OUTPUT_PATH=$TMP_DIR/output
 EVENT_NAME="tp:tptest"
 
 PAGE_SIZE=$(getconf PAGE_SIZE)
@@ -37,12 +38,14 @@ NR_USEC_WAIT=5
 DIR=$(readlink -f $TESTDIR)
 
 source $TESTDIR/utils/utils.sh
-start_lttng_sessiond_notap
+#start_lttng_sessiond_notap
 
 create_lttng_session_notap $SESSION_NAME $SESSION_OUTPUT_PATH
 
 enable_ust_lttng_channel_notap $SESSION_NAME $CHANNEL_NAME --subbuf-size=$SUBBUF_SIZE
 enable_ust_lttng_event_notap $SESSION_NAME $EVENT_NAME $CHANNEL_NAME
+
+start_lttng_tracing_notap $SESSION_NAME
 
 $TESTAPP_BIN $NR_ITER $NR_USEC_WAIT $FILE_SYNC_AFTER_FIRST_EVENT &
 APP_PID=$!
@@ -55,15 +58,16 @@ done
 $CURDIR/rotation $SESSION_NAME $SESSION_OUTPUT_PATH
 if [ $? -ne 0 ]; then
 	diag "Failed to run rotation notification client"
-	exit 1
 fi
 
-stop_lttng_sessiond_notap
+stop_lttng_tracing_notap $SESSION_NAME
+
+#stop_lttng_sessiond_notap
 
 # On ungraceful kill the app is cleaned up via the full_cleanup call
 # Suppress kill message
 kill -9 $APP_PID
 wait $APP_PID 2> /dev/null
 
-rm -rf $TEMP_PATH
-rm ${consumerd_pipe[@]} 2> /dev/null
+rm -rf $TMP_DIR
+rm $FILE_SYNC_AFTER_FIRST_EVENT 2> /dev/null

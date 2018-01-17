@@ -41,11 +41,25 @@ struct session_info {
 	/* Node in the notification thread state's sessions_ht. */
 	struct cds_lfht_node sessions_ht_node;
 	uint64_t consumed_data_size;
+	struct {
+		/* Whether a rotation is ongoing for this session. */
+		bool ongoing;
+		/* Identifier of the currently ongoing rotation. */
+		uint64_t id;
+		/* Location of the last completed rotation. */
+		struct lttng_trace_chunk_archive_location *location;
+	} rotation;
 	/*
-	 * Back-reference (weak) to the thread's sesssions_ht. Only used for
-	 * the session_info to remove itself from the sessions_ht.
+	 * Back-reference (weak) to the thread's sesssions_ht. Only used by
+	 * the session_info to remove itself from the sessions_ht on destruction.
 	 */
 	struct cds_lfht *sessions_ht;
+	/*
+	 * Back-reference (weak) to the thread's sesssion_triggers_ht. Only used
+	 * by the session_info to remove its trigger list from the
+	 * session_triggers_ht on destruction.
+	 */
+	struct cds_lfht *session_triggers_ht;
 };
 
 struct channel_info {

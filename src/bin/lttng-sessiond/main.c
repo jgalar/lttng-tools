@@ -4132,7 +4132,8 @@ error_add_context:
 			goto error;
 		}
 
-		ret = cmd_rotate_session(cmd_ctx->session, &rotate_return, true);
+		ret = cmd_rotate_session(cmd_ctx->session, &rotate_return, true,
+				notification_thread_handle);
 		if (ret < 0) {
 			ret = -ret;
 			goto error;

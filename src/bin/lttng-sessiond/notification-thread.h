@@ -73,6 +73,14 @@ struct notification_thread_handle {
  *             moment.
  *             This hash table owns the list, but not the triggers themselves.
  *
+ *   - session_triggers_ht:
+ *             associates a session name to a list of
+ *             struct lttng_trigger_list_nodes. The triggers in this list are
+ *             those that have conditions that apply to this session.
+ *             A session entry is only created when a session is created; the
+ *             list of triggers applying the session is built at that moment.
+ *             This hash table owns the list, but not the triggers themselves.
+ *
  *   - channel_state_ht:
  *             associates a pair (channel key, channel domain) to its last
  *             sampled state received from the consumer daemon
@@ -137,6 +145,7 @@ struct notification_thread_handle {
  *        - add list of clients (even if it is empty) to the
  *          notification_trigger_clients_ht,
  *    - add trigger to channel_triggers_ht (if applicable),
+ *    - add trigger to session_triggers_ht (if applicable),
  *    - add trigger to triggers_ht
  *    - evaluate the trigger's condition right away to react if that condition
  *      is true from the beginning.
@@ -145,6 +154,7 @@ struct notification_thread_handle {
  *    - if the trigger's action is of type "notify",
  *      - remove the trigger from the notification_trigger_clients_ht,
  *    - remove trigger from channel_triggers_ht (if applicable),
+ *    - remove trigger from session_triggers_ht (if applicable),
  *    - remove trigger from triggers_ht
  *
  * 5) Reception of a channel monitor sample from the consumer daemon
@@ -173,12 +183,29 @@ struct notification_thread_handle {
  *    - Remove the condition from the client's list of subscribed conditions,
  *    - Look-up notification_trigger_clients_ht and remove the client
  *      from the list of clients.
+ *
+ * 10) Beginning of a rotation
+ *    - look-up the session and mark it as having a rotation ongoing,
+ *    - evaluate the conditions associated with the triggers found in the
+ *      session_triggers_ht,
+ *      - if a condition evaluates to "true" and the condition is of type
+ *        "notify", query the notification_trigger_clients_ht and send
+ *        a notification to the clients.
+ *
+ * 11) End of a rotation
+ *    - look-up the session and mark it as having a rotation ongoing,
+ *    - evaluate the conditions associated with the triggers found in the
+ *      session_triggers_ht,
+ *      - if a condition evaluates to "true" and the condition is of type
+ *        "notify", query the notification_trigger_clients_ht and send
+ *        a notification to the clients.
  */
 struct notification_thread_state {
 	int notification_channel_socket;
 	struct lttng_poll_event events;
 	struct cds_lfht *client_socket_ht;
 	struct cds_lfht *channel_triggers_ht;
+	struct cds_lfht *session_triggers_ht;
 	struct cds_lfht *channel_state_ht;
 	struct cds_lfht *notification_trigger_clients_ht;
 	struct cds_lfht *channels_ht;

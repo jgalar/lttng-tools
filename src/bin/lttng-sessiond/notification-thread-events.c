@@ -33,6 +33,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
 #include <lttng/condition/session-consumed-size-internal.h>
+#include <lttng/condition/session-rotation-internal.h>
 #include <lttng/notification/channel-internal.h>
 
 #include <time.h>
@@ -59,6 +60,16 @@ struct lttng_channel_trigger_list {
 	struct channel_key channel_key;
 	struct cds_list_head list;
 	struct cds_lfht_node channel_triggers_ht_node;
+};
+
+struct lttng_session_trigger_list {
+	/*
+	 * Points to the session_info's session name. This assumes that the
+	 * session_info always outlives the session trigger list.
+	 */
+	const char *session_name;
+	struct cds_list_head list;
+	struct cds_lfht_node session_triggers_ht_node;
 };
 
 struct lttng_trigger_ht_element {
@@ -157,7 +168,8 @@ struct channel_state_sample {
 };
 
 static unsigned long hash_channel_key(struct channel_key *key);
-static int evaluate_condition(const struct lttng_condition *condition,
+static int evaluate_channel_bound_condition(
+		const struct lttng_condition *condition,
 		struct lttng_evaluation **evaluation,
 		const struct notification_thread_state *state,
 		const struct channel_state_sample *previous_sample,
@@ -165,6 +177,11 @@ static int evaluate_condition(const struct lttng_condition *condition,
 		uint64_t previous_session_consumed_total,
 		uint64_t latest_session_consumed_total,
 		struct channel_info *channel_info);
+static int evaluate_session_bound_condition(
+		const struct lttng_condition *condition,
+		struct lttng_evaluation **evaluation,
+		const struct notification_thread_state *state,
+		struct session_info *session_info);
 static
 int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		struct lttng_evaluation *evaluation,
@@ -181,7 +198,7 @@ static
 void session_info_put(struct session_info *session_info);
 static
 struct session_info *session_info_create(const char *name,
-		uid_t uid, gid_t gid, struct cds_lfht *sessions_ht);
+		uid_t uid, gid_t gid, struct notification_thread_state *state);
 static
 void session_info_add_channel(struct session_info *session_info,
 		struct channel_info *channel_info);
@@ -213,6 +230,18 @@ int match_channel_trigger_list(struct cds_lfht_node *node, const void *key)
 
 	return !!((channel_key->key == trigger_list->channel_key.key) &&
 			(channel_key->domain == trigger_list->channel_key.domain));
+}
+
+static
+int match_session_trigger_list(struct cds_lfht_node *node, const void *key)
+{
+	const char *session_name = (const char *) key;
+	struct lttng_session_trigger_list *trigger_list;
+
+	trigger_list = caa_container_of(node, struct lttng_session_trigger_list,
+			session_triggers_ht_node);
+
+	return !strcmp(session_name, trigger_list->session_name);
 }
 
 static
@@ -344,6 +373,18 @@ unsigned long lttng_condition_session_consumed_size_hash(
 	return hash;
 }
 
+static
+unsigned long lttng_condition_session_rotation_hash(
+	struct lttng_condition *_condition)
+{
+	struct lttng_condition_session_rotation *condition;
+
+	condition = container_of(_condition,
+			struct lttng_condition_session_rotation, parent);
+	assert(condition->session_name);
+	return hash_key_str(condition->session_name, lttng_ht_seed);
+}
+
 /*
  * The lttng_condition hashing code is kept in this file (rather than
  * condition.c) since it makes use of GPLv2 code (hashtable utils), which we
@@ -358,6 +399,9 @@ unsigned long lttng_condition_hash(struct lttng_condition *condition)
 		return lttng_condition_buffer_usage_hash(condition);
 	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
 		return lttng_condition_session_consumed_size_hash(condition);
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
+		return lttng_condition_session_rotation_hash(condition);
 	default:
 		ERR("[notification-thread] Unexpected condition type caught");
 		abort();
@@ -392,10 +436,15 @@ void channel_info_destroy(struct channel_info *channel_info)
 	free(channel_info);
 }
 
-/* Don't call directly, use the ref-counting mechanism. */
+/*
+ * Don't call directly, use the ref-counting mechanism.
+ * RCU read lock must be held by the caller.
+ */
 static
 void session_info_destroy(void *_data)
 {
+	struct cds_lfht_iter iter;
+	struct cds_lfht_node *node;
 	struct session_info *session_info = _data;
 
 	assert(session_info);
@@ -403,9 +452,22 @@ void session_info_destroy(void *_data)
 		cds_lfht_destroy(session_info->channel_infos_ht, NULL);
 	}
 	cds_lfht_del(session_info->sessions_ht, &session_info->sessions_ht_node);
+
+	/* Trigger applies to a known session. */
+	cds_lfht_lookup(session_info->session_triggers_ht,
+			hash_key_str(session_info->name, lttng_ht_seed),
+			match_session_trigger_list,
+			session_info->name,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	assert(node);
+	cds_lfht_del(session_info->session_triggers_ht, node);
+
 	DBG("[notification-thread] Destroyed session info structure of session \"%s\"",
 			session_info->name);
 	free(session_info->name);
+	lttng_trace_chunk_archive_location_destroy(
+			session_info->rotation.location);
 	free(session_info);
 }
 
@@ -428,15 +490,116 @@ void session_info_put(struct session_info *session_info)
 }
 
 static
-struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid,
-		struct cds_lfht *sessions_ht)
+const char *get_condition_session_name(const struct lttng_condition *condition)
 {
+	enum lttng_condition_status status;
+	const char *session_name = NULL;
+
+	switch (lttng_condition_get_type(condition)) {
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
+		status = lttng_condition_session_rotation_get_session_name(
+				condition, &session_name);
+		if (status != LTTNG_CONDITION_STATUS_OK) {
+			ERR("Failed to get session name from session rotation condition");
+			goto end;
+		}
+		break;
+	default:
+		abort();
+	}
+end:
+	return session_name;
+}
+
+static
+bool trigger_applies_to_session(struct lttng_trigger *trigger,
+		struct session_info *session_info)
+{
+	const char *condition_session_name;
+	const struct lttng_condition *condition =
+			lttng_trigger_get_condition(trigger);
+
+	condition_session_name = get_condition_session_name(condition);
+	assert(condition_session_name);
+	return !strcmp(condition_session_name, session_info->name);
+}
+
+static
+bool is_channel_bound_condition(const struct lttng_condition *condition)
+{
+	enum lttng_condition_type condition_type = lttng_condition_get_type(
+			condition);
+
+	switch (condition_type) {
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static
+bool is_session_bound_condition(const struct lttng_condition *condition)
+{
+	return !is_channel_bound_condition(condition);
+}
+
+static
+int match_session_info(struct cds_lfht_node *node, const void *key)
+{
+	const char *name = key;
+	struct session_info *session_info = caa_container_of(
+		node, struct session_info, sessions_ht_node);
+
+	return !strcmp(session_info->name, name);
+}
+
+/* RCU read lock must be held by the caller. */
+static
+struct session_info *find_session_info(struct notification_thread_state *state,
+		const char *name)
+{
+	struct session_info *session = NULL;
+	struct cds_lfht_node *node;
+	struct cds_lfht_iter iter;
+
+	cds_lfht_lookup(state->sessions_ht,
+			hash_key_str(name, lttng_ht_seed),
+			match_session_info,
+			name,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (node) {
+		DBG("[notification-thread] Found session info of session \"%s\"",
+				name);
+		session = caa_container_of(node, struct session_info,
+				sessions_ht_node);
+		session_info_get(session);
+	}
+	return session;
+}
+
+static
+struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid,
+		struct notification_thread_state *state)
+{
+	struct cds_list_head trigger_list;
+	struct cds_lfht_iter iter;
+	struct lttng_session_trigger_list *session_trigger_list = NULL;
+	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
 	struct session_info *session_info;
+	unsigned int trigger_count = 0;
 
 	assert(name);
 
+	CDS_INIT_LIST_HEAD(&trigger_list);
+
 	session_info = zmalloc(sizeof(*session_info));
 	if (!session_info) {
+		ERR("Failed to allocate session_info structure");
 		goto end;
 	}
 	lttng_ref_init(&session_info->ref, session_info_destroy);
@@ -444,27 +607,89 @@ struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid,
 	session_info->channel_infos_ht = cds_lfht_new(DEFAULT_HT_SIZE,
 			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
 	if (!session_info->channel_infos_ht) {
+		ERR("Failed to allocate channel_infos_ht of session_info structure");
 		goto error;
 	}
 
 	cds_lfht_node_init(&session_info->sessions_ht_node);
 	session_info->name = strdup(name);
 	if (!session_info->name) {
+		ERR("Failed to allocate session name while creating session info structure");
 		goto error;
 	}
 	session_info->uid = uid;
 	session_info->gid = gid;
-	session_info->sessions_ht = sessions_ht;
+	session_info->sessions_ht = state->sessions_ht;
+	session_info->session_triggers_ht = state->session_triggers_ht;
+
 	rcu_read_lock();
-	cds_lfht_add(sessions_ht,
+
+	/* Build a list of triggers applying to the new session. */
+	cds_lfht_for_each_entry(state->triggers_ht, &iter, trigger_ht_element,
+			node) {
+		struct lttng_trigger_list_element *new_element;
+
+		if (!trigger_applies_to_session(trigger_ht_element->trigger,
+				session_info)) {
+			continue;
+		}
+
+		new_element = zmalloc(sizeof(*new_element));
+		if (!new_element) {
+			ERR("Failed to allocate element of session trigger list");
+			goto error_unlock;
+		}
+		CDS_INIT_LIST_HEAD(&new_element->node);
+		new_element->trigger = trigger_ht_element->trigger;
+		cds_list_add(&new_element->node, &trigger_list);
+		trigger_count++;
+	}
+
+	DBG("[notification-thread] Found %i triggers that apply to session \"%s\"",
+			trigger_count, name);
+
+	session_trigger_list = zmalloc(sizeof(*session_trigger_list));
+	if (!session_trigger_list) {
+		ERR("Failed to allocate session trigger list");
+		goto error_unlock;
+	}
+
+	session_trigger_list->session_name = session_info->name;
+	CDS_INIT_LIST_HEAD(&session_trigger_list->list);
+	cds_lfht_node_init(&session_trigger_list->session_triggers_ht_node);
+	cds_list_splice(&trigger_list, &session_trigger_list->list);
+
+	/*
+	 * Add the list of triggers associated with this channel to the
+	 * session_triggers_ht.
+	 */
+	cds_lfht_add(state->session_triggers_ht,
+			hash_key_str(session_trigger_list->session_name,
+				lttng_ht_seed),
+			&session_trigger_list->session_triggers_ht_node);
+
+	cds_lfht_add(state->sessions_ht,
 			hash_key_str(name, lttng_ht_seed),
 			&session_info->sessions_ht_node);
 	rcu_read_unlock();
-	DBG("[notification-thread] Create session_info for session \"%s\"",
+	DBG("[notification-thread] Created session_info for session \"%s\"",
 			name);
 end:
 	return session_info;
+error_unlock:
+	rcu_read_unlock();
 error:
+	if (trigger_count > 0) {
+		struct lttng_trigger_list_element *element, *tmp;
+
+		/* Tear down the list of triggers. */
+		cds_list_for_each_entry_safe(element, tmp, &trigger_list,
+				node) {
+			cds_list_del(&element->node);
+			free(element);
+		}
+	}
+
 	session_info_put(session_info);
 	return NULL;
 }
@@ -531,8 +756,8 @@ error:
 
 /* This function must be called with the RCU read lock held. */
 static
-int evaluate_condition_for_client(struct lttng_trigger *trigger,
-		struct lttng_condition *condition,
+int evaluate_channel_bound_condition_for_client(struct lttng_trigger *trigger,
+		const struct lttng_condition *condition,
 		struct notification_client *client,
 		struct notification_thread_state *state)
 {
@@ -614,7 +839,7 @@ int evaluate_condition_for_client(struct lttng_trigger *trigger,
 		goto end;
 	}
 
-	ret = evaluate_condition(condition, &evaluation, state,
+	ret = evaluate_channel_bound_condition(condition, &evaluation, state,
 			NULL, last_sample,
 			0, channel_info->session_info->consumed_data_size,
 			channel_info);
@@ -650,6 +875,112 @@ int evaluate_condition_for_client(struct lttng_trigger *trigger,
 
 end:
 	return ret;
+}
+
+/* This function must be called with the RCU read lock held. */
+static
+int evaluate_session_bound_condition_for_client(struct lttng_trigger *trigger,
+		const struct lttng_condition *condition,
+		struct notification_client *client,
+		struct notification_thread_state *state)
+{
+	/*
+	 * TODO:
+	 *   - Evaluate on rotation begin,
+	 *   - Evaluate on rotation end,
+	 *   - This function (evaluate on trigger registration),
+	 *   - URI format,
+	 */
+	int ret = 0;
+	struct lttng_evaluation *evaluation;
+	struct session_info *session_info;
+	const char *session_name;
+	struct notification_client_list client_list = { 0 };
+	struct notification_client_list_element client_list_element = { 0 };
+
+	session_name = get_condition_session_name(condition);
+	if (!session_name) {
+		ret = -1;
+		goto end;
+	}
+
+	session_info = find_session_info(state, session_name);
+	if (!session_info) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = evaluate_session_bound_condition(condition, &evaluation, state,
+			session_info);
+	if (ret) {
+		WARN("[notification-thread] Fatal error occurred while evaluating a newly subscribed-to condition");
+		goto end;
+	}
+
+	if (!evaluation) {
+		/* Evaluation yielded nothing. Normal exit. */
+		DBG("[notification-thread] Newly subscribed-to condition evaluated to false, nothing to report to client");
+		goto end;
+	}
+
+	/*
+	 * Create a temporary client list with the client currently
+	 * subscribing.
+	 */
+	cds_lfht_node_init(&client_list.notification_trigger_ht_node);
+	CDS_INIT_LIST_HEAD(&client_list.list);
+	client_list.trigger = trigger;
+
+	CDS_INIT_LIST_HEAD(&client_list_element.node);
+	client_list_element.client = client;
+	cds_list_add(&client_list_element.node, &client_list.list);
+
+	/* Send evaluation result to the newly-subscribed client. */
+	DBG("[notification-thread] Newly subscribed-to condition evaluated to true, notifying client");
+	ret = send_evaluation_to_clients(trigger, evaluation, &client_list,
+			state, session_info->uid,
+			session_info->gid);
+end:
+	session_info_put(session_info);
+	return ret;
+}
+
+static
+int evaluate_condition_for_client(struct lttng_trigger *trigger,
+		const struct lttng_condition *condition,
+		struct notification_client *client,
+		struct notification_thread_state *state)
+{
+	int ret;
+
+	if (is_channel_bound_condition(condition)) {
+		ret = evaluate_channel_bound_condition_for_client(trigger,
+				condition, client, state);
+	} else if (is_session_bound_condition(condition)) {
+		ret = evaluate_session_bound_condition_for_client(trigger,
+				condition, client, state);
+	} else {
+		abort();
+	}
+
+	return ret;
+}
+
+static
+bool condition_must_be_initialy_evaluated(
+		const struct lttng_condition *condition)
+{
+	switch (lttng_condition_get_type(condition)) {
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
+		return true;
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
+		return false;
+	default:
+		abort();
+	}
 }
 
 static
@@ -717,16 +1048,19 @@ int notification_thread_client_subscribe(struct notification_client *client,
 
 	client_list = caa_container_of(node, struct notification_client_list,
 			notification_trigger_ht_node);
-	/*
-	 * The condition to which the client just subscribed is evaluated
-	 * at this point so that conditions that are already TRUE result
-	 * in a notification being sent out.
-	 */
-	if (evaluate_condition_for_client(client_list->trigger, condition,
-			client, state)) {
-		WARN("[notification-thread] Evaluation of a condition on client subscription failed, aborting.");
-		ret = -1;
-		goto end_unlock;
+
+	if (condition_must_be_initialy_evaluated(condition)) {
+		/*
+		 * The condition to which the client just subscribed is
+		 * evaluated at this point (if needed) so that conditions that
+		 * are already TRUE result in a notification being sent out.
+		 */
+		ret = evaluate_condition_for_client(client_list->trigger,
+				condition, client, state);
+		if (ret) {
+			WARN("[notification-thread] Evaluation of a condition on client subscription failed, aborting.");
+			goto end_unlock;
+		}
 	}
 
 	/*
@@ -994,41 +1328,6 @@ bool trigger_applies_to_client(struct lttng_trigger *trigger,
 }
 
 static
-int match_session(struct cds_lfht_node *node, const void *key)
-{
-	const char *name = key;
-	struct session_info *session_info = caa_container_of(
-		node, struct session_info, sessions_ht_node);
-
-	return !strcmp(session_info->name, name);
-}
-
-/* RCU read lock must be held by the caller. */
-static
-struct session_info *find_session_info(struct notification_thread_state *state,
-		const char *name)
-{
-	struct session_info *session = NULL;
-	struct cds_lfht_node *node;
-	struct cds_lfht_iter iter;
-
-	cds_lfht_lookup(state->sessions_ht,
-			hash_key_str(name, lttng_ht_seed),
-			match_session,
-			name,
-			&iter);
-	node = cds_lfht_iter_get_node(&iter);
-	if (node) {
-		DBG("[notification-thread] Found session info of session \"%s\"",
-				name);
-		session = caa_container_of(node, struct session_info,
-				sessions_ht_node);
-		session_info_get(session);
-	}
-	return session;
-}
-
-static
 int handle_notification_thread_command_add_channel(
 		struct notification_thread_state *state,
 		const char *session_name, const char *channel_name,
@@ -1044,7 +1343,7 @@ int handle_notification_thread_command_add_channel(
 	};
 	struct lttng_channel_trigger_list *channel_trigger_list = NULL;
 	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
-	int trigger_count = 0;
+	unsigned int trigger_count = 0;
 	struct cds_lfht_iter iter;
 	struct session_info *session_info = NULL;
 
@@ -1113,16 +1412,18 @@ int handle_notification_thread_command_add_channel(
 	*cmd_result = LTTNG_OK;
 	return 0;
 error:
+	/* FIXME elements may be leaked if zmalloc of new_element fails. */
 	channel_info_destroy(new_channel_info);
 	session_info_put(session_info);
+	rcu_read_unlock();
 	return 1;
 }
 
 static
 int handle_notification_thread_command_remove_channel(
-	struct notification_thread_state *state,
-	uint64_t channel_key, enum lttng_domain_type domain,
-	enum lttng_error_code *cmd_result)
+		struct notification_thread_state *state,
+		uint64_t channel_key, enum lttng_domain_type domain,
+		enum lttng_error_code *cmd_result)
 {
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
@@ -1200,6 +1501,213 @@ end:
 	return 0;
 }
 
+/* RCU read lock must be held by the caller. */
+static
+int evaluate_session_triggers(struct notification_thread_state *state,
+		struct session_info *session_info)
+{
+	int ret = 0;
+	struct cds_lfht_iter iter;
+	struct cds_lfht_node *node;
+	struct lttng_session_trigger_list *session_trigger_list;
+	struct lttng_trigger_list_element *trigger_list_element;
+
+	/* Handle triggers associated with this session. */
+	cds_lfht_lookup(state->session_triggers_ht,
+			hash_key_str(session_info->name, lttng_ht_seed),
+			match_session_trigger_list,
+			session_info->name,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (caa_likely(!node)) {
+		ERR("[notification-thread] Could not find list of triggers associated to session \"%s\"",
+				session_info->name);
+		ret = -1;
+		goto end;
+	}
+
+	session_trigger_list = caa_container_of(node,
+			struct lttng_session_trigger_list,
+			session_triggers_ht_node);
+	cds_list_for_each_entry(trigger_list_element,
+			&session_trigger_list->list, node) {
+		struct lttng_condition *condition;
+		struct lttng_action *action;
+		struct lttng_trigger *trigger;
+		struct notification_client_list *client_list;
+		struct lttng_evaluation *evaluation = NULL;
+
+		trigger = trigger_list_element->trigger;
+		condition = lttng_trigger_get_condition(trigger);
+		assert(condition);
+		action = lttng_trigger_get_action(trigger);
+
+		/* Notify actions are the only type currently supported. */
+		assert(lttng_action_get_type(action) ==
+				LTTNG_ACTION_TYPE_NOTIFY);
+
+		/*
+		 * Check if any client is subscribed to the result of this
+		 * evaluation.
+		 */
+		cds_lfht_lookup(state->notification_trigger_clients_ht,
+				lttng_condition_hash(condition),
+				match_client_list,
+				trigger,
+				&iter);
+		node = cds_lfht_iter_get_node(&iter);
+		assert(node);
+
+		client_list = caa_container_of(node,
+				struct notification_client_list,
+				notification_trigger_ht_node);
+		if (cds_list_empty(&client_list->list)) {
+			/*
+			 * No clients interested in the evaluation's result,
+			 * skip it.
+			 */
+			continue;
+		}
+
+		ret = evaluate_session_bound_condition(condition, &evaluation, state,
+				session_info);
+		if (caa_unlikely(ret)) {
+			goto end;
+		}
+
+		if (caa_likely(!evaluation)) {
+			continue;
+		}
+
+		/* Dispatch evaluation result to all clients. */
+		ret = send_evaluation_to_clients(trigger_list_element->trigger,
+				evaluation, client_list, state,
+				session_info->uid,
+				session_info->gid);
+		lttng_evaluation_destroy(evaluation);
+		if (caa_unlikely(ret)) {
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+static
+int handle_notification_thread_command_begin_rotation(
+		struct notification_thread_state *state,
+		const char *session_name, uint64_t rotation_id,
+		enum lttng_error_code *cmd_result)
+{
+	int ret = 0;
+	struct session_info *session_info;
+
+	rcu_read_lock();
+	DBG("[notification-thread] Begin rotation for session \"%s\", rotation id = %" PRIu64,
+			session_name, rotation_id);
+	session_info = find_session_info(state, session_name);
+	if (!session_info) {
+		ERR("[notification-thread] Session \"%s\" not found when beginning rotation",
+				session_name);
+		ret = -1;
+		goto end;
+	}
+
+	if (session_info->rotation.ongoing) {
+		ERR("[notification-thread] Inconsistent rotation state (already ongoing) for session \"%s\", previous id was %" PRIu64,
+				session_info->name, session_info->rotation.id);
+		ret = -1;
+		goto end;
+	}
+
+	session_info->rotation.ongoing = true;
+	session_info->rotation.id = rotation_id;
+	ret = evaluate_session_triggers(state, session_info);
+	if (ret) {
+		goto end;
+	}
+
+	*cmd_result = LTTNG_OK;
+end:
+	session_info_put(session_info);
+	session_info = NULL;
+	rcu_read_unlock();
+	return ret;
+}
+
+static
+int handle_notification_thread_command_end_rotation(
+		struct notification_thread_state *state,
+		const char *session_name, uint64_t rotation_id,
+		enum consumer_dst_type destination_type,
+		const char *path, enum lttng_error_code *cmd_result)
+{
+	int ret = 0;
+	struct session_info *session_info;
+	struct lttng_trace_chunk_archive_location *location = NULL;
+
+	rcu_read_lock();
+	DBG("[notification-thread] End rotation for session \"%s\", rotation id = %" PRIu64 ", %s output at path \"%s\"",
+			session_name, rotation_id,
+			destination_type == CONSUMER_DST_LOCAL ? "local" : "remote",
+			path);
+	session_info = find_session_info(state, session_name);
+	if (!session_info) {
+		ret = -1;
+		goto end;
+	}
+
+	if (!session_info->rotation.ongoing ||
+			rotation_id != session_info->rotation.id) {
+		ERR("[notification-thread] Inconsistent rotation state (no rotation ongoing) for session \"%s\"",
+				session_info->name);
+		ret = -1;
+		goto end;
+	}
+
+	switch (destination_type) {
+	case CONSUMER_DST_LOCAL:
+		assert(path[0] == '/');
+		location = lttng_trace_chunk_archive_location_local_create(
+				path);
+		break;
+	case CONSUMER_DST_NET:
+		assert(path[0] != '/');
+		location = lttng_trace_chunk_archive_location_relayd_create(
+				path);
+		break;
+	default:
+		ERR("[notification-thread] Unknown output destination type (%i) associated with session \"%s\"",
+				destination_type, session_name);
+		ret = -1;
+		goto end;
+	}
+
+	if (!location) {
+		ERR("[notification-thread] Failed to create trace chunk archive location");
+		goto end;
+	}
+
+	session_info->rotation.ongoing = false;
+	session_info->rotation.location = location;
+	ret = evaluate_session_triggers(state, session_info);
+	if (ret) {
+		goto end;
+	}
+
+	*cmd_result = LTTNG_OK;
+end:
+	if (session_info) {
+		lttng_trace_chunk_archive_location_destroy(
+				session_info->rotation.location);
+		session_info->rotation.location = NULL;
+		session_info_put(session_info);
+		session_info = NULL;
+	}
+	rcu_read_unlock();
+	return ret;
+}
+
 static
 int condition_is_supported(struct lttng_condition *condition)
 {
@@ -1239,6 +1747,177 @@ end:
 	return ret;
 }
 
+/* RCU read lock must be held by the caller. */
+static
+int bind_trigger_to_channel(struct notification_thread_state *state,
+		struct lttng_trigger *trigger,
+		struct notification_client_list *client_list)
+{
+	int ret = 0;
+	struct cds_lfht_iter iter;
+	struct channel_info *channel;
+	struct cds_lfht_node *node;
+	struct notification_client_list_element *client_list_element, *tmp;
+	struct lttng_condition *condition = lttng_trigger_get_condition(
+			trigger);
+
+	/*
+	 * Add the trigger to list of triggers bound to the channels currently
+	 * known.
+	 */
+	cds_lfht_for_each_entry(state->channels_ht, &iter, channel,
+			channels_ht_node) {
+		struct lttng_trigger_list_element *trigger_list_element;
+		struct lttng_channel_trigger_list *trigger_list;
+
+		if (!trigger_applies_to_channel(trigger, channel)) {
+			continue;
+		}
+
+		cds_lfht_lookup(state->channel_triggers_ht,
+				hash_channel_key(&channel->key),
+				match_channel_trigger_list,
+				&channel->key,
+				&iter);
+		node = cds_lfht_iter_get_node(&iter);
+		assert(node);
+		trigger_list = caa_container_of(node,
+				struct lttng_channel_trigger_list,
+				channel_triggers_ht_node);
+
+		trigger_list_element = zmalloc(sizeof(*trigger_list_element));
+		if (!trigger_list_element) {
+			ret = -1;
+			goto end;
+		}
+		CDS_INIT_LIST_HEAD(&trigger_list_element->node);
+		trigger_list_element->trigger = trigger;
+		cds_list_add(&trigger_list_element->node, &trigger_list->list);
+	}
+
+	/*
+	 * Since there is nothing preventing clients from subscribing to a
+	 * condition before the corresponding trigger is registered, we have
+	 * to evaluate this new condition right away.
+	 *
+	 * At some point, we were waiting for the next "evaluation" (e.g. on
+	 * reception of a channel sample) to evaluate this new condition, but
+	 * that was broken.
+	 *
+	 * The reason it was broken is that waiting for the next sample
+	 * does not allow us to properly handle transitions for edge-triggered
+	 * conditions.
+	 *
+	 * Consider this example: when we handle a new channel sample, we
+	 * evaluate each conditions twice: once with the previous state, and
+	 * again with the newest state. We then use those two results to
+	 * determine whether a state change happened: a condition was false and
+	 * became true. If a state change happened, we have to notify clients.
+	 *
+	 * Now, if a client subscribes to a given notification and registers
+	 * a trigger *after* that subscription, we have to make sure the
+	 * condition is evaluated at this point while considering only the
+	 * current state. Otherwise, the next evaluation cycle may only see
+	 * that the evaluations remain the same (true for samples n-1 and n) and
+	 * the client will never know that the condition has been met.
+	 */
+	if (!condition_must_be_initialy_evaluated(condition)) {
+		goto end;
+	}
+	cds_list_for_each_entry_safe(client_list_element, tmp,
+			&client_list->list, node) {
+		ret = evaluate_channel_bound_condition_for_client(trigger, condition,
+				client_list_element->client, state);
+		if (ret) {
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+/* RCU read lock must be held by the caller. */
+static
+int bind_trigger_to_session(struct notification_thread_state *state,
+		struct lttng_trigger *trigger,
+		struct notification_client_list *client_list)
+{
+	int ret = 0;
+	struct cds_lfht_iter iter;
+	struct session_info *session_info;
+	struct cds_lfht_node *node;
+	struct notification_client_list_element *client_list_element, *tmp;
+	struct lttng_trigger_list_element *trigger_list_element;
+	struct lttng_session_trigger_list *trigger_list;
+	const char *session_name;
+	struct lttng_condition *condition = lttng_trigger_get_condition(
+			trigger);
+
+	session_name = get_condition_session_name(condition);
+	session_info = find_session_info(state, session_name);
+	if (!session_info) {
+		/* Not an error, the session does not exist yet. */
+		goto end;
+	}
+
+	/* Trigger applies to a known session. */
+	cds_lfht_lookup(state->session_triggers_ht,
+			hash_key_str(session_name, lttng_ht_seed),
+			match_session_trigger_list,
+			session_name,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	assert(node);
+	trigger_list = caa_container_of(node,
+			struct lttng_session_trigger_list,
+			session_triggers_ht_node);
+
+	trigger_list_element = zmalloc(sizeof(*trigger_list_element));
+	if (!trigger_list_element) {
+		ret = -1;
+		goto end;
+	}
+
+	CDS_INIT_LIST_HEAD(&trigger_list_element->node);
+	trigger_list_element->trigger = trigger;
+	cds_list_add(&trigger_list_element->node, &trigger_list->list);
+
+	if (!condition_must_be_initialy_evaluated(condition)) {
+		goto end;
+	}
+	cds_list_for_each_entry_safe(client_list_element, tmp,
+			&client_list->list, node) {
+		ret = evaluate_session_bound_condition_for_client(trigger,
+				condition, client_list_element->client, state);
+		if (ret) {
+			goto end;
+		}
+	}
+end:
+	session_info_put(session_info);
+	return ret;
+}
+
+static
+int bind_trigger(struct notification_thread_state *state,
+		struct lttng_trigger *trigger,
+		struct notification_client_list *client_list)
+{
+	int ret;
+	const struct lttng_condition *condition = lttng_trigger_get_condition(
+			trigger);
+
+	if (is_channel_bound_condition(condition)) {
+		ret = bind_trigger_to_channel(state, trigger, client_list);
+	} else if (is_session_bound_condition(condition)) {
+		ret = bind_trigger_to_session(state, trigger, client_list);
+	} else {
+		abort();
+	}
+
+	return ret;
+}
+
 /*
  * FIXME A client's credentials are not checked when registering a trigger, nor
  *       are they stored alongside with the trigger.
@@ -1269,7 +1948,6 @@ int handle_notification_thread_command_register_trigger(
 	struct notification_client_list_element *client_list_element, *tmp;
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
-	struct channel_info *channel;
 	bool free_trigger = true;
 
 	rcu_read_lock();
@@ -1351,73 +2029,9 @@ int handle_notification_thread_command_register_trigger(
 			lttng_condition_hash(condition),
 			&client_list->notification_trigger_ht_node);
 
-	/*
-	 * Add the trigger to list of triggers bound to the channels currently
-	 * known.
-	 */
-	cds_lfht_for_each_entry(state->channels_ht, &iter, channel,
-			channels_ht_node) {
-		struct lttng_trigger_list_element *trigger_list_element;
-		struct lttng_channel_trigger_list *trigger_list;
-
-		if (!trigger_applies_to_channel(trigger, channel)) {
-			continue;
-		}
-
-		cds_lfht_lookup(state->channel_triggers_ht,
-				hash_channel_key(&channel->key),
-				match_channel_trigger_list,
-				&channel->key,
-				&iter);
-		node = cds_lfht_iter_get_node(&iter);
-		assert(node);
-		trigger_list = caa_container_of(node,
-				struct lttng_channel_trigger_list,
-				channel_triggers_ht_node);
-
-		trigger_list_element = zmalloc(sizeof(*trigger_list_element));
-		if (!trigger_list_element) {
-			ret = -1;
-			goto error_free_client_list;
-		}
-		CDS_INIT_LIST_HEAD(&trigger_list_element->node);
-		trigger_list_element->trigger = trigger;
-		cds_list_add(&trigger_list_element->node, &trigger_list->list);
-	}
-
-	/*
-	 * Since there is nothing preventing clients from subscribing to a
-	 * condition before the corresponding trigger is registered, we have
-	 * to evaluate this new condition right away.
-	 *
-	 * At some point, we were waiting for the next "evaluation" (e.g. on
-	 * reception of a channel sample) to evaluate this new condition, but
-	 * that was broken.
-	 *
-	 * The reason it was broken is that waiting for the next sample
-	 * does not allow us to properly handle transitions for edge-triggered
-	 * conditions.
-	 *
-	 * Consider this example: when we handle a new channel sample, we
-	 * evaluate each conditions twice: once with the previous state, and
-	 * again with the newest state. We then use those two results to
-	 * determine whether a state change happened: a condition was false and
-	 * became true. If a state change happened, we have to notify clients.
-	 *
-	 * Now, if a client subscribes to a given notification and registers
-	 * a trigger *after* that subscription, we have to make sure the
-	 * condition is evaluated at this point while considering only the
-	 * current state. Otherwise, the next evaluation cycle may only see
-	 * that the evaluations remain the same (true for samples n-1 and n) and
-	 * the client will never know that the condition has been met.
-	 */
-	cds_list_for_each_entry_safe(client_list_element, tmp,
-			&client_list->list, node) {
-		ret = evaluate_condition_for_client(trigger, condition,
-				client_list_element->client, state);
-		if (ret) {
-			goto error_free_client_list;
-		}
+	ret = bind_trigger(state, trigger, client_list);
+	if (ret) {
+		goto error_free_client_list;
 	}
 
 	/*
@@ -1449,37 +2063,15 @@ error:
 	return ret;
 }
 
+/* RCU read lock must be held by the caller. */
 static
-int handle_notification_thread_command_unregister_trigger(
-		struct notification_thread_state *state,
-		struct lttng_trigger *trigger,
-		enum lttng_error_code *_cmd_reply)
+void unbind_trigger_from_channel(struct notification_thread_state *state,
+		struct lttng_trigger *trigger)
 {
 	struct cds_lfht_iter iter;
-	struct cds_lfht_node *node, *triggers_ht_node;
 	struct lttng_channel_trigger_list *trigger_list;
-	struct notification_client_list *client_list;
-	struct notification_client_list_element *client_list_element, *tmp;
-	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
 	struct lttng_condition *condition = lttng_trigger_get_condition(
 			trigger);
-	struct lttng_action *action;
-	enum lttng_error_code cmd_reply;
-
-	rcu_read_lock();
-
-	cds_lfht_lookup(state->triggers_ht,
-			lttng_condition_hash(condition),
-			match_condition,
-			condition,
-			&iter);
-	triggers_ht_node = cds_lfht_iter_get_node(&iter);
-	if (!triggers_ht_node) {
-		cmd_reply = LTTNG_ERR_TRIGGER_NOT_FOUND;
-		goto end;
-	} else {
-		cmd_reply = LTTNG_OK;
-	}
 
 	/* Remove trigger from channel_triggers_ht. */
 	cds_lfht_for_each_entry(state->channel_triggers_ht, &iter, trigger_list,
@@ -1504,6 +2096,101 @@ int handle_notification_thread_command_unregister_trigger(
 			break;
 		}
 	}
+}
+
+/* RCU read lock must be held by the caller. */
+static
+void unbind_trigger_from_session(struct notification_thread_state *state,
+		struct lttng_trigger *trigger)
+{
+	struct cds_lfht_node *node;
+	struct cds_lfht_iter iter;
+	struct lttng_trigger_list_element *trigger_element, *tmp;
+	struct lttng_session_trigger_list *trigger_list;
+	const struct lttng_condition *condition = lttng_trigger_get_condition(
+			trigger);
+	const char *session_name = get_condition_session_name(condition);
+
+	assert(session_name);
+
+	cds_lfht_lookup(state->session_triggers_ht,
+			hash_key_str(session_name, lttng_ht_seed),
+			match_session_trigger_list,
+			session_name,
+			&iter);
+	node = cds_lfht_iter_get_node(&iter);
+	assert(node);
+	trigger_list = caa_container_of(node, struct lttng_session_trigger_list,
+			session_triggers_ht_node);
+
+	cds_list_for_each_entry_safe(trigger_element, tmp, &trigger_list->list,
+			node) {
+		struct lttng_condition *current_condition =
+			lttng_trigger_get_condition(
+				trigger_element->trigger);
+
+		assert(current_condition);
+		if (!lttng_condition_is_equal(condition,
+				current_condition)) {
+			continue;
+		}
+
+		DBG("[notification-thread] Removed trigger from session_triggers_ht");
+		cds_list_del(&trigger_element->node);
+		/* A trigger can only appear once per session trigger list. */
+		break;
+	}
+}
+
+/* RCU read lock must be held by the caller. */
+static
+void unbind_trigger(struct notification_thread_state *state,
+		struct lttng_trigger *trigger)
+{
+	const struct lttng_condition *condition = lttng_trigger_get_condition(
+			trigger);
+
+	if (is_channel_bound_condition(condition)) {
+		unbind_trigger_from_channel(state, trigger);
+	} else if (is_session_bound_condition(condition)) {
+		unbind_trigger_from_session(state, trigger);
+	} else {
+		abort();
+	}
+}
+
+static
+int handle_notification_thread_command_unregister_trigger(
+		struct notification_thread_state *state,
+		struct lttng_trigger *trigger,
+		enum lttng_error_code *_cmd_reply)
+{
+	struct cds_lfht_iter iter;
+	struct cds_lfht_node *node, *triggers_ht_node;
+	struct notification_client_list *client_list;
+	struct notification_client_list_element *client_list_element, *tmp;
+	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
+	struct lttng_condition *condition = lttng_trigger_get_condition(
+			trigger);
+	struct lttng_action *action;
+	enum lttng_error_code cmd_reply;
+
+	rcu_read_lock();
+
+	cds_lfht_lookup(state->triggers_ht,
+			lttng_condition_hash(condition),
+			match_condition,
+			condition,
+			&iter);
+	triggers_ht_node = cds_lfht_iter_get_node(&iter);
+	if (!triggers_ht_node) {
+		cmd_reply = LTTNG_ERR_TRIGGER_NOT_FOUND;
+		goto end;
+	} else {
+		cmd_reply = LTTNG_OK;
+	}
+
+	unbind_trigger(state, trigger);
 
 	/*
 	 * Remove and release the client list from
@@ -1551,8 +2238,7 @@ int handle_notification_thread_command_create_session(
 		enum lttng_error_code *_cmd_reply)
 {
 	struct session_info *session_info =
-			session_info_create(session_name, uid, gid,
-				state->sessions_ht);
+			session_info_create(session_name, uid, gid, state);
 
 	DBG("[notification-thread] Create session command for session \"%s\", uid %d, gid %d",
 			session_name, uid, gid);
@@ -1675,6 +2361,24 @@ int handle_notification_thread_command(
 		ret = handle_notification_thread_command_remove_channel(
 				state, cmd->parameters.remove_channel.key,
 				cmd->parameters.remove_channel.domain,
+				&cmd->reply_code);
+		break;
+	case NOTIFICATION_COMMAND_TYPE_BEGIN_ROTATION:
+		DBG("[notification-thread] Received begin session rotation command");
+		ret = handle_notification_thread_command_begin_rotation(
+				state,
+				cmd->parameters.begin_rotation.session.name,
+				cmd->parameters.begin_rotation.id,
+				&cmd->reply_code);
+		break;
+	case NOTIFICATION_COMMAND_TYPE_END_ROTATION:
+		DBG("[notification-thread] Received end session rotation command");
+		ret = handle_notification_thread_command_end_rotation(
+				state,
+				cmd->parameters.end_rotation.session_name,
+				cmd->parameters.end_rotation.id,
+				cmd->parameters.end_rotation.destination_type,
+				cmd->parameters.end_rotation.path,
 				&cmd->reply_code);
 		break;
 	case NOTIFICATION_COMMAND_TYPE_QUIT:
@@ -2351,7 +3055,66 @@ bool evaluate_session_consumed_size_condition(
 }
 
 static
-int evaluate_condition(const struct lttng_condition *condition,
+int evaluate_session_bound_condition(
+		const struct lttng_condition *condition,
+		struct lttng_evaluation **_evaluation,
+		const struct notification_thread_state *state,
+		struct session_info *session_info)
+{
+	int ret = 0;
+	struct lttng_evaluation *evaluation = NULL;
+
+	switch (lttng_condition_get_type(condition)) {
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
+	{
+		if (!session_info->rotation.ongoing) {
+			goto end;
+		}
+
+		evaluation = lttng_evaluation_session_rotation_ongoing_create(
+				session_info->rotation.id);
+		if (!evaluation) {
+			ret = -1;
+			ERR("Failed to create session rotation ongoing evaluation result");
+			goto end;
+		}
+		break;
+	}
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
+	{
+		if (session_info->rotation.ongoing) {
+			goto end;
+		}
+
+		/*
+		 * Rotations with the id "0" are not permitted. This means
+		 * that no rotation have been completed yet.
+		 */
+		if (session_info->rotation.id == 0) {
+			goto end;
+		}
+
+		evaluation = lttng_evaluation_session_rotation_completed_create(
+				session_info->rotation.id,
+				session_info->rotation.location);
+		if (!evaluation) {
+			ret = -1;
+			ERR("Failed to create session rotation completed evaluation result");
+			goto end;
+		}
+		break;
+	}
+	default:
+		/* Unexpected condition type; internal error. */
+		abort();
+	}
+end:
+	*_evaluation = evaluation;
+	return ret;
+}
+
+static
+int evaluate_channel_bound_condition(const struct lttng_condition *condition,
 		struct lttng_evaluation **evaluation,
 		const struct notification_thread_state *state,
 		const struct channel_state_sample *previous_sample,
@@ -2735,7 +3498,7 @@ int handle_notification_thread_channel_sample(
 			continue;
 		}
 
-		ret = evaluate_condition(condition, &evaluation, state,
+		ret = evaluate_channel_bound_condition(condition, &evaluation, state,
 				previous_sample_available ? &previous_sample : NULL,
 				&latest_sample,
 				previous_session_consumed_total,

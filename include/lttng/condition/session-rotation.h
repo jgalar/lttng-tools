@@ -27,6 +27,8 @@
 extern "C" {
 #endif
 
+struct lttng_trace_chunk_archive_location;
+
 /**
  * Session rotation conditions allow an action to be taken whenever a
  * session rotation is ongoing or completed.
@@ -54,7 +56,10 @@ lttng_condition_session_rotation_ongoing_create(void);
  * Create a newly allocated session rotation completion condition.
  *
  * A session rotation completed condition evaluates to true whenever a rotation
- * is completed for a given session.
+ * is completed for a given session. This condition is not evaluated on
+ * subscription or registration of a trigger. This means that a trigger
+ * using this condition will only fire when the next session rotation completes.
+ * Previously completed rotations will have no effect.
  *
  * Returns a new condition on success, NULL on failure. This condition must be
  * destroyed using lttng_condition_destroy().
@@ -110,19 +115,79 @@ lttng_evaluation_session_rotation_get_id(
 		const struct lttng_evaluation *evaluation, uint64_t *id);
 
 /*
- * Get the session rotation URI property of a session rotation evaluation.
+ * Get the trace chunk archive name property of a rotation completed evaluation.
  *
- * The caller does not assume the ownership of the returned URI. The
+ * The caller does not assume the ownership of the returned chunk name. The
+ * name shall only only be used for the duration of the evaluation's lifetime.
+ *
+ * Returns LTTNG_EVALUATION_STATUS_OK and a pointer to the evaluation's
+ * chunk name on success, OR LTTNG_EVALUATION_STATUS_INVALID if an invalid
+ * parameter is passed.
+ */
+extern enum lttng_evaluation_status
+lttng_evaluation_session_rotation_completed_get_trace_chunk_archive_name(
+		const struct lttng_evaluation *evaluation, const char **name);
+
+/*
+ * Get the location property of a session rotation completed evaluation.
+ *
+ * The caller does not assume the ownership of the returned location. The
  * URI shall only only be used for the duration of the evaluation's
  * lifetime.
  *
- * Returns LTTNG_EVALUATION_STATUS_OK on success and a threshold expressed in
- * bytes, or LTTNG_EVALUATION_STATUS_INVALID if an invalid parameter is passed.
+ * Returns LTTNG_EVALUATION_STATUS_OK and set rotation_uri on success.
+ * LTTNG_EVALUATION_STATUS_UNKNOWN may be returned if a rotation chunk's
+ * URI cannot be determined.
+ *
+ * LTTNG_EVALUATION_STATUS_INVALID is returned if an invalid parameter is
+ * passed.
  */
 extern enum lttng_evaluation_status
-lttng_evaluation_session_rotation_get_location(
+lttng_evaluation_session_rotation_completed_get_location(
 		const struct lttng_evaluation *evaluation,
-		const char **rotation_uri);
+		const struct lttng_trace_chunk_archive_location **location);
+
+enum lttng_trace_chunk_archive_location_type {
+	LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_UNKNOWN = -1,
+	/*
+	 * Location of the chunk archive is expressed as an absolute path
+	 * on the traced host.
+	 */
+	LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_LOCAL = 0,
+	/*
+	 * Location of the chunk archive is expressed as a path
+	 * relative to the relay daemon on which the trace was
+	 * collected.
+	 */
+	LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_RELAYD = 1,
+};
+
+enum lttng_trace_chunk_archive_location_status {
+	LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_STATUS_OK = 0,
+	LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_STATUS_INVALID = -1,
+};
+
+/*
+ * Get the type of a trace chunk archive location.
+ *
+ * Returns the type of a location on success,
+ * LTTNG_TRACE_CHUNK_ARCHIVE_LOCATION_TYPE_UNKNOWN on error.
+ */
+extern enum lttng_trace_chunk_archive_location_type
+lttng_trace_chunk_archive_location_get_type(
+		const struct lttng_trace_chunk_archive_location *location);
+
+/* Returns an absolute local path. */
+extern enum lttng_trace_chunk_archive_location_status
+lttng_trace_chunk_archive_location_local_get_path(
+		const struct lttng_trace_chunk_archive_location *location,
+		const char **path);
+
+/* Returns a path relative to the relay daemon's output path. */
+extern enum lttng_trace_chunk_archive_location_status
+lttng_trace_chunk_archive_location_relayd_relative_get_path(
+		const struct lttng_trace_chunk_archive_location *location,
+		const char **path);
 
 #ifdef __cplusplus
 }

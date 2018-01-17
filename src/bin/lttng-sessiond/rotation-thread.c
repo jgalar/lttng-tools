@@ -42,6 +42,7 @@
 #include "cmd.h"
 #include "session.h"
 #include "sessiond-timer.h"
+#include "notification-thread-commands.h"
 
 #include <urcu.h>
 #include <urcu/list.h>
@@ -377,6 +378,7 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 	session_lock(session);
 	if (--session->nr_chan_rotate_pending == 0) {
 		time_t now = time(NULL);
+		enum lttng_error_code notification_ret;
 
 		if (now == (time_t) -1) {
 			session->rotate_status = LTTNG_ROTATE_ERROR;
@@ -391,6 +393,17 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 		}
 		session->rotate_pending = false;
 		session->rotate_status = LTTNG_ROTATE_COMPLETED;
+
+		notification_ret = notification_thread_command_end_session_rotation(
+				handle->notification_thread_handle,
+				session->name, session->rotate_count,
+				session->consumer->type,
+				session->rotation_chunk.current_rotate_path);
+		if (notification_ret != LTTNG_OK) {
+			ERR("Failed to notify of end of rotation of session \"%s\"",
+					session->name);
+		}
+
 		session->last_chunk_start_ts = session->current_chunk_start_ts;
 		if (session->rotate_pending_relay) {
 			ret = sessiond_timer_rotate_pending_start(
@@ -462,7 +475,8 @@ end:
  * Process the rotate_timer, called with session lock held.
  */
 static
-int rotate_timer(struct ltt_session *session)
+int rotate_timer(struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 
@@ -482,7 +496,8 @@ int rotate_timer(struct ltt_session *session)
 
 	DBG("[rotation-thread] Rotate timer on session %s", session->name);
 
-	ret = cmd_rotate_session(session, NULL, false);
+	ret = cmd_rotate_session(session, NULL, false,
+			notification_thread_handle);
 	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
 		ret = 0;
 		goto end;
@@ -569,7 +584,8 @@ int handle_rotate_timer_pipe(uint32_t revents,
 		if (timer_data->signal == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
 			ret = rotate_pending_relay_timer(session);
 		} else if (timer_data->signal == LTTNG_SESSIOND_SIG_ROTATE_TIMER) {
-			ret = rotate_timer(session);
+			ret = rotate_timer(session,
+					handle->notification_thread_handle);
 		} else {
 			ERR("Unknown signal in rotate timer %d", timer_data->signal);
 			ret = -1;
@@ -638,7 +654,8 @@ int handle_condition(
 	session_unlock_list();
 
 	unsubscribe_session_usage_rotation(session, notification_thread_handle);
-	ret = cmd_rotate_session(session, NULL, false);
+	ret = cmd_rotate_session(session, NULL, false,
+			notification_thread_handle);
 	if (ret == -LTTNG_ERR_ROTATE_PENDING) {
 		DBG("Rotate already pending, subscribe to the next threshold value");
 		ret = 0;
