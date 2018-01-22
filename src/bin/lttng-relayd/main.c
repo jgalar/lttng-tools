@@ -70,6 +70,7 @@
 #include "stream.h"
 #include "connection.h"
 #include "tracefile-array.h"
+#include "tcp_keep_alive.h"
 
 static const char *help_msg =
 #ifdef LTTNG_EMBED_HELP
@@ -899,6 +900,14 @@ restart:
 					lttcomm_destroy_sock(newsock);
 					goto error;
 				}
+
+				ret = socket_apply_keep_alive_config(newsock->fd);
+				if (ret < 0) {
+					PERROR("setsockopt tcp_keep_alive");
+					lttcomm_destroy_sock(newsock);
+					goto error;
+				}
+
 				new_conn = connection_create(newsock, type);
 				if (!new_conn) {
 					lttcomm_destroy_sock(newsock);
@@ -2751,6 +2760,12 @@ int main(int argc, char **argv)
 	/* Parse arguments */
 	progname = argv[0];
 	if (set_options(argc, argv)) {
+		retval = -1;
+		goto exit_options;
+	}
+
+
+	if(tcp_keep_alive_init()){
 		retval = -1;
 		goto exit_options;
 	}
