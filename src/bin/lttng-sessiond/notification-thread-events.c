@@ -181,7 +181,7 @@ static
 void session_info_put(struct session_info *session_info);
 static
 struct session_info *session_info_create(const char *name,
-		uid_t uid, gid_t gid);
+		uid_t uid, gid_t gid, struct cds_lfht *sessions_ht);
 static
 void session_info_add_channel(struct session_info *session_info,
 		struct channel_info *channel_info);
@@ -402,6 +402,9 @@ void session_info_destroy(void *_data)
 	if (session_info->channel_infos_ht) {
 		cds_lfht_destroy(session_info->channel_infos_ht, NULL);
 	}
+	cds_lfht_del(session_info->sessions_ht, &session_info->sessions_ht_node);
+	DBG("[notification-thread] Destroyed session info structure of session \"%s\"",
+			session_info->name);
 	free(session_info->name);
 	free(session_info);
 }
@@ -425,7 +428,8 @@ void session_info_put(struct session_info *session_info)
 }
 
 static
-struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid)
+struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid,
+		struct cds_lfht *sessions_ht)
 {
 	struct session_info *session_info;
 
@@ -450,6 +454,9 @@ struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid)
 	}
 	session_info->uid = uid;
 	session_info->gid = gid;
+	session_info->sessions_ht = sessions_ht;
+	DBG("[notification-thread] Create session_info for session \"%s\"",
+			session_info->name);
 end:
 	return session_info;
 error:
@@ -504,7 +511,6 @@ struct channel_info *channel_info_create(const char *channel_name,
 	 *   - channel_info holds a strong reference to session_info
 	 *   - session_info holds a weak reference to channel_info
 	 */
-	session_info_get(session_info);
 	session_info_add_channel(session_info, channel_info);
 	channel_info->session_info = session_info;
 end:
@@ -988,16 +994,15 @@ int match_session(struct cds_lfht_node *node, const void *key)
 	return !strcmp(session_info->name, name);
 }
 
+/* RCU read lock must be held by the caller. */
 static
-struct session_info *find_or_create_session_info(
-		struct notification_thread_state *state,
-		const char *name, uid_t uid, gid_t gid)
+struct session_info *find_session_info(struct notification_thread_state *state,
+		const char *name)
 {
 	struct session_info *session = NULL;
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
 
-	rcu_read_lock();
 	cds_lfht_lookup(state->sessions_ht,
 			hash_key_str(name, lttng_ht_seed),
 			match_session,
@@ -1005,23 +1010,41 @@ struct session_info *find_or_create_session_info(
 			&iter);
 	node = cds_lfht_iter_get_node(&iter);
 	if (node) {
-		DBG("[notification-thread] Found session info of session \"%s\" (uid = %i, gid = %i)",
-				name, uid, gid);
+		DBG("[notification-thread] Found session info of session \"%s\"",
+				name);
 		session = caa_container_of(node, struct session_info,
 				sessions_ht_node);
+	}
+	return session;
+}
+
+/* RCU read lock must be held by the caller. */
+static
+struct session_info *find_or_create_session_info(
+		struct notification_thread_state *state,
+		const char *name, uid_t uid, gid_t gid)
+{
+	struct session_info *session = NULL;
+
+	session = find_session_info(state, name);
+	if (session) {
 		assert(session->uid == uid);
 		assert(session->gid == gid);
+		session_info_get(session);
 		goto end;
 	}
 
-	session = session_info_create(name, uid, gid);
+	session = session_info_create(name, uid, gid, state->sessions_ht);
 	if (!session) {
 		ERR("[notification-thread] Failed to allocation session info for session \"%s\" (uid = %i, gid = %i)",
 				name, uid, gid);
 		goto end;
 	}
+
+	cds_lfht_add(state->sessions_ht,
+			hash_key_str(name, lttng_ht_seed),
+			&session->sessions_ht_node);
 end:
-	rcu_read_unlock();
 	return session;
 }
 
@@ -1051,6 +1074,7 @@ int handle_notification_thread_command_add_channel(
 
 	CDS_INIT_LIST_HEAD(&trigger_list);
 
+	rcu_read_lock();
 	session_info = find_or_create_session_info(state, session_name,
 			session_uid, session_gid);
 	if (!session_info) {
@@ -1095,7 +1119,6 @@ int handle_notification_thread_command_add_channel(
 	cds_lfht_node_init(&channel_trigger_list->channel_triggers_ht_node);
 	cds_list_splice(&trigger_list, &channel_trigger_list->list);
 
-	rcu_read_lock();
 	/* Add channel to the channel_ht which owns the channel_infos. */
 	cds_lfht_add(state->channels_ht,
 			hash_channel_key(&new_channel_info->key),

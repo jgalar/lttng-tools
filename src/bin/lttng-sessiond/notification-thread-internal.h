@@ -41,6 +41,11 @@ struct session_info {
 	/* Node in the notification thread state's sessions_ht. */
 	struct cds_lfht_node sessions_ht_node;
 	uint64_t consumed_data_size;
+	/*
+	 * Back-reference (weak) to the thread's sesssions_ht. Only used for
+	 * the session_info to remove itself from the sessions_ht.
+	 */
+	struct cds_lfht *sessions_ht;
 };
 
 struct channel_info {
