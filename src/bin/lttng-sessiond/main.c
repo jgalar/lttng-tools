@@ -3762,7 +3762,7 @@ error_add_context:
 		}
 
 		ret = cmd_create_session_uri(cmd_ctx->lsm->session.name, uris, nb_uri,
-			&cmd_ctx->creds, 0);
+				&cmd_ctx->creds, 0, notification_thread_handle);
 
 		free(uris);
 
@@ -4040,7 +4040,8 @@ error_add_context:
 		}
 
 		ret = cmd_create_session_snapshot(cmd_ctx->lsm->session.name, uris,
-				nb_uri, &cmd_ctx->creds);
+				nb_uri, &cmd_ctx->creds,
+				notification_thread_handle);
 		free(uris);
 		break;
 	}
@@ -4079,7 +4080,9 @@ error_add_context:
 		}
 
 		ret = cmd_create_session_uri(cmd_ctx->lsm->session.name, uris,
-				nb_uri, &cmd_ctx->creds, cmd_ctx->lsm->u.session_live.timer_interval);
+				nb_uri, &cmd_ctx->creds,
+				cmd_ctx->lsm->u.session_live.timer_interval,
+				notification_thread_handle);
 		free(uris);
 		break;
 	}

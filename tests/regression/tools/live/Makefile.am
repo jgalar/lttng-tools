@@ -9,6 +9,7 @@ LIBRELAYD=$(top_builddir)/src/common/relayd/librelayd.la
 LIBHEALTH=$(top_builddir)/src/common/health/libhealth.la
 
 LIVE=$(top_builddir)/src/bin/lttng-sessiond/session.$(OBJEXT) \
+	 $(top_builddir)/src/bin/lttng-sessiond/notification-thread-commands.$(OBJEXT) \
 	 $(top_builddir)/src/bin/lttng-sessiond/consumer.$(OBJEXT) \
 	 $(top_builddir)/src/bin/lttng-sessiond/utils.$(OBJEXT) \
 	 $(top_builddir)/src/bin/lttng-sessiond/snapshot.$(OBJEXT)

@@ -455,8 +455,13 @@ struct session_info *session_info_create(const char *name, uid_t uid, gid_t gid,
 	session_info->uid = uid;
 	session_info->gid = gid;
 	session_info->sessions_ht = sessions_ht;
+	rcu_read_lock();
+	cds_lfht_add(sessions_ht,
+			hash_key_str(name, lttng_ht_seed),
+			&session_info->sessions_ht_node);
+	rcu_read_unlock();
 	DBG("[notification-thread] Create session_info for session \"%s\"",
-			session_info->name);
+			name);
 end:
 	return session_info;
 error:
@@ -512,6 +517,10 @@ struct channel_info *channel_info_create(const char *channel_name,
 	 *   - session_info holds a weak reference to channel_info
 	 */
 	session_info_add_channel(session_info, channel_info);
+	/*
+	 * Refcount of session_info was already incremented by the session
+	 * look-up.
+	 */
 	channel_info->session_info = session_info;
 end:
 	return channel_info;
@@ -1014,45 +1023,16 @@ struct session_info *find_session_info(struct notification_thread_state *state,
 				name);
 		session = caa_container_of(node, struct session_info,
 				sessions_ht_node);
-	}
-	return session;
-}
-
-/* RCU read lock must be held by the caller. */
-static
-struct session_info *find_or_create_session_info(
-		struct notification_thread_state *state,
-		const char *name, uid_t uid, gid_t gid)
-{
-	struct session_info *session = NULL;
-
-	session = find_session_info(state, name);
-	if (session) {
-		assert(session->uid == uid);
-		assert(session->gid == gid);
 		session_info_get(session);
-		goto end;
 	}
-
-	session = session_info_create(name, uid, gid, state->sessions_ht);
-	if (!session) {
-		ERR("[notification-thread] Failed to allocation session info for session \"%s\" (uid = %i, gid = %i)",
-				name, uid, gid);
-		goto end;
-	}
-
-	cds_lfht_add(state->sessions_ht,
-			hash_key_str(name, lttng_ht_seed),
-			&session->sessions_ht_node);
-end:
 	return session;
 }
 
 static
 int handle_notification_thread_command_add_channel(
 		struct notification_thread_state *state,
-		const char *session_name, uid_t session_uid, gid_t session_gid,
-		const char *channel_name, enum lttng_domain_type channel_domain,
+		const char *session_name, const char *channel_name,
+		enum lttng_domain_type channel_domain,
 		uint64_t channel_key_int, uint64_t channel_capacity,
 		enum lttng_error_code *cmd_result)
 {
@@ -1075,10 +1055,9 @@ int handle_notification_thread_command_add_channel(
 	CDS_INIT_LIST_HEAD(&trigger_list);
 
 	rcu_read_lock();
-	session_info = find_or_create_session_info(state, session_name,
-			session_uid, session_gid);
+	session_info = find_session_info(state, session_name);
 	if (!session_info) {
-		/* Allocation error or an internal error occured. */
+		/* Internal error occured. */
 		goto error;
 	}
 
@@ -1565,6 +1544,73 @@ end:
 	return 0;
 }
 
+static
+int handle_notification_thread_command_create_session(
+		struct notification_thread_state *state,
+		const char *session_name, uid_t uid, gid_t gid,
+		enum lttng_error_code *_cmd_reply)
+{
+	struct session_info *session_info =
+			session_info_create(session_name, uid, gid,
+				state->sessions_ht);
+
+	DBG("[notification-thread] Create session command for session \"%s\", uid %d, gid %d",
+			session_name, uid, gid);
+	/*
+	 * Creating a session_info will initialize its reference count
+	 * to 1. This reference count will be used by the channel
+	 * add/remove operations since channels need a reference to their
+	 * session.
+	 *
+	 * The initial reference acquired here will be released by the
+	 * destroy session command.
+	 *
+	 * Note that the creation of a session will add it to the notification
+	 * thread's sessions_ht.
+	 */
+	if (!session_info) {
+		ERR("Failed to create session in notification thread's 'create_session' command handler");
+		goto error;
+	}
+	*_cmd_reply = LTTNG_OK;
+	return 0;
+error:
+	return 1;
+}
+
+static
+int handle_notification_thread_command_destroy_session(
+		struct notification_thread_state *state,
+		const char *session_name, enum lttng_error_code *_cmd_reply)
+{
+	int ret = 0;
+	struct session_info *session_info;
+
+	rcu_read_lock();
+	session_info = find_session_info(state,
+			session_name);
+
+	DBG("[notification-thread] Destroy session command for session \"%s\"",
+			session_name);
+	if (!session_info) {
+		ERR("Failed to find session in notification thread's 'destroy_session' command handler");
+		ret = -1;
+		goto end;
+	}
+
+	/*
+	 * The session_info must be put twice: once for the reference acquired
+	 * as part of the "find", but also a second time since the session
+	 * creation initialized its reference count to 1.
+	 */
+	session_info_put(session_info);
+	session_info_put(session_info);
+	*_cmd_reply = LTTNG_OK;
+end:
+	rcu_read_unlock();
+	return ret;
+}
+
 /* Returns 0 on success, 1 on exit requested, negative value on error. */
 int handle_notification_thread_command(
 		struct notification_thread_handle *handle,
@@ -1597,13 +1643,27 @@ int handle_notification_thread_command(
 				state, cmd->parameters.trigger,
 				&cmd->reply_code);
 		break;
+	case NOTIFICATION_COMMAND_TYPE_CREATE_SESSION:
+		DBG("[notification-thread] Received create session command");
+		ret = handle_notification_thread_command_create_session(
+				state,
+				cmd->parameters.create_session.session.name,
+				cmd->parameters.create_session.session.uid,
+				cmd->parameters.create_session.session.gid,
+				&cmd->reply_code);
+		break;
+	case NOTIFICATION_COMMAND_TYPE_DESTROY_SESSION:
+		DBG("[notification-thread] Received destroy session command");
+		ret = handle_notification_thread_command_destroy_session(
+				state,
+				cmd->parameters.create_session.session.name,
+				&cmd->reply_code);
+		break;
 	case NOTIFICATION_COMMAND_TYPE_ADD_CHANNEL:
 		DBG("[notification-thread] Received add channel command");
 		ret = handle_notification_thread_command_add_channel(
 				state,
-				cmd->parameters.add_channel.session.name,
-				cmd->parameters.add_channel.session.uid,
-				cmd->parameters.add_channel.session.gid,
+				cmd->parameters.add_channel.session_name,
 				cmd->parameters.add_channel.channel.name,
 				cmd->parameters.add_channel.channel.domain,
 				cmd->parameters.add_channel.channel.key,

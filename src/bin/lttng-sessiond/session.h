@@ -26,6 +26,7 @@
 
 #include "snapshot.h"
 #include "trace-kernel.h"
+#include "notification-thread.h"
 
 struct ltt_ust_session;
 
@@ -200,8 +201,10 @@ struct ltt_session {
 };
 
 /* Prototypes */
-int session_create(char *name, uid_t uid, gid_t gid);
-int session_destroy(struct ltt_session *session);
+int session_create(char *name, uid_t uid, gid_t gid,
+		struct notification_thread_handle *notification_thread_handle);
+int session_destroy(struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle);
 
 void session_lock(struct ltt_session *session);
 void session_lock_list(void);

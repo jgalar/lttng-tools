@@ -31,9 +31,11 @@ void cmd_init(void);
 
 /* Session commands */
 int cmd_create_session_uri(char *name, struct lttng_uri *uris,
-		size_t nb_uri, lttng_sock_cred *creds, unsigned int live_timer);
+		size_t nb_uri, lttng_sock_cred *creds, unsigned int live_timer,
+		struct notification_thread_handle *notification_thread_handle);
 int cmd_create_session_snapshot(char *name, struct lttng_uri *uris,
-		size_t nb_uri, lttng_sock_cred *creds);
+		size_t nb_uri, lttng_sock_cred *creds,
+		struct notification_thread_handle *notification_thread_handle);
 int cmd_destroy_session(struct ltt_session *session, int wpipe,
 		struct notification_thread_handle *notification_thread_handle);
 

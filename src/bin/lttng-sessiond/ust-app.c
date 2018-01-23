@@ -2941,7 +2941,6 @@ static int create_channel_per_uid(struct ust_app *app,
 
 		cmd_ret = notification_thread_command_add_channel(
 				notification_thread_handle, session->name,
-				ua_sess->euid, ua_sess->egid,
 				ua_chan->name,
 				ua_chan->key,
 				LTTNG_DOMAIN_UST,
@@ -3034,7 +3033,6 @@ static int create_channel_per_pid(struct ust_app *app,
 
 	cmd_ret = notification_thread_command_add_channel(
 			notification_thread_handle, session->name,
-			ua_sess->euid, ua_sess->egid,
 			ua_chan->name,
 			ua_chan->key,
 			LTTNG_DOMAIN_UST,

@@ -164,7 +164,6 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 
 	status = notification_thread_command_add_channel(
 			notification_thread_handle, session->name,
-			ksession->uid, ksession->gid,
 			channel->channel->name, channel->key,
 			LTTNG_DOMAIN_KERNEL,
 			channel->channel->attr.subbuf_size * channel->channel->attr.num_subbuf);

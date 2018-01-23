@@ -110,11 +110,58 @@ end:
 	return ret_code;
 }
 
+enum lttng_error_code notification_thread_command_create_session(
+		struct notification_thread_handle *handle,
+		const char *session_name, uid_t uid, gid_t gid)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_CREATE_SESSION;
+	cmd.parameters.create_session.session.name = session_name;
+	cmd.parameters.create_session.session.uid = uid;
+	cmd.parameters.create_session.session.gid = gid;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
+enum lttng_error_code notification_thread_command_destroy_session(
+		struct notification_thread_handle *handle,
+		const char *session_name)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_DESTROY_SESSION;
+	cmd.parameters.destroy_session.session_name = session_name;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
 enum lttng_error_code notification_thread_command_add_channel(
 		struct notification_thread_handle *handle,
-		char *session_name, uid_t uid, gid_t gid,
-		char *channel_name, uint64_t key,
-		enum lttng_domain_type domain, uint64_t capacity)
+		const char *session_name, const char *channel_name,
+		uint64_t key, enum lttng_domain_type domain, uint64_t capacity)
 {
 	int ret;
 	enum lttng_error_code ret_code;
@@ -123,9 +170,7 @@ enum lttng_error_code notification_thread_command_add_channel(
 	init_notification_thread_command(&cmd);
 
 	cmd.type = NOTIFICATION_COMMAND_TYPE_ADD_CHANNEL;
-	cmd.parameters.add_channel.session.name = session_name;
-	cmd.parameters.add_channel.session.uid = uid;
-	cmd.parameters.add_channel.session.gid = gid;
+	cmd.parameters.add_channel.session_name = session_name;
 	cmd.parameters.add_channel.channel.name = channel_name;
 	cmd.parameters.add_channel.channel.key = key;
 	cmd.parameters.add_channel.channel.domain = domain;

@@ -113,7 +113,7 @@ static void empty_session_list(void)
 	struct ltt_session *iter, *tmp;
 
 	cds_list_for_each_entry_safe(iter, tmp, &session_list->head, list) {
-		session_destroy(iter);
+		session_destroy(iter, NULL);
 	}
 
 	/* Session list must be 0 */
@@ -127,7 +127,7 @@ static int create_one_session(char *name)
 {
 	int ret;
 
-	ret = session_create(name, geteuid(), getegid());
+	ret = session_create(name, geteuid(), getegid(), NULL);
 	if (ret == LTTNG_OK) {
 		/* Validate */
 		ret = find_session_name(name);
@@ -160,7 +160,7 @@ static int destroy_one_session(struct ltt_session *session)
 	strncpy(session_name, session->name, sizeof(session->name));
 	session_name[sizeof(session_name) - 1] = '\0';
 
-	ret = session_destroy(session);
+	ret = session_destroy(session, NULL);
 	if (ret == LTTNG_OK) {
 		ret = find_session_name(session_name);
 		if (ret < 0) {

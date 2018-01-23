@@ -30,6 +30,7 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 
 #include "session.h"
+#include "notification-thread-commands.h"
 #include "utils.h"
 
 /*
@@ -323,7 +324,8 @@ end:
  * Return -1 if no session is found.  On success, return 1;
  * Should *NOT* be called with RCU read-side lock held.
  */
-int session_destroy(struct ltt_session *session)
+int session_destroy(struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	/* Safety check */
 	assert(session);
@@ -335,6 +337,17 @@ int session_destroy(struct ltt_session *session)
 
 	consumer_output_put(session->consumer);
 	snapshot_destroy(&session->snapshot);
+
+	if (notification_thread_handle) {
+		enum lttng_error_code notification_ret;
+
+		notification_ret = notification_thread_command_destroy_session(
+				notification_thread_handle, session->name);
+		if (notification_ret != LTTNG_OK) {
+			ERR("Failed to notify of session \"%s\"'s destruction", session->name);
+		}
+	}
+
 	free(session);
 
 	return LTTNG_OK;
@@ -343,7 +356,8 @@ int session_destroy(struct ltt_session *session)
 /*
  * Create a brand new session and add it to the session list.
  */
-int session_create(char *name, uid_t uid, gid_t gid)
+int session_create(char *name, uid_t uid, gid_t gid,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 	struct ltt_session *new_session;
@@ -423,6 +437,19 @@ int session_create(char *name, uid_t uid, gid_t gid)
 	 */
 	DBG("Tracing session %s created with ID %" PRIu64 " by UID %d GID %d",
 			name, new_session->id, new_session->uid, new_session->gid);
+
+	if (notification_thread_handle) {
+		enum lttng_error_code notification_ret;
+
+		notification_ret = notification_thread_command_create_session(
+				notification_thread_handle, name, uid, gid);
+		if (notification_ret != LTTNG_OK) {
+			ERR("Failed to notifify of session \"%s\"'s creation",
+					name);
+			ret = notification_ret;
+			goto error;
+		}
+	}
 
 	return LTTNG_OK;
 

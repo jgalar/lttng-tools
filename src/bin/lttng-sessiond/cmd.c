@@ -2765,7 +2765,8 @@ error:
  * Command LTTNG_CREATE_SESSION processed by the client thread.
  */
 int cmd_create_session_uri(char *name, struct lttng_uri *uris,
-		size_t nb_uri, lttng_sock_cred *creds, unsigned int live_timer)
+		size_t nb_uri, lttng_sock_cred *creds, unsigned int live_timer,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 	struct ltt_session *session;
@@ -2788,7 +2789,8 @@ int cmd_create_session_uri(char *name, struct lttng_uri *uris,
 
 	/* Create tracing session in the registry */
 	ret = session_create(name, LTTNG_SOCK_GET_UID_CRED(creds),
-			LTTNG_SOCK_GET_GID_CRED(creds));
+			LTTNG_SOCK_GET_GID_CRED(creds),
+			notification_thread_handle);
 	if (ret != LTTNG_OK) {
 		goto session_error;
 	}
@@ -2827,7 +2829,7 @@ int cmd_create_session_uri(char *name, struct lttng_uri *uris,
 	return LTTNG_OK;
 
 consumer_error:
-	session_destroy(session);
+	session_destroy(session, notification_thread_handle);
 session_error:
 find_error:
 	return ret;
@@ -2837,7 +2839,8 @@ find_error:
  * Command LTTNG_CREATE_SESSION_SNAPSHOT processed by the client thread.
  */
 int cmd_create_session_snapshot(char *name, struct lttng_uri *uris,
-		size_t nb_uri, lttng_sock_cred *creds)
+		size_t nb_uri, lttng_sock_cred *creds,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 	struct ltt_session *session;
@@ -2850,7 +2853,8 @@ int cmd_create_session_snapshot(char *name, struct lttng_uri *uris,
 	 * Create session in no output mode with URIs set to NULL. The uris we've
 	 * received are for a default snapshot output if one.
 	 */
-	ret = cmd_create_session_uri(name, NULL, 0, creds, 0);
+	ret = cmd_create_session_uri(name, NULL, 0, creds, 0,
+			notification_thread_handle);
 	if (ret != LTTNG_OK) {
 		goto error;
 	}
@@ -2894,7 +2898,7 @@ end:
 error_snapshot:
 	snapshot_output_destroy(new_output);
 error_snapshot_alloc:
-	session_destroy(session);
+	session_destroy(session, notification_thread_handle);
 error:
 	return ret;
 }
@@ -2968,7 +2972,7 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe,
 		PERROR("write kernel poll pipe");
 	}
 
-	ret = session_destroy(session);
+	ret = session_destroy(session, notification_thread_handle);
 
 	return ret;
 }
