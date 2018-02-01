@@ -903,7 +903,8 @@ restart:
 
 				ret = socket_apply_keep_alive_config(newsock->fd);
 				if (ret < 0) {
-					PERROR("setsockopt tcp_keep_alive");
+					ERR("Failed to apply TCP keep-alive configuration on socket (%i)",
+							newsock->fd);
 					lttcomm_destroy_sock(newsock);
 					goto error;
 				}
@@ -2760,12 +2761,6 @@ int main(int argc, char **argv)
 	/* Parse arguments */
 	progname = argv[0];
 	if (set_options(argc, argv)) {
-		retval = -1;
-		goto exit_options;
-	}
-
-
-	if(tcp_keep_alive_init()){
 		retval = -1;
 		goto exit_options;
 	}
