@@ -1058,7 +1058,7 @@ int consumer_add_channel(struct lttng_consumer_channel *channel,
 	pthread_mutex_unlock(&channel->lock);
 	pthread_mutex_unlock(&consumer_data.lock);
 
-	if (channel->wait_fd != -1 && channel->type == CONSUMER_CHANNEL_TYPE_DATA) {
+	if (channel->wait_fd != -1) {
 		notify_channel_pipe(ctx, channel, -1, CONSUMER_CHANNEL_ADD);
 	}
 

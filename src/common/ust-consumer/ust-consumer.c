@@ -2754,11 +2754,11 @@ end:
  * Stop a given metadata channel timer if enabled and close the wait fd which
  * is the poll pipe of the metadata stream.
  *
- * This MUST be called with the metadata channel acquired.
+ * This MUST be called with the metadata channel lock acquired.
  */
 void lttng_ustconsumer_close_metadata(struct lttng_consumer_channel *metadata)
 {
-	int ret;
+	int ret, wakeup_fd;
 
 	assert(metadata);
 	assert(metadata->type == CONSUMER_CHANNEL_TYPE_METADATA);
@@ -2767,6 +2767,25 @@ void lttng_ustconsumer_close_metadata(struct lttng_consumer_channel *metadata)
 
 	if (metadata->switch_timer_enabled == 1) {
 		consumer_timer_switch_stop(metadata);
+	}
+
+	/*
+	 * The channel's wake up fd is checked to know if it was sent to
+	 * the session daemon. If it was sent to the session daemon, the
+	 * session daemon will eventually close it and the metadata poll
+	 * thread will wakeup to destroy the metadata channel.
+	 *
+	 * It it was not sent, it is the consumer daemon's responsability
+	 * to reclaim the channel by closing the wake-up fd.
+	 */
+	wakeup_fd = ustctl_channel_get_wakeup_fd(metadata->uchan);
+	if (wakeup_fd >= 0) {
+		DBG("Closing metadata channel's (key = %" PRIu64 ") wakeup fd",
+				metadata->key);
+		ret = close(wakeup_fd);
+		if (ret) {
+			PERROR("close of metadata channel wakeup_fd");
+		}
 	}
 
 	if (!metadata->metadata_stream) {
