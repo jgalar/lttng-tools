@@ -32,7 +32,18 @@ lttng_userspace_probe_location_lookup_method_get_type(
 void lttng_userspace_probe_location_lookup_method_destroy(
 		struct lttng_userspace_probe_location_lookup_method *lookup_method)
 {
-	free(lookup_method);
+	switch (lookup_method->type) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+	{
+		struct lttng_userspace_probe_location_lookup_method_elf *elf_method =
+			container_of(lookup_method,
+				 struct lttng_userspace_probe_location_lookup_method_elf, parent);
+		free(elf_method);
+		break;
+	}
+	default:
+		break;
+	}
 }
 
 struct lttng_userspace_probe_location_lookup_method *
@@ -180,6 +191,122 @@ end:
 	return ret;
 }
 
+static struct lttng_userspace_probe_location_lookup_method *
+lttng_userspace_probe_location_lookup_method_function_name_elf_copy(
+			struct lttng_userspace_probe_location_lookup_method *lookup_method)
+{
+	int ret;
+	struct lttng_userspace_probe_location_lookup_method *parent = NULL;
+	struct lttng_userspace_probe_location_lookup_method_elf *elf_method;
+	assert(lookup_method->type ==
+		   LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF);
+
+	elf_method = zmalloc(sizeof(*elf_method));
+	if (!elf_method) {
+		goto error;
+	}
+	ret = lttng_userspace_probe_location_lookup_method_elf_get_run_as_ids(
+				lookup_method, &elf_method->run_as_uid, &elf_method->run_as_gid);
+	if (ret) {
+		goto free_lookup_method;
+	}
+
+	elf_method->parent.type = lookup_method->type;
+	parent = &elf_method->parent;
+
+end:
+	return parent;
+
+free_lookup_method:
+	free(elf_method);
+error:
+	parent = NULL;
+	goto end;
+}
+
+static struct lttng_userspace_probe_location *
+lttng_userspace_probe_location_function_copy(struct lttng_userspace_probe_location *location)
+{
+	enum lttng_userspace_probe_location_lookup_method_type lookup_type;
+	struct lttng_userspace_probe_location *new_location = NULL;
+	struct lttng_userspace_probe_location_lookup_method *lookup_method = NULL;
+	char *binary_path = NULL;
+	char *function_name = NULL;
+	int fd;
+
+	assert(location->type == LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION);
+
+	 /* Duplicate probe location fields */
+	binary_path =
+		strdup(lttng_userspace_probe_location_function_get_binary_path(location));
+	if (!binary_path) {
+		goto error;
+	}
+
+	function_name =
+		strdup(lttng_userspace_probe_location_function_get_function_name(location));
+	if (!function_name) {
+		goto free_binary_path;
+	}
+
+	/* Duplicate the binary fd */
+	fd = dup(lttng_userspace_probe_location_function_get_binary_fd(location));
+	if (fd == -1) {
+		goto free_function_name;
+	}
+
+	/*
+	 * Duplicate probe location method fields
+	 */
+	lookup_type = lttng_userspace_probe_location_lookup_method_get_type(
+						location->lookup_method);
+	switch (lookup_type) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+		lookup_method =
+			lttng_userspace_probe_location_lookup_method_function_name_elf_copy(
+						location->lookup_method);
+		if (!lookup_method) {
+			goto close_fd;
+		}
+		break;
+	default:
+		/* Invalid probe location lookup method. */
+		goto close_fd;
+	}
+
+	/* Create the probe_location */
+	new_location = lttng_userspace_probe_location_function_create_no_check(
+							binary_path, function_name, lookup_method, true);
+
+	if (!new_location) {
+		goto destroy_lookup_method;
+	}
+
+	/* Set the duplicated fd to the new probe_location */
+	if (lttng_userspace_probe_location_function_set_binary_fd(new_location, fd) < 0) {
+		goto destroy_probe_location;
+	}
+
+end:
+	return new_location;
+
+destroy_probe_location:
+	lttng_userspace_probe_location_destroy(new_location);
+destroy_lookup_method:
+	lttng_userspace_probe_location_lookup_method_destroy(lookup_method);
+close_fd:
+	if (close(fd) < 0) {
+		PERROR("close");
+	}
+free_function_name:
+	free(function_name);
+free_binary_path:
+	free(binary_path);
+error:
+	new_location = NULL;
+	goto end;
+}
+
 const char *lttng_userspace_probe_location_function_get_binary_path(
 		struct lttng_userspace_probe_location *location)
 {
@@ -213,6 +340,24 @@ const char *lttng_userspace_probe_location_function_get_function_name(
 	function_location = container_of(location,
 		struct lttng_userspace_probe_location_function, parent);
 	ret = function_location->function_name;
+end:
+	return ret;
+}
+
+int lttng_userspace_probe_location_function_get_binary_fd(
+		struct lttng_userspace_probe_location *location)
+{
+	int ret = -1;
+	struct lttng_userspace_probe_location_function *function_location;
+
+	if (!location || lttng_userspace_probe_location_get_type(location) !=
+			LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION) {
+		goto end;
+	}
+
+	function_location = container_of(location,
+		struct lttng_userspace_probe_location_function, parent);
+	ret = function_location->binary_fd;
 end:
 	return ret;
 }
@@ -274,12 +419,16 @@ int lttng_userspace_probe_location_function_serialize(
 	location_function = container_of(location,
 			struct lttng_userspace_probe_location_function,
 			parent);
-	if (!location_function->function_name ||
-			!location_function->binary_path ||
-			location_function->binary_fd < 0) {
+	if (!location_function->function_name || !location_function->binary_path) {
 		ret = -LTTNG_ERR_INVALID;
 		goto end;
 	}
+
+	if (binary_fd && location_function->binary_fd < 0) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
 	if (binary_fd) {
 		*binary_fd = location_function->binary_fd;
 	}
@@ -328,6 +477,68 @@ end:
 	return ret;
 }
 
+LTTNG_HIDDEN
+int lttng_userspace_probe_location_lookup_method_elf_set_run_as_ids(
+			struct lttng_userspace_probe_location_lookup_method *lookup,
+			uid_t uid, gid_t gid)
+{
+	int ret;
+	struct lttng_userspace_probe_location_lookup_method_elf *lookup_elf = NULL;
+
+	if (!lookup) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	switch (lttng_userspace_probe_location_lookup_method_get_type(lookup)) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+		break;
+	default:
+		/* Invalid probe location lookup method. */
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	lookup_elf = container_of(lookup,
+				struct lttng_userspace_probe_location_lookup_method_elf, parent);
+
+	lookup_elf->run_as_uid = uid;
+	lookup_elf->run_as_gid = gid;
+	ret = 0;
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttng_userspace_probe_location_lookup_method_elf_get_run_as_ids(
+			struct lttng_userspace_probe_location_lookup_method *lookup,
+			uid_t *uid, gid_t *gid)
+{
+	int ret;
+	struct lttng_userspace_probe_location_lookup_method_elf *lookup_elf = NULL;
+
+	if (!lookup) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+	switch (lttng_userspace_probe_location_lookup_method_get_type(lookup)) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+		break;
+	default:
+		/* Invalid probe location lookup method. */
+		ret = -LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	lookup_elf = container_of(lookup,
+				struct lttng_userspace_probe_location_lookup_method_elf, parent);
+	*uid = lookup_elf->run_as_uid;
+	*gid = lookup_elf->run_as_gid;
+	ret = 0;
+
+end:
+	return ret;
+}
 LTTNG_HIDDEN
 int lttng_userspace_probe_location_serialize(
 		struct lttng_userspace_probe_location *location,
@@ -639,7 +850,7 @@ int lttng_userspace_probe_location_flatten(
 		flat_probe.parent.lookup_method =
 				(struct lttng_userspace_probe_location_lookup_method *)
 					(flat_probe_start + sizeof(flat_probe) +
-					function_name_len + binary_path_len);
+					function_name_len + binary_path_len + padding_needed);
 	} else {
 		flat_probe.parent.lookup_method = NULL;
 	}
@@ -687,4 +898,30 @@ int lttng_userspace_probe_location_flatten(
 	ret = storage_needed;
 end:
 	return ret;
+}
+
+LTTNG_HIDDEN
+struct lttng_userspace_probe_location *
+lttng_userspace_probe_location_copy(struct lttng_userspace_probe_location *location)
+{
+	struct lttng_userspace_probe_location *new_location = NULL;
+	enum lttng_userspace_probe_location_type type;
+
+	assert(location);
+
+	type = lttng_userspace_probe_location_get_type(location);
+	switch (type) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION:
+		new_location =
+			lttng_userspace_probe_location_function_copy(location);
+		if (!new_location) {
+			goto err;
+		}
+		break;
+	default:
+		new_location = NULL;
+		goto err;
+	}
+err:
+	return new_location;
 }

@@ -25,11 +25,14 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <wordexp.h>
 
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/compat/string.h>
+#include <common/compat/getenv.h>
 #include <common/string-utils/string-utils.h>
 
+#include <lttng/constant.h>
 /* Mi dependancy */
 #include <common/mi-lttng.h>
 
@@ -51,6 +54,7 @@ static int opt_log4j;
 static int opt_python;
 static int opt_enable_all;
 static char *opt_probe;
+static char *opt_userspace_probe;
 static char *opt_function;
 static char *opt_channel_name;
 static char *opt_filter;
@@ -66,6 +70,7 @@ enum {
 	OPT_HELP = 1,
 	OPT_TRACEPOINT,
 	OPT_PROBE,
+	OPT_USERSPACE_PROBE,
 	OPT_FUNCTION,
 	OPT_SYSCALL,
 	OPT_USERSPACE,
@@ -92,6 +97,7 @@ static struct poptOption long_options[] = {
 	{"python",         'p', POPT_ARG_VAL, &opt_python, 1, 0, 0},
 	{"tracepoint",     0,   POPT_ARG_NONE, 0, OPT_TRACEPOINT, 0, 0},
 	{"probe",          0,   POPT_ARG_STRING, &opt_probe, OPT_PROBE, 0, 0},
+	{"userspace-probe",0,   POPT_ARG_STRING, &opt_userspace_probe, OPT_USERSPACE_PROBE, 0, 0},
 	{"function",       0,   POPT_ARG_STRING, &opt_function, OPT_FUNCTION, 0, 0},
 	{"syscall",        0,   POPT_ARG_NONE, 0, OPT_SYSCALL, 0, 0},
 	{"loglevel",       0,     POPT_ARG_STRING, 0, OPT_LOGLEVEL, 0, 0},
@@ -173,6 +179,252 @@ end:
 	return ret;
 }
 
+/*
+ * Walk the directories in the PATH environment variable to find the target
+ * binary pass as parameter.
+ *
+ * On success, the full path of the binary is copied in binary_full_path out
+ * parameter.
+ * On failure, returns -1;
+ */
+int walk_command_search_path(const char *binary, char *binary_full_path)
+{
+	int ret = 0;
+	char *command_search_path = NULL;
+	char *curr_search_dir = NULL;
+	char *curr_search_dir_end = NULL;
+	char *tentative_binary_path = NULL;
+	const char *slash = "/";
+	struct stat stat_output;
+
+	command_search_path = lttng_secure_getenv("PATH");
+	if (!command_search_path) {
+		ret = -1;
+		goto end;
+	}
+
+	/*
+	 * Duplicate the $PATH string as the char pointer returned by getenv() should
+	 * not be modified.
+	 */
+	command_search_path = strdup(command_search_path);
+	if (!command_search_path) {
+		ret = -1;
+		goto end;
+	}
+
+	/*
+	 * This char array is used to concatenate 3 path elements of unknown length.
+	 * We cap it at 3 times the maximum path length for now, but we trim back
+	 * the max length before returning.
+	 */
+	tentative_binary_path = zmalloc(3 * LTTNG_PATH_MAX * sizeof(char));
+	if (!tentative_binary_path) {
+		ret = -1;
+		goto alloc_error;
+	}
+
+	curr_search_dir = command_search_path;
+	do {
+		/* Split on ':' */
+		curr_search_dir_end = strchr(curr_search_dir, ':');
+		if (curr_search_dir_end != NULL) {
+			/*
+			 * Add a NULL byte to the end of the char array so it can be used as
+			 * a string.
+			 */
+			curr_search_dir_end[0] = '\0';
+		}
+
+		/* Empty the tentative path */
+		memset(tentative_binary_path, 0, LTTNG_PATH_MAX * sizeof(char));
+
+		/*
+		 * Build the tentative path to the binary using the current search
+		 * directoyry and the name of the binary.
+		 */
+		strncat(tentative_binary_path, curr_search_dir, LTTNG_PATH_MAX);
+		strncat(tentative_binary_path, slash, LTTNG_PATH_MAX);
+		strncat(tentative_binary_path, binary, LTTNG_PATH_MAX);
+
+		 /*
+		  * Use STAT(2) to see if the file exists.
+		 */
+		ret = stat(tentative_binary_path, &stat_output);
+		if (ret == 0) {
+			/*
+			 * Found a match, set the out parameter and return success. Make
+			 * sure the path is not larger than the max path.
+			 */
+			if (strlen(tentative_binary_path) > LTTNG_PATH_MAX) {
+				ret = -1;
+				goto free_binary_path;
+			}
+			strncpy(binary_full_path, tentative_binary_path, LTTNG_PATH_MAX);
+			goto free_binary_path;
+		}
+		/* Go to the next entry in the $PATH variable. */
+		curr_search_dir = curr_search_dir_end + 1;
+	} while (curr_search_dir_end != NULL);
+
+free_binary_path:
+	free(tentative_binary_path);
+alloc_error:
+	free(command_search_path);
+end:
+	return ret;
+}
+
+/*
+ * Parse userspace probe options
+ * Set the userspace probe fields in the lttng_event struct and set the
+ * target_path to the path to the binary.
+ */
+static int parse_userspace_probe_opts(struct lttng_event *ev, char *opt)
+{
+	int ret = CMD_SUCCESS;
+	int num_token;
+	wordexp_t expanded_path;
+
+	char **tokens;
+	char *target_path = NULL;
+	char *real_target_path = NULL;
+	char *symbol_name = NULL;
+	struct lttng_userspace_probe_location *probe_location = NULL;
+	struct lttng_userspace_probe_location_lookup_method *lookup_method =
+			NULL;
+
+	if (opt == NULL) {
+		ret = CMD_ERROR;
+		goto end;
+	}
+
+	/*
+	 * userspace probe fields are seperated by ':'.
+	 */
+	tokens = strutils_split(opt, ':', 1);
+	num_token = strutils_array_of_strings_len(tokens);
+
+	/*
+	 * Early sanity check that the number of parameter is between 2 and 3
+	 * inclusively.
+	 * elf:PATH:SYMBOL
+	 * PATH:SYMBOL (same behavior as above^)
+	 */
+	if (num_token < 2 || num_token > 3) {
+		ret = CMD_ERROR;
+		goto end_string;
+	}
+
+	/*
+	 * Looking up the first parameter will tell the technique to use to
+	 * interpret the userspace probe/function description.
+	 */
+	if (strcmp(tokens[0], "elf") == 0) {
+		target_path = tokens[1];
+		symbol_name = tokens[2];
+	} else {
+		target_path = tokens[0];
+		symbol_name = tokens[1];
+	}
+
+	target_path = strutils_unescape_string(target_path, 0);
+
+	/* Find the full path of the target binary. */
+
+	/* First, expand any shell-like elements (e.g. tilde and wildcards). */
+	ret = wordexp(target_path, &expanded_path, 0);
+
+	/* Check for error */
+	if (ret != 0) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end_string;
+	}
+
+	/* Make sure there is only one match */
+	if (expanded_path.we_wordc != 1) {
+		ERR("Ambiguous path to binary.");
+		ret = -LTTNG_ERR_INVALID;
+		goto end_free_wordexp;
+	}
+
+	/* Take a pointer to the first and only match */
+	target_path = expanded_path.we_wordv[0];
+	if (!target_path) {
+		ret = -LTTNG_ERR_INVALID;
+		goto end_free_wordexp;
+	}
+
+	/*
+	 * Use realpath(3) to expand symlinks and references to `/./` and `/../`
+	 */
+	real_target_path = realpath(target_path, NULL);
+	if (!real_target_path) {
+		/* realpath() call failed. Try walking the PATH. */
+		real_target_path = zmalloc(LTTNG_PATH_MAX * sizeof(char));
+		if (!real_target_path) {
+			ret = -LTTNG_ERR_NOMEM;
+			goto end_free_wordexp;
+		}
+
+		/* Walk the $PATH variable to find the targeted binary. */
+		ret = walk_command_search_path(target_path, real_target_path);
+		if (ret) {
+			ERR("Binary not found.");
+			ret = CMD_ERROR;
+			goto end_free_path;
+		}
+	}
+
+	switch (ev->type) {
+	case LTTNG_EVENT_USERSPACE_PROBE:
+		lookup_method =
+			lttng_userspace_probe_location_lookup_method_function_name_elf_create();
+		if (!lookup_method) {
+			WARN("Failed to create ELF lookup method");
+			ret = CMD_ERROR;
+			goto end_free_path;
+		}
+		probe_location = lttng_userspace_probe_location_function_create(
+				real_target_path, symbol_name, lookup_method);
+		if (!probe_location) {
+			WARN("Failed to create function probe location");
+			ret = CMD_ERROR;
+			goto end_destroy_lookup_method;
+		}
+		/* Ownership transferred to probe_location. */
+		lookup_method = NULL;
+
+		ret = lttng_event_set_userspace_probe_location(ev, probe_location);
+		if (ret) {
+			WARN("Failed to set probe location on event");
+			ret = CMD_ERROR;
+			goto end_destroy_location;
+		}
+		break;
+	default:
+		assert(0);
+	}
+
+	goto end;
+
+end_destroy_location:
+	lttng_userspace_probe_location_destroy(probe_location);
+end_destroy_lookup_method:
+	lttng_userspace_probe_location_lookup_method_destroy(lookup_method);
+end_free_path:
+	/*
+	 * Free path that was allocated by the call to realpath() or when walking
+	 * the PATH.
+	 */
+	free(real_target_path);
+end_free_wordexp:
+	wordfree(&expanded_path);
+end_string:
+	strutils_free_null_terminated_array_of_strings(tokens);
+end:
+	return ret;
+}
 /*
  * Maps LOG4j loglevel from string to value
  */
@@ -582,42 +834,11 @@ static int enable_events(char *session_name)
 	struct lttng_event *ev;
 	struct lttng_domain dom;
 	char **exclusion_list = NULL;
-	struct lttng_userspace_probe_location *probe_location = NULL;
-	struct lttng_userspace_probe_location_lookup_method *lookup_method =
-			NULL;
 
 	memset(&dom, 0, sizeof(dom));
 
 	ev = lttng_event_create();
 	if (!ev) {
-		ret = CMD_ERROR;
-		goto error;
-	}
-
-	/*
-	 * NOTE: This is done entirely for demonstration purposes. This
-	 * should be modified to take into account the cases where a
-	 * userspace probe is actually needed.
-	 */
-	lookup_method = lttng_userspace_probe_location_lookup_method_function_name_elf_create();
-	if (!lookup_method) {
-		WARN("Failed to create ELF lookup method");
-		ret = CMD_ERROR;
-		goto error;
-	}
-	probe_location = lttng_userspace_probe_location_function_create(
-			"/usr/bin/ls", "main", lookup_method);
-	if (!probe_location) {
-		WARN("Failed to create function probe location");
-		ret = CMD_ERROR;
-		goto error;
-	}
-	/* Ownership transferred to probe_location. */
-	lookup_method = NULL;
-
-	ret = lttng_event_set_userspace_probe_location(ev, probe_location);
-	if (ret) {
-		WARN("Failed to set probe location on event");
 		ret = CMD_ERROR;
 		goto error;
 	}
@@ -971,7 +1192,15 @@ static int enable_events(char *session_name)
 				ret = parse_probe_opts(ev, opt_probe);
 				if (ret) {
 					ERR("Unable to parse probe options");
-					ret = 0;
+					ret = CMD_ERROR;
+					goto error;
+				}
+				break;
+			case LTTNG_EVENT_USERSPACE_PROBE:
+				ret = parse_userspace_probe_opts(ev, opt_userspace_probe);
+				if (ret) {
+					ERR("Unable to parse userspace probe options");
+					ret = CMD_ERROR;
 					goto error;
 				}
 				break;
@@ -979,7 +1208,7 @@ static int enable_events(char *session_name)
 				ret = parse_probe_opts(ev, opt_function);
 				if (ret) {
 					ERR("Unable to parse function probe options");
-					ret = 0;
+					ret = CMD_ERROR;
 					goto error;
 				}
 				break;
@@ -1290,8 +1519,6 @@ error:
 	ret = error_holder ? error_holder : ret;
 
 	lttng_event_destroy(ev);
-	lttng_userspace_probe_location_destroy(probe_location);
-	lttng_userspace_probe_location_lookup_method_destroy(lookup_method);
 	return ret;
 }
 
@@ -1321,6 +1548,9 @@ int cmd_enable_events(int argc, const char **argv)
 			break;
 		case OPT_PROBE:
 			opt_event_type = LTTNG_EVENT_PROBE;
+			break;
+		case OPT_USERSPACE_PROBE:
+			opt_event_type = LTTNG_EVENT_USERSPACE_PROBE;
 			break;
 		case OPT_FUNCTION:
 			opt_event_type = LTTNG_EVENT_FUNCTION;
