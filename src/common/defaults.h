@@ -286,6 +286,10 @@
  */
 #define DEFAULT_INET_TCP_TIMEOUT			180	/* sec */
 
+/* Maximum payload size for a control connection */
+
+#define DEFAULT_NETWORK_RELAYD_CTRL_MAX_PAYLOAD_SIZE 134217728
+
 /*
  * Default receiving and sending timeout for an application socket.
  */

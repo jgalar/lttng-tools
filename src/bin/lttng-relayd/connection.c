@@ -65,6 +65,45 @@ end:
 	return conn;
 }
 
+int connection_reset_protocol_state(struct relay_connection *connection)
+{
+	int ret = 0;
+
+	switch (connection->type) {
+	case RELAY_DATA:
+		connection->protocol.data.state_id =
+				DATA_CONNECTION_STATE_RECEIVE_HEADER;
+		memset(&connection->protocol.data.state.receive_header,
+				0,
+				sizeof(connection->protocol.data.state.receive_header));
+		connection->protocol.data.state.receive_header.left_to_receive =
+				sizeof(struct lttcomm_relayd_data_hdr);
+		break;
+	case RELAY_CONTROL:
+		connection->protocol.ctrl.state_id =
+				CTRL_CONNECTION_STATE_RECEIVE_HEADER;
+		memset(&connection->protocol.ctrl.state.receive_header,
+				0,
+				sizeof(connection->protocol.ctrl.state.receive_header));
+		connection->protocol.data.state.receive_header.left_to_receive =
+				sizeof(struct lttcomm_relayd_hdr);
+		ret = lttng_dynamic_buffer_set_size(
+				&connection->protocol.ctrl.reception_buffer,
+				sizeof(struct lttcomm_relayd_hdr));
+		if (ret) {
+			ERR("Failed to reinitialize control connection reception buffer size to %zu bytes.", sizeof(struct lttcomm_relayd_hdr));
+			goto end;
+		}
+		break;
+	default:
+		goto end;
+	}
+	DBG("Reset communication state of relay connection (fd = %i)",
+			connection->sock->fd);
+end:
+	return ret;
+}
+
 struct relay_connection *connection_create(struct lttcomm_sock *sock,
 		enum connection_type type)
 {
@@ -80,6 +119,10 @@ struct relay_connection *connection_create(struct lttcomm_sock *sock,
 	conn->type = type;
 	conn->sock = sock;
 	lttng_ht_node_init_ulong(&conn->sock_n, (unsigned long) conn->sock->fd);
+	if (conn->type == RELAY_CONTROL) {
+		lttng_dynamic_buffer_init(&conn->protocol.ctrl.reception_buffer);
+	}
+	connection_reset_protocol_state(conn);
 end:
 	return conn;
 }
@@ -144,4 +187,28 @@ void connection_ht_add(struct lttng_ht *relay_connections_ht,
 	lttng_ht_add_unique_ulong(relay_connections_ht, &conn->sock_n);
 	conn->in_socket_ht = 1;
 	conn->socket_ht = relay_connections_ht;
+}
+
+int connection_set_session(struct relay_connection *conn,
+		struct relay_session *session)
+{
+	int ret = 0;
+
+	assert(conn);
+	assert(session);
+	assert(!conn->session);
+
+	if (connection_get(conn)) {
+		if (session_get(session)) {
+			conn->session = session;
+		} else {
+			ERR("Failed to get session reference in connection_set_session()");
+			ret = -1;
+		}
+		connection_put(conn);
+	} else {
+		ERR("Failed to get connection reference in connection_set_session()");
+		ret = -1;
+	}
+	return ret;
 }
