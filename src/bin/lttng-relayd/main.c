@@ -767,6 +767,30 @@ error:
 	return NULL;
 }
 
+static
+int socket_set_non_blocking(struct lttcomm_sock *socket)
+{
+	int ret, flags;
+
+	/* Set the pipe as non-blocking. */
+	ret = fcntl(socket->fd, F_GETFL, 0);
+	if (ret == -1) {
+		PERROR("fcntl get socket flags");
+		goto end;
+	}
+	flags = ret;
+
+	ret = fcntl(socket->fd, F_SETFL, flags | O_NONBLOCK);
+	if (ret == -1) {
+		PERROR("fcntl set O_NONBLOCK socket flag");
+		goto end;
+	}
+	DBG("Client socket (fd = %i) set as non-blocking", socket->fd);
+	socket->non_blocking = true;
+end:
+	return ret;
+}
+
 /*
  * This thread manages the listening for new connections on the network
  */
@@ -875,12 +899,14 @@ restart:
 				struct relay_connection *new_conn;
 				struct lttcomm_sock *newsock;
 				enum connection_type type;
+				bool is_data_socket = false;
 
 				if (pollfd == data_sock->fd) {
 					type = RELAY_DATA;
 					newsock = data_sock->ops->accept(data_sock);
 					DBG("Relay data connection accepted, socket %d",
 							newsock->fd);
+					is_data_socket = true;
 				} else {
 					assert(pollfd == control_sock->fd);
 					type = RELAY_CONTROL;
@@ -907,6 +933,20 @@ restart:
 							newsock->fd);
 					lttcomm_destroy_sock(newsock);
 					goto error;
+				}
+
+				if (is_data_socket) {
+					/*
+					 * Only data sockets are non-blocking
+					 * for this POC.
+					 */
+					DBG("Switching data socket to non-blocking mode");
+					ret = socket_set_non_blocking(newsock);
+					if (ret) {
+						ERR("Failed to set data socket (fd = %i) in non-blocking mode",
+								newsock->fd);
+						goto error;
+					}
 				}
 
 				new_conn = connection_create(newsock, type);
@@ -2263,57 +2303,74 @@ end:
 	return ret;
 }
 
-/*
- * relay_process_data: Process the data received on the data socket
- */
-static int relay_process_data(struct relay_connection *conn)
+static int relay_process_data_receive_header(struct relay_connection *conn)
 {
-	int ret = 0, rotate_index = 0;
-	ssize_t size_ret;
+	int ret;
+	struct data_connection_state_receive_header *state =
+			&conn->protocol.data.state.receive_header;
+	struct lttcomm_relayd_data_hdr *data_hdr;
 	struct relay_stream *stream;
-	struct lttcomm_relayd_data_hdr data_hdr;
-	uint64_t stream_id;
-	uint64_t net_seq_num;
-	uint32_t data_size;
 	struct relay_session *session;
-	bool new_stream = false, close_requested = false;
-	size_t chunk_size = RECV_DATA_BUFFER_SIZE;
-	size_t recv_off = 0;
-	char data_buffer[chunk_size];
+	int rotate_index = 0;
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &data_hdr,
-			sizeof(struct lttcomm_relayd_data_hdr), 0);
-	if (ret <= 0) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Unable to receive data header on sock %d", conn->sock->fd);
-		}
+	assert(state->left_to_receive != 0);
+
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			state->data_hdr + state->received,
+			state->left_to_receive, 0);
+	if (ret < 0) {
+		ERR("Unable to receive data header on sock %d", conn->sock->fd);
+		goto end;
+	} else if (ret == 0) {
+		/* Orderly shutdown. Not necessary to print an error. */
+		DBG("Socket %d did an orderly shutdown", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
 
-	stream_id = be64toh(data_hdr.stream_id);
-	stream = stream_get_by_id(stream_id);
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
+
+	state->left_to_receive -= ret;
+	state->received += ret;
+
+	if (state->left_to_receive > 0) {
+		/*
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
+		 */
+		DBG("Partial reception of data connection protocol header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		ret = 0;
+		goto end;
+	}
+
+	/* Transition to next state: receiving the payload. */
+	conn->protocol.data.current_state = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
+	data_hdr = &conn->protocol.data.state.receive_payload.header;
+
+	memcpy(data_hdr, state->data_hdr, sizeof(*data_hdr));
+	data_hdr->circuit_id = be64toh(data_hdr->circuit_id);
+	data_hdr->stream_id = be64toh(data_hdr->stream_id);
+	data_hdr->data_size = be32toh(data_hdr->data_size);
+	data_hdr->net_seq_num = be64toh(data_hdr->net_seq_num);
+	data_hdr->padding_size = be32toh(data_hdr->padding_size);
+
+	stream = stream_get_by_id(data_hdr->stream_id);
 	if (!stream) {
-		ERR("relay_process_data: Cannot find stream %" PRIu64, stream_id);
+		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64,
+				data_hdr->stream_id);
 		ret = -1;
 		goto end;
 	}
-	session = stream->trace->session;
-	data_size = be32toh(data_hdr.data_size);
-
-	net_seq_num = be64toh(data_hdr.net_seq_num);
-
-	DBG3("Receiving data of size %u for stream id %" PRIu64 " seqnum %" PRIu64,
-		data_size, stream_id, net_seq_num);
 
 	pthread_mutex_lock(&stream->lock);
+	session = stream->trace->session;
 
 	/* Check if a rotation is needed. */
 	if (stream->tracefile_size > 0 &&
-			(stream->tracefile_size_current + data_size) >
+			(stream->tracefile_size_current + data_hdr->data_size) >
 			stream->tracefile_size) {
 		uint64_t old_id, new_id;
 
@@ -2329,9 +2386,10 @@ static int relay_process_data(struct relay_connection *conn)
 			        -1, stream->stream_fd->fd,
 				&new_id, &stream->stream_fd->fd);
 		if (ret < 0) {
-			ERR("Rotating stream output file");
+			ERR("Failed to rotate stream output file");
 			goto end_stream_unlock;
 		}
+
 		/*
 		 * Reset current size because we just performed a stream
 		 * rotation.
@@ -2345,56 +2403,140 @@ static int relay_process_data(struct relay_connection *conn)
 	 * snapshot and index are NOT supported.
 	 */
 	if (session->minor >= 4 && !session->snapshot) {
-		ret = handle_index_data(stream, net_seq_num, rotate_index);
+		ret = handle_index_data(stream, data_hdr->net_seq_num,
+				rotate_index);
 		if (ret < 0) {
 			ERR("handle_index_data: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
-					stream->stream_handle, net_seq_num, ret);
+					stream->stream_handle,
+					data_hdr->net_seq_num, ret);
 			goto end_stream_unlock;
 		}
 	}
 
-	for (recv_off = 0; recv_off < data_size; recv_off += chunk_size) {
-		size_t recv_size = min(data_size - recv_off, chunk_size);
+	conn->protocol.data.state.receive_payload.left_to_receive =
+			data_hdr->data_size;
+	conn->protocol.data.state.receive_payload.received = 0;
+	ret = 0;
+	DBG("Data connection state transition to RECEIVE_PAYLOAD, expecting %" PRIu32 " bytes",
+			data_hdr->data_size);
+end_stream_unlock:
+	pthread_mutex_unlock(&stream->lock);
+	stream_put(stream);
+end:
+	return ret;
+}
+
+static int relay_process_data_receive_payload(struct relay_connection *conn)
+{
+	int ret;
+	struct relay_stream *stream;
+	struct data_connection_state_receive_payload *state =
+			&conn->protocol.data.state.receive_payload;
+	struct relay_session *session;
+	const size_t chunk_size = RECV_DATA_BUFFER_SIZE;
+	char data_buffer[chunk_size];
+	bool partial_recv = false;
+	bool new_stream = false, close_requested = false;
+
+	stream = stream_get_by_id(state->header.stream_id);
+	if (!stream) {
+		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64,
+				state->header.stream_id);
+		ret = -1;
+		goto end;
+	}
+
+	pthread_mutex_lock(&stream->lock);
+	session = stream->trace->session;
+
+	DBG3("Receiving data for stream id %" PRIu64 " seqnum %" PRIu64 ", %" PRIu64" bytes received, %" PRIu64 " bytes left to receive",
+			state->header.stream_id, state->header.net_seq_num,
+			state->received, state->left_to_receive);
+
+	/*
+	 * The size of the "chunk" received on any  iteration is bounded by:
+	 *   - the data left to receive,
+	 *   - the data immediately available on the socket,
+	 *   - the on-stack data buffer
+	 */
+	while (state->left_to_receive > 0 && !partial_recv) {
+		ssize_t write_ret;
+		size_t recv_size = min(state->left_to_receive, chunk_size);
 
 		ret = conn->sock->ops->recvmsg(conn->sock, data_buffer, recv_size, 0);
-		if (ret <= 0) {
-			if (ret == 0) {
-				/* Orderly shutdown. Not necessary to print an error. */
-				DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-			} else {
-				ERR("Socket %d error %d", conn->sock->fd, ret);
-			}
+		if (ret < 0) {
+			ERR("Socket %d error %d", conn->sock->fd, ret);
 			ret = -1;
 			goto end_stream_unlock;
+		} else if (ret == 0) {
+			/* No more data ready to be consumed on socket. */
+			DBG3("No more data ready for consumption on data socket of stream id %" PRIu64,
+					state->header.stream_id);
+			break;
+		} else if (ret < (int) recv_size) {
+			/*
+			 * All the data available on the socket has been
+			 * consumed.
+			 */
+			partial_recv = true;
 		}
 
+		recv_size = ret;
+
 		/* Write data to stream output fd. */
-		size_ret = lttng_write(stream->stream_fd->fd, data_buffer,
+		write_ret = lttng_write(stream->stream_fd->fd, data_buffer,
 				recv_size);
-		if (size_ret < recv_size) {
+		if (write_ret < (ssize_t) recv_size) {
 			ERR("Relay error writing data to file");
 			ret = -1;
 			goto end_stream_unlock;
 		}
 
+		state->received += recv_size;
+		state->left_to_receive -= recv_size;
+
 		DBG2("Relay wrote %zd bytes to tracefile for stream id %" PRIu64,
-				size_ret, stream->stream_handle);
+				write_ret, stream->stream_handle);
 	}
 
-	ret = write_padding_to_file(stream->stream_fd->fd,
-			be32toh(data_hdr.padding_size));
-	if (ret < 0) {
-		ERR("write_padding_to_file: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
-				stream->stream_handle, net_seq_num, ret);
+	if (state->left_to_receive > 0) {
+		/*
+		 * Did not receive all the data expected, wait for more data to
+		 * become available on the socket.
+		 */
+		DBG("Partial receive on data connection of stream id %" PRIu64 ", %" PRIu64 " bytes received, %" PRIu64 " bytes left to receive",
+				state->header.stream_id, state->received,
+				state->left_to_receive);
+		ret = 0;
 		goto end_stream_unlock;
 	}
-	stream->tracefile_size_current +=
-			data_size + be32toh(data_hdr.padding_size);
+
+	/* State transition to RECEIVE_HEADER. */
+
+	ret = write_padding_to_file(stream->stream_fd->fd,
+			state->header.padding_size);
+	if (ret < 0) {
+		ERR("write_padding_to_file: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
+				stream->stream_handle,
+				state->header.net_seq_num, ret);
+		goto end_stream_unlock;
+	}
+
+	stream->tracefile_size_current += state->header.data_size +
+			state->header.padding_size;
 	if (stream->prev_seq == -1ULL) {
 		new_stream = true;
 	}
 
-	stream->prev_seq = net_seq_num;
+	stream->prev_seq = state->header.net_seq_num;
+
+	/*
+	 * Resetting the protocol state (to RECEIVE_HEADER) will trash the
+	 * contents of *state which are aliased (union) to the same location as
+	 * the new state. Don't use it beyond this point.
+	 */
+	connection_reset_protocol_state(conn);
+	state = NULL;
 
 end_stream_unlock:
 	close_requested = stream->close_requested;
@@ -2408,8 +2550,31 @@ end_stream_unlock:
 		uatomic_set(&session->new_streams, 1);
 		pthread_mutex_unlock(&session->lock);
 	}
+
 	stream_put(stream);
 end:
+	return ret;
+}
+
+/*
+ * relay_process_data: Process the data received on the data socket
+ */
+static int relay_process_data(struct relay_connection *conn)
+{
+	int ret;
+
+	switch (conn->protocol.data.current_state) {
+	case DATA_CONNECTION_STATE_RECEIVE_HEADER:
+		ret = relay_process_data_receive_header(conn);
+		break;
+	case DATA_CONNECTION_STATE_RECEIVE_PAYLOAD:
+		ret = relay_process_data_receive_payload(conn);
+		break;
+	default:
+		ERR("Unexpected data connection communication state.");
+		abort();
+	}
+
 	return ret;
 }
 

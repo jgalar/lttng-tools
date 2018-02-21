@@ -56,6 +56,29 @@ end:
 	return conn;
 }
 
+int connection_reset_protocol_state(struct relay_connection *connection)
+{
+	int ret = 0;
+
+	switch (connection->type) {
+	case RELAY_DATA:
+		connection->protocol.data.current_state =
+				DATA_CONNECTION_STATE_RECEIVE_HEADER;
+		memset(&connection->protocol.data.state.receive_header,
+				0,
+				sizeof(connection->protocol.data.state.receive_header));
+		connection->protocol.data.state.receive_header.left_to_receive =
+				sizeof(struct lttcomm_relayd_data_hdr);
+		break;
+	default:
+		goto end;
+	}
+	DBG("Reset communication state of relay connection (fd = %i)",
+			connection->sock->fd);
+end:
+	return ret;
+}
+
 struct relay_connection *connection_create(struct lttcomm_sock *sock,
 		enum connection_type type)
 {
@@ -70,6 +93,7 @@ struct relay_connection *connection_create(struct lttcomm_sock *sock,
 	conn->type = type;
 	conn->sock = sock;
 	lttng_ht_node_init_ulong(&conn->sock_n, (unsigned long) conn->sock->fd);
+	connection_reset_protocol_state(conn);
 end:
 	return conn;
 }
