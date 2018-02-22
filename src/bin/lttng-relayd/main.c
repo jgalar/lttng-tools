@@ -2600,8 +2600,10 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 		drop_it_like_its_hot = true;
 	}
 
-	pthread_mutex_lock(&stream->lock);
-	session = stream->trace->session;
+	if (!drop_it_like_its_hot) {
+		pthread_mutex_lock(&stream->lock);
+		session = stream->trace->session;
+	}
 
 	DBG3("Receiving data for stream id %" PRIu64 " seqnum %" PRIu64 ", %" PRIu64" bytes received, %" PRIu64 " bytes left to receive",
 			state->header.stream_id, state->header.net_seq_num,
@@ -2652,7 +2654,7 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 		state->left_to_receive -= recv_size;
 
 		DBG2("Relay wrote %zd bytes to tracefile for stream id %" PRIu64,
-				write_ret, stream->stream_handle);
+				write_ret, state->header.stream_id);
 	}
 
 	if (state->left_to_receive > 0) {
