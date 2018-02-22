@@ -2142,6 +2142,9 @@ end_no_session:
 	return ret;
 }
 
+#define DBG_CMD(cmd_name, conn) \
+		DBG3("Processing \"%s\" command for socket %i", cmd_name, conn->sock->fd);
+
 static int relay_process_control_command(struct relay_connection *conn,
 		const struct lttcomm_relayd_hdr *header,
 		const struct lttng_buffer_view *payload)
@@ -2150,42 +2153,55 @@ static int relay_process_control_command(struct relay_connection *conn,
 
 	switch (header->cmd) {
 	case RELAYD_CREATE_SESSION:
+		DBG_CMD("RELAYD_CREATE_SESSION", conn);
 		ret = relay_create_session(header, conn, payload);
 		break;
 	case RELAYD_ADD_STREAM:
+		DBG_CMD("RELAYD_ADD_STREAM", conn);
 		ret = relay_add_stream(header, conn, payload);
 		break;
 	case RELAYD_START_DATA:
+		DBG_CMD("RELAYD_START_DATA", conn);
 		ret = relay_start(header, conn, payload);
 		break;
 	case RELAYD_SEND_METADATA:
+		DBG_CMD("RELAYD_SEND_METADATA", conn);
 		ret = relay_recv_metadata(header, conn, payload);
 		break;
 	case RELAYD_VERSION:
+		DBG_CMD("RELAYD_VERSION", conn);
 		ret = relay_send_version(header, conn, payload);
 		break;
 	case RELAYD_CLOSE_STREAM:
+		DBG_CMD("RELAYD_CLOSE_STREAM", conn);
 		ret = relay_close_stream(header, conn, payload);
 		break;
 	case RELAYD_DATA_PENDING:
+		DBG_CMD("RELAYD_DATA_PENDING", conn);
 		ret = relay_data_pending(header, conn, payload);
 		break;
 	case RELAYD_QUIESCENT_CONTROL:
+		DBG_CMD("RELAYD_QUIESCENT_CONTROL", conn);
 		ret = relay_quiescent_control(header, conn, payload);
 		break;
 	case RELAYD_BEGIN_DATA_PENDING:
+		DBG_CMD("RELAYD_BEGIN_DATA_PENDING", conn);
 		ret = relay_begin_data_pending(header, conn, payload);
 		break;
 	case RELAYD_END_DATA_PENDING:
+		DBG_CMD("RELAYD_END_DATA_PENDING", conn);
 		ret = relay_end_data_pending(header, conn, payload);
 		break;
 	case RELAYD_SEND_INDEX:
+		DBG_CMD("RELAYD_SEND_INDEX", conn);
 		ret = relay_recv_index(header, conn, payload);
 		break;
 	case RELAYD_STREAMS_SENT:
+		DBG_CMD("RELAYD_STREAMS_SENT", conn);
 		ret = relay_streams_sent(header, conn, payload);
 		break;
 	case RELAYD_RESET_METADATA:
+		DBG_CMD("RELAYD_RESET_METADATA", conn);
 		ret = relay_reset_metadata(header, conn, payload);
 		break;
 	case RELAYD_UPDATE_SYNC_INFO:
@@ -2221,7 +2237,7 @@ static int relay_process_control_receive_payload(struct relay_connection *conn)
 		ERR("Unable to receive command payload on sock %d", conn->sock->fd);
 		goto end;
 	} else if (ret == 0) {
-		DBG("No data available on socket %d, shutting down...", conn->sock->fd);
+		DBG("Socket %d performed an orderly shutdown (received EOF)", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
@@ -2237,7 +2253,7 @@ static int relay_process_control_receive_payload(struct relay_connection *conn)
 		 * Can't transition to the protocol's next state, wait to
 		 * receive the rest of the header.
 		 */
-		DBG("Partial reception of control connection protocol payload (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+		DBG3("Partial reception of control connection protocol payload (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
 				state->received, state->left_to_receive,
 				conn->sock->fd);
 		ret = 0;
@@ -2285,7 +2301,7 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 		ERR("Unable to receive control command header on sock %d", conn->sock->fd);
 		goto end;
 	} else if (ret == 0) {
-		DBG("No data available on socket %d, shutting down...", conn->sock->fd);
+		DBG("Socket %d performed an orderly shutdown (received EOF)", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
@@ -2301,7 +2317,7 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 		 * Can't transition to the protocol's next state, wait to
 		 * receive the rest of the header.
 		 */
-		DBG("Partial reception of control connection protocol header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+		DBG3("Partial reception of control connection protocol header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
 				state->received, state->left_to_receive,
 				conn->sock->fd);
 		ret = 0;
@@ -2382,7 +2398,7 @@ static int relay_process_control(struct relay_connection *conn)
  * Return 0 on success else a negative value.
  */
 static int handle_index_data(struct relay_stream *stream, uint64_t net_seq_num,
-		int rotate_index)
+		bool rotate_index)
 {
 	int ret = 0;
 	uint64_t data_offset;
@@ -2460,22 +2476,20 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 	int ret;
 	struct data_connection_state_receive_header *state =
 			&conn->protocol.data.state.receive_header;
-	struct lttcomm_relayd_data_hdr *data_hdr;
+	struct lttcomm_relayd_data_hdr *header;
 	struct relay_stream *stream;
-	struct relay_session *session;
-	int rotate_index = 0;
 
 	assert(state->left_to_receive != 0);
 
 	ret = conn->sock->ops->recvmsg(conn->sock,
-			state->data_hdr + state->received,
+			state->header_reception_buffer + state->received,
 			state->left_to_receive, 0);
 	if (ret < 0) {
 		ERR("Unable to receive data header on sock %d", conn->sock->fd);
 		goto end;
 	} else if (ret == 0) {
 		/* Orderly shutdown. Not necessary to print an error. */
-		DBG("Socket %d did an orderly shutdown", conn->sock->fd);
+		DBG("Socket %d performed an orderly shutdown (received EOF)", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
@@ -2491,7 +2505,7 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 		 * Can't transition to the protocol's next state, wait to
 		 * receive the rest of the header.
 		 */
-		DBG("Partial reception of data connection protocol header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+		DBG3("Partial reception of data connection header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
 				state->received, state->left_to_receive,
 				conn->sock->fd);
 		ret = 0;
@@ -2500,29 +2514,38 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 
 	/* Transition to next state: receiving the payload. */
 	conn->protocol.data.state_id = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
-	data_hdr = &conn->protocol.data.state.receive_payload.header;
+	header = &conn->protocol.data.state.receive_payload.header;
 
-	memcpy(data_hdr, state->data_hdr, sizeof(*data_hdr));
-	data_hdr->circuit_id = be64toh(data_hdr->circuit_id);
-	data_hdr->stream_id = be64toh(data_hdr->stream_id);
-	data_hdr->data_size = be32toh(data_hdr->data_size);
-	data_hdr->net_seq_num = be64toh(data_hdr->net_seq_num);
-	data_hdr->padding_size = be32toh(data_hdr->padding_size);
+	memcpy(header, state->header_reception_buffer, sizeof(*header));
+	header->circuit_id = be64toh(header->circuit_id);
+	header->stream_id = be64toh(header->stream_id);
+	header->data_size = be32toh(header->data_size);
+	header->net_seq_num = be64toh(header->net_seq_num);
+	header->padding_size = be32toh(header->padding_size);
 
-	stream = stream_get_by_id(data_hdr->stream_id);
+	conn->protocol.data.state.receive_payload.left_to_receive =
+			header->data_size;
+	conn->protocol.data.state.receive_payload.received = 0;
+	conn->protocol.data.state.receive_payload.rotate_index = false;
+
+	DBG("Received data connection header on fd %i: circuit_id = %" PRIu64 ", stream_id = %" PRIu64 ", data_size = %" PRIu32 ", net_seq_num = %" PRIu64 ", padding_size = %" PRIu32,
+			conn->sock->fd, header->circuit_id,
+			header->stream_id, header->data_size,
+			header->net_seq_num, header->padding_size);
+
+	stream = stream_get_by_id(header->stream_id);
 	if (!stream) {
 		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64,
-				data_hdr->stream_id);
+				header->stream_id);
 		ret = -1;
 		goto end;
 	}
 
 	pthread_mutex_lock(&stream->lock);
-	session = stream->trace->session;
 
 	/* Check if a rotation is needed. */
 	if (stream->tracefile_size > 0 &&
-			(stream->tracefile_size_current + data_hdr->data_size) >
+			(stream->tracefile_size_current + header->data_size) >
 			stream->tracefile_size) {
 		uint64_t old_id, new_id;
 
@@ -2547,30 +2570,10 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 		 * rotation.
 		 */
 		stream->tracefile_size_current = 0;
-		rotate_index = 1;
+		conn->protocol.data.state.receive_payload.rotate_index = true;
 	}
 
-	/*
-	 * Index are handled in protocol version 2.4 and above. Also,
-	 * snapshot and index are NOT supported.
-	 */
-	if (session->minor >= 4 && !session->snapshot) {
-		ret = handle_index_data(stream, data_hdr->net_seq_num,
-				rotate_index);
-		if (ret < 0) {
-			ERR("handle_index_data: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
-					stream->stream_handle,
-					data_hdr->net_seq_num, ret);
-			goto end_stream_unlock;
-		}
-	}
-
-	conn->protocol.data.state.receive_payload.left_to_receive =
-			data_hdr->data_size;
-	conn->protocol.data.state.receive_payload.received = 0;
 	ret = 0;
-	DBG("Data connection state transition to RECEIVE_PAYLOAD, expecting %" PRIu32 " bytes",
-			data_hdr->data_size);
 end_stream_unlock:
 	pthread_mutex_unlock(&stream->lock);
 	stream_put(stream);
@@ -2584,11 +2587,11 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 	struct relay_stream *stream;
 	struct data_connection_state_receive_payload *state =
 			&conn->protocol.data.state.receive_payload;
-	struct relay_session *session;
 	const size_t chunk_size = RECV_DATA_BUFFER_SIZE;
 	char data_buffer[chunk_size];
 	bool partial_recv = false;
 	bool new_stream = false, close_requested = false;
+	struct relay_session *session;
 
 	stream = stream_get_by_id(state->header.stream_id);
 	if (!stream) {
@@ -2656,14 +2659,12 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 		 * Did not receive all the data expected, wait for more data to
 		 * become available on the socket.
 		 */
-		DBG("Partial receive on data connection of stream id %" PRIu64 ", %" PRIu64 " bytes received, %" PRIu64 " bytes left to receive",
+		DBG3("Partial receive on data connection of stream id %" PRIu64 ", %" PRIu64 " bytes received, %" PRIu64 " bytes left to receive",
 				state->header.stream_id, state->received,
 				state->left_to_receive);
 		ret = 0;
 		goto end_stream_unlock;
 	}
-
-	/* State transition to RECEIVE_HEADER. */
 
 	ret = write_padding_to_file(stream->stream_fd->fd,
 			state->header.padding_size);
@@ -2676,6 +2677,18 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 
 	stream->tracefile_size_current += state->header.data_size +
 			state->header.padding_size;
+
+	if (session->minor >= 4 && !session->snapshot) {
+		ret = handle_index_data(stream, state->header.net_seq_num,
+				state->rotate_index);
+		if (ret < 0) {
+			ERR("handle_index_data: fail stream %" PRIu64 " net_seq_num %" PRIu64 " ret %d",
+					stream->stream_handle,
+					state->header.net_seq_num, ret);
+			goto end_stream_unlock;
+		}
+	}
+
 	if (stream->prev_seq == -1ULL) {
 		new_stream = true;
 	}

@@ -54,12 +54,13 @@ enum ctrl_connection_state {
 
 struct data_connection_state_receive_header {
 	uint64_t received, left_to_receive;
-	char data_hdr[sizeof(struct lttcomm_relayd_data_hdr)];
+	char header_reception_buffer[sizeof(struct lttcomm_relayd_data_hdr)];
 };
 
 struct data_connection_state_receive_payload {
-	struct lttcomm_relayd_data_hdr header;
 	uint64_t received, left_to_receive;
+	struct lttcomm_relayd_data_hdr header;
+	bool rotate_index;
 };
 
 struct ctrl_connection_state_receive_header {
@@ -67,8 +68,8 @@ struct ctrl_connection_state_receive_header {
 };
 
 struct ctrl_connection_state_receive_payload {
-	struct lttcomm_relayd_hdr header;
 	uint64_t received, left_to_receive;
+	struct lttcomm_relayd_hdr header;
 };
 
 /*
