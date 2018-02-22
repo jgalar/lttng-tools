@@ -1766,41 +1766,36 @@ static int relay_quiescent_control(const struct lttcomm_relayd_hdr *recv_hdr,
 		const struct lttng_buffer_view *payload)
 {
 	int ret;
-	uint64_t stream_id;
 	struct relay_stream *stream;
 	struct lttcomm_relayd_quiescent_control msg;
 	struct lttcomm_relayd_generic_reply reply;
 
 	DBG("Checking quiescent state on control socket");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid begin data_pending struct size: %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_quiescent_control\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.stream_id = be64toh(msg.stream_id);
 
-	stream_id = be64toh(msg.stream_id);
-	stream = stream_get_by_id(stream_id);
+	stream = stream_get_by_id(msg.stream_id);
 	if (!stream) {
 		goto reply;
 	}
 	pthread_mutex_lock(&stream->lock);
 	stream->data_pending_check_done = true;
 	pthread_mutex_unlock(&stream->lock);
-	DBG("Relay quiescent control pending flag set to %" PRIu64, stream_id);
+
+	DBG("Relay quiescent control pending flag set to %" PRIu64, msg.stream_id);
 	stream_put(stream);
 reply:
 	memset(&reply, 0, sizeof(reply));
@@ -1808,6 +1803,9 @@ reply:
 	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
 	if (ret < 0) {
 		ERR("Relay data quiescent control ret code failed");
+	} else if (ret < sizeof(reply)) {
+		ERR("Failed to send \"quiescent control\" command reply (ret = %i)", ret);
+		ret = -1;
 	}
 
 end_no_session:
