@@ -2221,7 +2221,7 @@ static int relay_process_control_receive_payload(struct relay_connection *conn)
 		ERR("Unable to receive command payload on sock %d", conn->sock->fd);
 		goto end;
 	} else if (ret == 0) {
-		DBG("No data available on socket %d", conn->sock->fd);
+		DBG("No data available on socket %d, shutting down...", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
@@ -2285,7 +2285,7 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 		ERR("Unable to receive control command header on sock %d", conn->sock->fd);
 		goto end;
 	} else if (ret == 0) {
-		ERR("No data available on socket %d", conn->sock->fd);
+		DBG("No data available on socket %d, shutting down...", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
