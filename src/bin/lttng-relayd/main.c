@@ -1906,31 +1906,24 @@ static int relay_end_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
 	struct lttcomm_relayd_end_data_pending msg;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
-	uint64_t session_id;
 	uint32_t is_data_inflight = 0;
 
 	DBG("End data pending command");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid end data_pending struct size: %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_end_data_pending\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
-
-	session_id = be64toh(msg.session_id);
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.session_id = be64toh(msg.session_id);
 
 	/*
 	 * Iterate over all streams to see if the begin data pending
@@ -1942,7 +1935,7 @@ static int relay_end_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
 		if (!stream_get(stream)) {
 			continue;
 		}
-		if (stream->trace->session->id != session_id) {
+		if (stream->trace->session->id != msg.session_id) {
 			stream_put(stream);
 			continue;
 		}
@@ -1969,6 +1962,9 @@ static int relay_end_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
 	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
 	if (ret < 0) {
 		ERR("Relay end data pending send reply failed");
+	} else if (ret < sizeof(reply)) {
+		ERR("Failed to send \"end data pending\" command reply (ret = %i)", ret);
+		ret = -1;
 	}
 
 end_no_session:
