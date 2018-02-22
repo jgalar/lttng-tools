@@ -2536,9 +2536,9 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 
 	stream = stream_get_by_id(header->stream_id);
 	if (!stream) {
-		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64,
+		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64 ". Not aborting just to see what happens next...",
 				header->stream_id);
-		ret = -1;
+		ret = 0;
 		goto end;
 	}
 
@@ -2593,13 +2593,13 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 	bool partial_recv = false;
 	bool new_stream = false, close_requested = false;
 	struct relay_session *session;
+	bool drop_it_like_its_hot = false;
 
 	stream = stream_get_by_id(state->header.stream_id);
 	if (!stream) {
-		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64,
+		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64 ". But I will survive!",
 				state->header.stream_id);
-		ret = -1;
-		goto end;
+		drop_it_like_its_hot = true;
 	}
 
 	pthread_mutex_lock(&stream->lock);
@@ -2640,12 +2640,14 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 		recv_size = ret;
 
 		/* Write data to stream output fd. */
-		write_ret = lttng_write(stream->stream_fd->fd, data_buffer,
-				recv_size);
-		if (write_ret < (ssize_t) recv_size) {
-			ERR("Relay error writing data to file");
-			ret = -1;
-			goto end_stream_unlock;
+		if (!drop_it_like_its_hot) {
+			write_ret = lttng_write(stream->stream_fd->fd, data_buffer,
+					recv_size);
+			if (write_ret < (ssize_t) recv_size) {
+				ERR("Relay error writing data to file");
+				ret = -1;
+				goto end_stream_unlock;
+			}
 		}
 
 		state->received += recv_size;
@@ -2665,6 +2667,11 @@ static int relay_process_data_receive_payload(struct relay_connection *conn)
 				state->left_to_receive);
 		ret = 0;
 		goto end_stream_unlock;
+	}
+
+	if (drop_it_like_its_hot) {
+		ret = 0;
+		goto end;
 	}
 
 	ret = write_padding_to_file(stream->stream_fd->fd,
