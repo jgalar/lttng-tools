@@ -2321,6 +2321,8 @@ static int relay_process_control_receive_payload(struct relay_connection *conn)
 	}
 
 reception_complete:
+	DBG("Done receiving control command payload: fd = %i, payload size = %" PRIu64 " bytes",
+			conn->sock->fd, state->received);
 	/*
 	 * The payload required to process the command has been received.
 	 * A view to the reception buffer is forwarded to the various
@@ -2332,7 +2334,7 @@ reception_complete:
 			0, -1);
 	ret = relay_process_control_command(conn,
 			&state->header, &payload_view);
-	if (ret) {
+	if (ret < 0) {
 		goto end;
 	}
 
