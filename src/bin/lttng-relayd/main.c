@@ -1086,21 +1086,18 @@ static int set_index_control_data(struct relay_index *index,
 	struct ctf_packet_index index_data;
 
 	/*
-	 * The index on disk is encoded in big endian, so we don't need
-	 * to convert the data received on the network. The data_offset
-	 * value is NEVER modified here and is updated by the data
-	 * thread.
+	 * The index on disk is encoded in big endian.
 	 */
-	index_data.packet_size = data->packet_size;
-	index_data.content_size = data->content_size;
-	index_data.timestamp_begin = data->timestamp_begin;
-	index_data.timestamp_end = data->timestamp_end;
-	index_data.events_discarded = data->events_discarded;
-	index_data.stream_id = data->stream_id;
+	index_data.packet_size = htobe64(data->packet_size);
+	index_data.content_size = htobe64(data->content_size);
+	index_data.timestamp_begin = htobe64(data->timestamp_begin);
+	index_data.timestamp_end = htobe64(data->timestamp_end);
+	index_data.events_discarded = htobe64(data->events_discarded);
+	index_data.stream_id = htobe64(data->stream_id);
 
 	if (conn->minor >= 8) {
-		index->index_data.stream_instance_id = data->stream_instance_id;
-		index->index_data.packet_seq_num = data->packet_seq_num;
+		index->index_data.stream_instance_id = htobe64(data->stream_instance_id);
+		index->index_data.packet_seq_num = htobe64(data->packet_seq_num);
 	}
 
 	return relay_index_set_data(index, &index_data);
@@ -1986,14 +1983,13 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 	struct relay_index *index;
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
-	uint64_t net_seq_num;
 	size_t msg_len;
 
 	assert(conn);
 
 	DBG("Relay receiving index");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to close a stream before version check");
 		ret = -1;
 		goto end_no_session;
@@ -2002,22 +1998,25 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 	msg_len = lttcomm_relayd_index_len(
 			lttng_to_index_major(conn->major, conn->minor),
 			lttng_to_index_minor(conn->major, conn->minor));
-	ret = conn->sock->ops->recvmsg(conn->sock, &index_info,
-			msg_len, 0);
-	if (ret < msg_len) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid index struct size : %d", ret);
-		}
+	if (payload->size < msg_len) {
+		ERR("Unexpected payload size in \"relay_recv_index\": expected >= %zu bytes, got %zu bytes",
+				msg_len, payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&index_info, payload->data, msg_len);
+	index_info.relay_stream_id = be64toh(index_info.relay_stream_id);
+	index_info.net_seq_num = be64toh(index_info.net_seq_num);
+	index_info.packet_size = be64toh(index_info.packet_size);
+	index_info.content_size = be64toh(index_info.content_size);
+	index_info.timestamp_begin = be64toh(index_info.timestamp_begin);
+	index_info.timestamp_end = be64toh(index_info.timestamp_end);
+	index_info.events_discarded = be64toh(index_info.events_discarded);
+	index_info.stream_id = be64toh(index_info.stream_id);
+	index_info.stream_instance_id = be64toh(index_info.stream_instance_id);
+	index_info.packet_seq_num = be64toh(index_info.packet_seq_num);
 
-	net_seq_num = be64toh(index_info.net_seq_num);
-
-	stream = stream_get_by_id(be64toh(index_info.relay_stream_id));
+	stream = stream_get_by_id(index_info.relay_stream_id);
 	if (!stream) {
 		ERR("stream_get_by_id not found");
 		ret = -1;
@@ -2036,8 +2035,7 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		 */
 		if (stream->index_received_seqcount > 0
 				&& stream->indexes_in_flight == 0) {
-			stream->beacon_ts_end =
-				be64toh(index_info.timestamp_end);
+			stream->beacon_ts_end = index_info.timestamp_end;
 		}
 		ret = 0;
 		goto end_stream_put;
@@ -2046,9 +2044,9 @@ static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 	}
 
 	if (stream->ctf_stream_id == -1ULL) {
-		stream->ctf_stream_id = be64toh(index_info.stream_id);
+		stream->ctf_stream_id = index_info.stream_id;
 	}
-	index = relay_index_get_by_id_or_create(stream, net_seq_num);
+	index = relay_index_get_by_id_or_create(stream, index_info.net_seq_num);
 	if (!index) {
 		ret = -1;
 		ERR("relay_index_get_by_id_or_create index NULL");
@@ -2089,6 +2087,9 @@ end:
 	if (send_ret < 0) {
 		ERR("Relay sending close index id reply");
 		ret = send_ret;
+	} else if (ret < sizeof(reply)) {
+		ERR("Failed to send \"recv index\" command reply (ret = %i)", ret);
+		ret = -1;
 	}
 
 end_no_session:
