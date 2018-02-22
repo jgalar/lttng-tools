@@ -145,10 +145,6 @@ static uint64_t last_relay_stream_id;
  */
 static struct relay_conn_queue relay_conn_queue;
 
-/* buffer allocated at startup, used to store the trace data */
-static char *data_buffer;
-static unsigned int data_buffer_size;
-
 /* Global relay stream hash table. */
 struct lttng_ht *relay_streams_ht;
 
@@ -1170,7 +1166,7 @@ send_reply:
 		ERR("Relayd sending session id");
 		ret = send_ret;
 	} else if (send_ret < sizeof(reply)) {
-		ERR("Failed to send \"create session command\" reply");
+		ERR("Failed to send \"create session\" command reply (ret = %i)", send_ret);
 		ret = -1;
 	}
 
@@ -1224,7 +1220,7 @@ static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
 	char *path_name = NULL, *channel_name = NULL;
 	uint64_t tracefile_size = 0, tracefile_count = 0;
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to add a stream before version check");
 		ret = -1;
 		goto end_no_session;
@@ -1232,12 +1228,12 @@ static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
 
 	switch (session->minor) {
 	case 1: /* LTTng sessiond 2.1. Allocates path_name and channel_name. */
-		ret = cmd_recv_stream_2_1(conn, &path_name,
+		ret = cmd_recv_stream_2_1(payload, &path_name,
 			&channel_name);
 		break;
 	case 2: /* LTTng sessiond 2.2. Allocates path_name and channel_name. */
 	default:
-		ret = cmd_recv_stream_2_2(conn, &path_name,
+		ret = cmd_recv_stream_2_2(payload, &path_name,
 			&channel_name, &tracefile_size, &tracefile_count);
 		break;
 	}
@@ -1281,6 +1277,9 @@ send_reply:
 	if (send_ret < 0) {
 		ERR("Relay sending stream id");
 		ret = (int) send_ret;
+	} else if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"add stream\" command reply (ret = %zi)", send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1554,9 +1553,9 @@ static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 	int ret = 0;
 	ssize_t size_ret;
 	struct relay_session *session = conn->session;
-	struct lttcomm_relayd_metadata_payload *metadata_struct;
+	struct lttcomm_relayd_metadata_payload metadata_payload_header;
 	struct relay_stream *metadata_stream;
-	uint64_t data_size, payload_size;
+	uint64_t metadata_payload_size;
 
 	if (!session) {
 		ERR("Metadata sent before version check");
@@ -1564,44 +1563,22 @@ static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	data_size = payload_size = be64toh(recv_hdr->data_size);
-	if (data_size < sizeof(struct lttcomm_relayd_metadata_payload)) {
+	if (recv_hdr->data_size < sizeof(struct lttcomm_relayd_metadata_payload)) {
 		ERR("Incorrect data size");
 		ret = -1;
 		goto end;
 	}
-	payload_size -= sizeof(struct lttcomm_relayd_metadata_payload);
+	metadata_payload_size = recv_hdr->data_size -
+			sizeof(struct lttcomm_relayd_metadata_payload);
 
-	if (data_buffer_size < data_size) {
-		/* In case the realloc fails, we can free the memory */
-		char *tmp_data_ptr;
+	memcpy(&metadata_payload_header, payload->data,
+			sizeof(metadata_payload_header));
+	metadata_payload_header.stream_id = be64toh(
+			metadata_payload_header.stream_id);
+	metadata_payload_header.padding_size = be32toh(
+			metadata_payload_header.padding_size);
 
-		tmp_data_ptr = realloc(data_buffer, data_size);
-		if (!tmp_data_ptr) {
-			ERR("Allocating data buffer");
-			free(data_buffer);
-			ret = -1;
-			goto end;
-		}
-		data_buffer = tmp_data_ptr;
-		data_buffer_size = data_size;
-	}
-	memset(data_buffer, 0, data_size);
-	DBG2("Relay receiving metadata, waiting for %" PRIu64 " bytes", data_size);
-	size_ret = conn->sock->ops->recvmsg(conn->sock, data_buffer, data_size, 0);
-	if (size_ret < 0 || size_ret != data_size) {
-		if (size_ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive the whole metadata");
-		}
-		ret = -1;
-		goto end;
-	}
-	metadata_struct = (struct lttcomm_relayd_metadata_payload *) data_buffer;
-
-	metadata_stream = stream_get_by_id(be64toh(metadata_struct->stream_id));
+	metadata_stream = stream_get_by_id(metadata_payload_header.stream_id);
 	if (!metadata_stream) {
 		ret = -1;
 		goto end;
@@ -1609,22 +1586,23 @@ static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
 
 	pthread_mutex_lock(&metadata_stream->lock);
 
-	size_ret = lttng_write(metadata_stream->stream_fd->fd, metadata_struct->payload,
-			payload_size);
-	if (size_ret < payload_size) {
+	size_ret = lttng_write(metadata_stream->stream_fd->fd,
+			payload->data + sizeof(metadata_payload_header),
+			metadata_payload_size);
+	if (size_ret < metadata_payload_size) {
 		ERR("Relay error writing metadata on file");
 		ret = -1;
 		goto end_put;
 	}
 
 	size_ret = write_padding_to_file(metadata_stream->stream_fd->fd,
-			be32toh(metadata_struct->padding_size));
+			metadata_payload_header.padding_size);
 	if (size_ret < 0) {
 		goto end_put;
 	}
 
 	metadata_stream->metadata_received +=
-		payload_size + be32toh(metadata_struct->padding_size);
+		metadata_payload_size + metadata_payload_header.padding_size;
 	DBG2("Relay metadata written. Updated metadata_received %" PRIu64,
 		metadata_stream->metadata_received);
 
@@ -2283,6 +2261,10 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 	header->cmd = be32toh(header->cmd);
 	header->cmd_version = be32toh(header->cmd_version);
 
+	DBG("Done receiving control command header: fd = %i, cmd = %" PRIu32 ", cmd_version = %" PRIu32 ", payload size = %" PRIu64 " bytes",
+			conn->sock->fd, header->cmd, header->cmd_version,
+			header->data_size);
+
 	/* FIXME temporary arbitrary limit on data size. */
 	if (header->data_size > (128 * 1024 * 1024)) {
 		ERR("Command header indicates a payload (%" PRIu64 " bytes) that exceeds the maximal payload size allowed on a control connection.",
@@ -2309,7 +2291,10 @@ static int relay_process_control_receive_payload(struct relay_connection *conn)
 			&conn->protocol.ctrl.state.receive_payload;
 	struct lttng_buffer_view payload_view;
 
-	assert(state->left_to_receive != 0);
+	if (state->left_to_receive == 0) {
+		/* Short-circuit for payload-less commands. */
+		goto reception_complete;
+	}
 
 	ret = conn->sock->ops->recvmsg(conn->sock,
 			reception_buffer->data + state->received,
@@ -2342,6 +2327,7 @@ static int relay_process_control_receive_payload(struct relay_connection *conn)
 		goto end;
 	}
 
+reception_complete:
 	/*
 	 * The payload required to process the command has been received.
 	 * A view to the reception buffer is forwarded to the various

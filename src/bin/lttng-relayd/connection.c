@@ -109,10 +109,10 @@ struct relay_connection *connection_create(struct lttcomm_sock *sock,
 	conn->type = type;
 	conn->sock = sock;
 	lttng_ht_node_init_ulong(&conn->sock_n, (unsigned long) conn->sock->fd);
-	connection_reset_protocol_state(conn);
 	if (conn->type == RELAY_CONTROL) {
 		lttng_dynamic_buffer_init(&conn->protocol.ctrl.reception_buffer);
 	}
+	connection_reset_protocol_state(conn);
 end:
 	return conn;
 }

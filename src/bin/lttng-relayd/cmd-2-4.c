@@ -38,7 +38,12 @@ int cmd_create_session_2_4(const struct lttng_buffer_view *payload,
 	struct lttcomm_relayd_create_session_2_4 session_info;
 	size_t len;
 
-	assert(payload->size >= sizeof(session_info));
+	if (payload->size < sizeof(session_info)) {
+		ERR("Unexpected payload size in \"cmd_create_session_2_4\": expected >= %zu bytes, got %zu bytes",
+				sizeof(session_info), payload->size);
+		ret = -1;
+		goto error;
+	}
 	memcpy(&session_info, payload->data, sizeof(session_info));
 
 	len = lttng_strnlen(session_info.session_name, sizeof(session_info.session_name));
