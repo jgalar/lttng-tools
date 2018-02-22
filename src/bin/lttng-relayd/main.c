@@ -1303,26 +1303,23 @@ static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
 
 	DBG("Close stream received");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to close a stream before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &stream_info,
-			sizeof(struct lttcomm_relayd_close_stream), 0);
-	if (ret < sizeof(struct lttcomm_relayd_close_stream)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid add_stream struct size : %d", ret);
-		}
+	if (payload->size < sizeof(stream_info)) {
+		ERR("Unexpected payload size in \"relay_close_stream\": expected >= %zu bytes, got %zu bytes",
+				sizeof(stream_info), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&stream_info, payload->data, sizeof(stream_info));
+	stream_info.stream_id = be64toh(stream_info.stream_id);
+	stream_info.last_net_seq_num = be64toh(stream_info.last_net_seq_num);
 
-	stream = stream_get_by_id(be64toh(stream_info.stream_id));
+	stream = stream_get_by_id(stream_info.stream_id);
 	if (!stream) {
 		ret = -1;
 		goto end;
@@ -1333,7 +1330,7 @@ static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
 	 * pending check.
 	 */
 	pthread_mutex_lock(&stream->lock);
-	stream->last_net_seq_num = be64toh(stream_info.last_net_seq_num);
+	stream->last_net_seq_num = stream_info.last_net_seq_num;
 	pthread_mutex_unlock(&stream->lock);
 
 	/*
@@ -1377,6 +1374,9 @@ end:
 	if (send_ret < 0) {
 		ERR("Relay sending stream id");
 		ret = send_ret;
+	} else if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"close stream\" command reply (ret = %i)", send_ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1624,38 +1624,37 @@ static int relay_send_version(struct lttcomm_relayd_hdr *recv_hdr,
 	struct lttcomm_relayd_version reply, msg;
 	bool compatible = true;
 
-	conn->version_check_done = 1;
+	conn->version_check_done = true;
 
 	/* Get version from the other side. */
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < 0 || ret != sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay failed to receive the version values.");
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_send_version\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end;
 	}
+
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.major = be32toh(msg.major);
+	msg.minor = be32toh(msg.minor);
 
 	memset(&reply, 0, sizeof(reply));
 	reply.major = RELAYD_VERSION_COMM_MAJOR;
 	reply.minor = RELAYD_VERSION_COMM_MINOR;
 
 	/* Major versions must be the same */
-	if (reply.major != be32toh(msg.major)) {
+	if (reply.major != msg.major) {
 		DBG("Incompatible major versions (%u vs %u), deleting session",
-				reply.major, be32toh(msg.major));
+				reply.major, msg.major);
 		compatible = false;
 	}
 
 	conn->major = reply.major;
 	/* We adapt to the lowest compatible version */
-	if (reply.minor <= be32toh(msg.minor)) {
+	if (reply.minor <= msg.minor) {
 		conn->minor = reply.minor;
 	} else {
-		conn->minor = be32toh(msg.minor);
+		conn->minor = msg.minor;
 	}
 
 	reply.major = htobe32(reply.major);
@@ -1664,6 +1663,10 @@ static int relay_send_version(struct lttcomm_relayd_hdr *recv_hdr,
 			sizeof(struct lttcomm_relayd_version), 0);
 	if (ret < 0) {
 		ERR("Relay sending version");
+	} else if (ret < sizeof(reply)) {
+		ERR("Failed to send \"send version\" command reply (ret = %i)", ret);
+		ret = -1;
+		goto end;
 	}
 
 	if (!compatible) {
