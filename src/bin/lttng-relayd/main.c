@@ -2112,7 +2112,7 @@ static int relay_streams_sent(const struct lttcomm_relayd_hdr *recv_hdr,
 
 	DBG("Relay receiving streams_sent");
 
-	if (!conn->session || conn->version_check_done == 0) {
+	if (!conn->session || !conn->version_check_done) {
 		ERR("Trying to close a stream before version check");
 		ret = -1;
 		goto end_no_session;
@@ -2130,6 +2130,9 @@ static int relay_streams_sent(const struct lttcomm_relayd_hdr *recv_hdr,
 	if (send_ret < 0) {
 		ERR("Relay sending sent_stream reply");
 		ret = send_ret;
+	} else if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"streams sent\" command reply (ret = %i)", send_ret);
+		ret = -1;
 	} else {
 		/* Success. */
 		ret = 0;
