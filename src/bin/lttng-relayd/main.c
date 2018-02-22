@@ -2286,7 +2286,7 @@ end:
 static int relay_process_control_receive_header(struct relay_connection *conn)
 {
 	int ret = 0;
-	struct lttcomm_relayd_hdr *header;
+	struct lttcomm_relayd_hdr header;
 	struct lttng_dynamic_buffer *reception_buffer =
 			&conn->protocol.ctrl.reception_buffer;
 	struct ctrl_connection_state_receive_header *state =
@@ -2325,39 +2325,38 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 	}
 
 	/* Transition to next state: receiving the command's payload. */
-	state = NULL;
 	conn->protocol.ctrl.state_id =
 			CTRL_CONNECTION_STATE_RECEIVE_PAYLOAD;
-	header = &conn->protocol.ctrl.state.receive_payload.header;
-
-	memcpy(header, reception_buffer->data, sizeof(*header));
-	header->circuit_id = be64toh(header->circuit_id);
-	header->data_size = be64toh(header->data_size);
-	header->cmd = be32toh(header->cmd);
-	header->cmd_version = be32toh(header->cmd_version);
+	memcpy(&header, reception_buffer->data, sizeof(header));
+	header.circuit_id = be64toh(header.circuit_id);
+	header.data_size = be64toh(header.data_size);
+	header.cmd = be32toh(header.cmd);
+	header.cmd_version = be32toh(header.cmd_version);
+	memcpy(&conn->protocol.ctrl.state.receive_payload.header,
+			&header, sizeof(header));
 
 	DBG("Done receiving control command header: fd = %i, cmd = %" PRIu32 ", cmd_version = %" PRIu32 ", payload size = %" PRIu64 " bytes",
-			conn->sock->fd, header->cmd, header->cmd_version,
-			header->data_size);
+			conn->sock->fd, header.cmd, header.cmd_version,
+			header.data_size);
 
 	/* FIXME temporary arbitrary limit on data size. */
-	if (header->data_size > (128 * 1024 * 1024)) {
+	if (header.data_size > (128 * 1024 * 1024)) {
 		ERR("Command header indicates a payload (%" PRIu64 " bytes) that exceeds the maximal payload size allowed on a control connection.",
-				header->data_size);
+				header.data_size);
 		ret = -1;
 		goto end;
 	}
 
 	conn->protocol.ctrl.state.receive_payload.left_to_receive =
-			header->data_size;
+			header.data_size;
 	conn->protocol.ctrl.state.receive_payload.received = 0;
 	ret = lttng_dynamic_buffer_set_size(reception_buffer,
-			header->data_size);
+			header.data_size);
 	if (ret) {
 		goto end;
 	}
 
-	if (header->data_size == 0) {
+	if (header.data_size == 0) {
 		/*
 		 * Manually invoke the next state as the poll loop
 		 * will not wake-up to allow us to proceed further.
@@ -2476,7 +2475,7 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 	int ret;
 	struct data_connection_state_receive_header *state =
 			&conn->protocol.data.state.receive_header;
-	struct lttcomm_relayd_data_hdr *header;
+	struct lttcomm_relayd_data_hdr header;
 	struct relay_stream *stream;
 
 	assert(state->left_to_receive != 0);
@@ -2513,31 +2512,30 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 	}
 
 	/* Transition to next state: receiving the payload. */
-	state = NULL;
 	conn->protocol.data.state_id = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
-	header = &conn->protocol.data.state.receive_payload.header;
 
-	memcpy(header, state->header_reception_buffer, sizeof(*header));
-	header->circuit_id = be64toh(header->circuit_id);
-	header->stream_id = be64toh(header->stream_id);
-	header->data_size = be32toh(header->data_size);
-	header->net_seq_num = be64toh(header->net_seq_num);
-	header->padding_size = be32toh(header->padding_size);
+	memcpy(&header, state->header_reception_buffer, sizeof(header));
+	header.circuit_id = be64toh(header.circuit_id);
+	header.stream_id = be64toh(header.stream_id);
+	header.data_size = be32toh(header.data_size);
+	header.net_seq_num = be64toh(header.net_seq_num);
+	header.padding_size = be32toh(header.padding_size);
+	memcpy(&conn->protocol.data.state.receive_payload.header, &header, sizeof(header));
 
 	conn->protocol.data.state.receive_payload.left_to_receive =
-			header->data_size;
+			header.data_size;
 	conn->protocol.data.state.receive_payload.received = 0;
 	conn->protocol.data.state.receive_payload.rotate_index = false;
 
 	DBG("Received data connection header on fd %i: circuit_id = %" PRIu64 ", stream_id = %" PRIu64 ", data_size = %" PRIu32 ", net_seq_num = %" PRIu64 ", padding_size = %" PRIu32,
-			conn->sock->fd, header->circuit_id,
-			header->stream_id, header->data_size,
-			header->net_seq_num, header->padding_size);
+			conn->sock->fd, header.circuit_id,
+			header.stream_id, header.data_size,
+			header.net_seq_num, header.padding_size);
 
-	stream = stream_get_by_id(header->stream_id);
+	stream = stream_get_by_id(header.stream_id);
 	if (!stream) {
 		ERR("relay_process_data_receive_payload: Cannot find stream %" PRIu64 ". Not aborting just to see what happens next...",
-				header->stream_id);
+				header.stream_id);
 		ret = 0;
 		goto end;
 	}
@@ -2546,7 +2544,7 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 
 	/* Check if a rotation is needed. */
 	if (stream->tracefile_size > 0 &&
-			(stream->tracefile_size_current + header->data_size) >
+			(stream->tracefile_size_current + header.data_size) >
 			stream->tracefile_size) {
 		uint64_t old_id, new_id;
 
