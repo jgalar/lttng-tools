@@ -2087,8 +2087,8 @@ end:
 	if (send_ret < 0) {
 		ERR("Relay sending close index id reply");
 		ret = send_ret;
-	} else if (ret < sizeof(reply)) {
-		ERR("Failed to send \"recv index\" command reply (ret = %i)", ret);
+	} else if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"recv index\" command reply (ret = %i)", send_ret);
 		ret = -1;
 	}
 
@@ -2200,6 +2200,73 @@ end:
 	return ret;
 }
 
+static int relay_process_control_receive_payload(struct relay_connection *conn)
+{
+	int ret = 0;
+	struct lttng_dynamic_buffer *reception_buffer =
+			&conn->protocol.ctrl.reception_buffer;
+	struct ctrl_connection_state_receive_payload *state =
+			&conn->protocol.ctrl.state.receive_payload;
+	struct lttng_buffer_view payload_view;
+
+	if (state->left_to_receive == 0) {
+		/* Short-circuit for payload-less commands. */
+		goto reception_complete;
+	}
+
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			reception_buffer->data + state->received,
+			state->left_to_receive, 0);
+	if (ret < 0) {
+		ERR("Unable to receive command payload on sock %d", conn->sock->fd);
+		goto end;
+	} else if (ret == 0) {
+		DBG("No data available on socket %d", conn->sock->fd);
+		ret = -1;
+		goto end;
+	}
+
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
+
+	state->left_to_receive -= ret;
+	state->received += ret;
+
+	if (state->left_to_receive > 0) {
+		/*
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
+		 */
+		DBG("Partial reception of control connection protocol payload (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		ret = 0;
+		goto end;
+	}
+
+reception_complete:
+	DBG("Done receiving control command payload: fd = %i, payload size = %" PRIu64 " bytes",
+			conn->sock->fd, state->received);
+	/*
+	 * The payload required to process the command has been received.
+	 * A view to the reception buffer is forwarded to the various
+	 * commands and the state of the control is reset on success.
+	 *
+	 * Commands are responsible for sending their reply to the peer.
+	 */
+	payload_view = lttng_buffer_view_from_dynamic_buffer(reception_buffer,
+			0, -1);
+	ret = relay_process_control_command(conn,
+			&state->header, &payload_view);
+	if (ret < 0) {
+		goto end;
+	}
+
+	ret = connection_reset_protocol_state(conn);
+end:
+	return ret;
+}
+
 static int relay_process_control_receive_header(struct relay_connection *conn)
 {
 	int ret = 0;
@@ -2218,8 +2285,7 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 		ERR("Unable to receive control command header on sock %d", conn->sock->fd);
 		goto end;
 	} else if (ret == 0) {
-		/* Orderly shutdown. Not necessary to print an error. */
-		DBG("Socket %d did an orderly shutdown", conn->sock->fd);
+		ERR("No data available on socket %d", conn->sock->fd);
 		ret = -1;
 		goto end;
 	}
@@ -2271,74 +2337,17 @@ static int relay_process_control_receive_header(struct relay_connection *conn)
 	conn->protocol.ctrl.state.receive_payload.received = 0;
 	ret = lttng_dynamic_buffer_set_size(reception_buffer,
 			header->data_size);
-end:
-	return ret;
-}
-
-static int relay_process_control_receive_payload(struct relay_connection *conn)
-{
-	int ret = 0;
-	struct lttng_dynamic_buffer *reception_buffer =
-			&conn->protocol.ctrl.reception_buffer;
-	struct ctrl_connection_state_receive_payload *state =
-			&conn->protocol.ctrl.state.receive_payload;
-	struct lttng_buffer_view payload_view;
-
-	if (state->left_to_receive == 0) {
-		/* Short-circuit for payload-less commands. */
-		goto reception_complete;
-	}
-
-	ret = conn->sock->ops->recvmsg(conn->sock,
-			reception_buffer->data + state->received,
-			state->left_to_receive, 0);
-	if (ret < 0) {
-		ERR("Unable to receive command payload on sock %d", conn->sock->fd);
-		goto end;
-	} else if (ret == 0) {
-		/* Orderly shutdown. Not necessary to print an error. */
-		DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		ret = -1;
+	if (ret) {
 		goto end;
 	}
 
-	assert(ret > 0);
-	assert(ret <= state->left_to_receive);
-
-	state->left_to_receive -= ret;
-	state->received += ret;
-
-	if (state->left_to_receive > 0) {
+	if (header->data_size == 0) {
 		/*
-		 * Can't transition to the protocol's next state, wait to
-		 * receive the rest of the header.
+		 * Manually invoke the next state as the poll loop
+		 * will not wake-up to allow us to proceed further.
 		 */
-		DBG("Partial reception of control connection protocol payload (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
-				state->received, state->left_to_receive,
-				conn->sock->fd);
-		ret = 0;
-		goto end;
+		ret = relay_process_control_receive_payload(conn);
 	}
-
-reception_complete:
-	DBG("Done receiving control command payload: fd = %i, payload size = %" PRIu64 " bytes",
-			conn->sock->fd, state->received);
-	/*
-	 * The payload required to process the command has been received.
-	 * A view to the reception buffer is forwarded to the various
-	 * commands and the state of the control is reset on success.
-	 *
-	 * Commands are responsible for sending their reply to the peer.
-	 */
-	payload_view = lttng_buffer_view_from_dynamic_buffer(reception_buffer,
-			0, -1);
-	ret = relay_process_control_command(conn,
-			&state->header, &payload_view);
-	if (ret < 0) {
-		goto end;
-	}
-
-	ret = connection_reset_protocol_state(conn);
 end:
 	return ret;
 }
