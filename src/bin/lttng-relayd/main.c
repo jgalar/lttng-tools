@@ -2513,6 +2513,7 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 	}
 
 	/* Transition to next state: receiving the payload. */
+	state = NULL;
 	conn->protocol.data.state_id = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
 	header = &conn->protocol.data.state.receive_payload.header;
 
