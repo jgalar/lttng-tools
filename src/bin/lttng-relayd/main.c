@@ -1111,7 +1111,7 @@ static int set_index_control_data(struct relay_index *index,
  *
  * On success, send back the session id or else return a negative value.
  */
-static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_create_session(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1206,7 +1206,7 @@ static void publish_connection_local_streams(struct relay_connection *conn)
 /*
  * relay_add_stream: allocate a new stream for a session
  */
-static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_add_stream(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1291,7 +1291,7 @@ end_no_session:
 /*
  * relay_close_stream: close a specific stream
  */
-static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_close_stream(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1387,7 +1387,7 @@ end_no_session:
  * relay_reset_metadata: reset a metadata stream
  */
 static
-int relay_reset_metadata(struct lttcomm_relayd_hdr *recv_hdr,
+int relay_reset_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1489,7 +1489,7 @@ static void relay_unknown_command(struct relay_connection *conn)
  * relay_start: send an acknowledgment to the client to tell if we are
  * ready to receive data. We are ready if a session is established.
  */
-static int relay_start(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_start(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1546,7 +1546,7 @@ end:
 /*
  * relay_recv_metadata: receive the metadata for the session.
  */
-static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_recv_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1616,7 +1616,7 @@ end:
 /*
  * relay_send_version: send relayd version number
  */
-static int relay_send_version(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_send_version(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1684,7 +1684,7 @@ end:
 /*
  * Check for data pending for a given stream id from the session daemon.
  */
-static int relay_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1693,33 +1693,26 @@ static int relay_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	struct lttcomm_relayd_generic_reply reply;
 	struct relay_stream *stream;
 	int ret;
-	uint64_t last_net_seq_num, stream_id;
 
 	DBG("Data pending command received");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to check for data before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &msg, sizeof(msg), 0);
-	if (ret < sizeof(msg)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid data_pending struct size : %d",
-					ret);
-		}
+	if (payload->size < sizeof(msg)) {
+		ERR("Unexpected payload size in \"relay_data_pending\": expected >= %zu bytes, got %zu bytes",
+				sizeof(msg), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
+	memcpy(&msg, payload->data, sizeof(msg));
+	msg.stream_id = be64toh(msg.stream_id);
+	msg.last_net_seq_num = be64toh(msg.last_net_seq_num);
 
-	stream_id = be64toh(msg.stream_id);
-	last_net_seq_num = be64toh(msg.last_net_seq_num);
-
-	stream = stream_get_by_id(stream_id);
+	stream = stream_get_by_id(msg.stream_id);
 	if (stream == NULL) {
 		ret = -1;
 		goto end;
@@ -1728,11 +1721,11 @@ static int relay_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
 	pthread_mutex_lock(&stream->lock);
 
 	DBG("Data pending for stream id %" PRIu64 " prev_seq %" PRIu64
-			" and last_seq %" PRIu64, stream_id, stream->prev_seq,
-			last_net_seq_num);
+			" and last_seq %" PRIu64, msg.stream_id,
+			stream->prev_seq, msg.last_net_seq_num);
 
 	/* Avoid wrapping issue */
-	if (((int64_t) (stream->prev_seq - last_net_seq_num)) >= 0) {
+	if (((int64_t) (stream->prev_seq - msg.last_net_seq_num)) >= 0) {
 		/* Data has in fact been written and is NOT pending */
 		ret = 0;
 	} else {
@@ -1751,6 +1744,9 @@ end:
 	ret = conn->sock->ops->sendmsg(conn->sock, &reply, sizeof(reply), 0);
 	if (ret < 0) {
 		ERR("Relay data pending ret code failed");
+	} else if (ret < sizeof(reply)) {
+		ERR("Failed to send \"data pending\" command reply (ret = %i)", ret);
+		ret = -1;
 	}
 
 end_no_session:
@@ -1765,7 +1761,7 @@ end_no_session:
  * the control socket has been handled. So, this is why we simply return
  * OK here.
  */
-static int relay_quiescent_control(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_quiescent_control(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1825,7 +1821,7 @@ end_no_session:
  *
  * This command returns to the client a LTTNG_OK code.
  */
-static int relay_begin_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_begin_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1907,7 +1903,7 @@ end_no_session:
  *
  * Return to the client if there is data in flight or not with a ret_code.
  */
-static int relay_end_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_end_data_pending(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -1990,7 +1986,7 @@ end_no_session:
  *
  * Return 0 on success else a negative value.
  */
-static int relay_recv_index(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_recv_index(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
@@ -2114,7 +2110,7 @@ end_no_session:
  *
  * Return 0 on success else a negative value.
  */
-static int relay_streams_sent(struct lttcomm_relayd_hdr *recv_hdr,
+static int relay_streams_sent(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
 		const struct lttng_buffer_view *payload)
 {
