@@ -55,6 +55,8 @@
 #include <common/uri.h>
 #include <common/utils.h>
 #include <common/config/session-config.h>
+#include <common/dynamic-buffer.h>
+#include <common/buffer-view.h>
 #include <urcu/rculist.h>
 
 #include "cmd.h"
@@ -772,7 +774,6 @@ int socket_set_non_blocking(struct lttcomm_sock *socket)
 {
 	int ret, flags;
 
-	/* Set the pipe as non-blocking. */
 	ret = fcntl(socket->fd, F_GETFL, 0);
 	if (ret == -1) {
 		PERROR("fcntl get socket flags");
@@ -899,14 +900,12 @@ restart:
 				struct relay_connection *new_conn;
 				struct lttcomm_sock *newsock;
 				enum connection_type type;
-				bool is_data_socket = false;
 
 				if (pollfd == data_sock->fd) {
 					type = RELAY_DATA;
 					newsock = data_sock->ops->accept(data_sock);
 					DBG("Relay data connection accepted, socket %d",
 							newsock->fd);
-					is_data_socket = true;
 				} else {
 					assert(pollfd == control_sock->fd);
 					type = RELAY_CONTROL;
@@ -935,18 +934,12 @@ restart:
 					goto error;
 				}
 
-				if (is_data_socket) {
-					/*
-					 * Only data sockets are non-blocking
-					 * for this POC.
-					 */
-					DBG("Switching data socket to non-blocking mode");
-					ret = socket_set_non_blocking(newsock);
-					if (ret) {
-						ERR("Failed to set data socket (fd = %i) in non-blocking mode",
-								newsock->fd);
+				DBG("Switching new socket to non-blocking mode");
+				ret = socket_set_non_blocking(newsock);
+				if (ret) {
+					ERR("Failed to set socket (fd = %i) to non-blocking mode",
+						newsock->fd);
 						goto error;
-					}
 				}
 
 				new_conn = connection_create(newsock, type);
@@ -1123,7 +1116,8 @@ static int set_index_control_data(struct relay_index *index,
  * On success, send back the session id or else return a negative value.
  */
 static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret = 0, send_ret;
 	struct relay_session *session;
@@ -1145,7 +1139,7 @@ static int relay_create_session(struct lttcomm_relayd_hdr *recv_hdr,
 		break;
 	case 4: /* LTTng sessiond 2.4 */
 	default:
-		ret = cmd_create_session_2_4(conn, session_name,
+		ret = cmd_create_session_2_4(payload, session_name,
 			hostname, &live_timer, &snapshot);
 	}
 	if (ret < 0) {
@@ -1175,6 +1169,9 @@ send_reply:
 	if (send_ret < 0) {
 		ERR("Relayd sending session id");
 		ret = send_ret;
+	} else if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"create session command\" reply");
+		ret = -1;
 	}
 
 	return ret;
@@ -1214,7 +1211,8 @@ static void publish_connection_local_streams(struct relay_connection *conn)
  * relay_add_stream: allocate a new stream for a session
  */
 static int relay_add_stream(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
 	ssize_t send_ret;
@@ -1295,7 +1293,8 @@ end_no_session:
  * relay_close_stream: close a specific stream
  */
 static int relay_close_stream(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret, send_ret;
 	struct relay_session *session = conn->session;
@@ -1390,7 +1389,8 @@ end_no_session:
  */
 static
 int relay_reset_metadata(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret, send_ret;
 	struct relay_session *session = conn->session;
@@ -1491,7 +1491,8 @@ static void relay_unknown_command(struct relay_connection *conn)
  * ready to receive data. We are ready if a session is established.
  */
 static int relay_start(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret = htobe32(LTTNG_OK);
 	struct lttcomm_relayd_generic_reply reply;
@@ -1547,7 +1548,8 @@ end:
  * relay_recv_metadata: receive the metadata for the session.
  */
 static int relay_recv_metadata(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret = 0;
 	ssize_t size_ret;
@@ -1637,7 +1639,8 @@ end:
  * relay_send_version: send relayd version number
  */
 static int relay_send_version(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
 	struct lttcomm_relayd_version reply, msg;
@@ -1701,7 +1704,8 @@ end:
  * Check for data pending for a given stream id from the session daemon.
  */
 static int relay_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	struct relay_session *session = conn->session;
 	struct lttcomm_relayd_data_pending msg;
@@ -1781,7 +1785,8 @@ end_no_session:
  * OK here.
  */
 static int relay_quiescent_control(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
 	uint64_t stream_id;
@@ -1840,7 +1845,8 @@ end_no_session:
  * This command returns to the client a LTTNG_OK code.
  */
 static int relay_begin_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
 	struct lttng_ht_iter iter;
@@ -1921,7 +1927,8 @@ end_no_session:
  * Return to the client if there is data in flight or not with a ret_code.
  */
 static int relay_end_data_pending(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret;
 	struct lttng_ht_iter iter;
@@ -2003,7 +2010,8 @@ end_no_session:
  * Return 0 on success else a negative value.
  */
 static int relay_recv_index(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret, send_ret;
 	struct relay_session *session = conn->session;
@@ -2126,7 +2134,8 @@ end_no_session:
  * Return 0 on success else a negative value.
  */
 static int relay_streams_sent(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+		struct relay_connection *conn,
+		const struct lttng_buffer_view *payload)
 {
 	int ret, send_ret;
 	struct lttcomm_relayd_generic_reply reply;
@@ -2162,63 +2171,216 @@ end_no_session:
 	return ret;
 }
 
-/*
- * Process the commands received on the control socket
- */
-static int relay_process_control(struct lttcomm_relayd_hdr *recv_hdr,
-		struct relay_connection *conn)
+static int relay_process_control_command(struct relay_connection *conn,
+		const struct lttcomm_relayd_hdr *header,
+		const struct lttng_buffer_view *payload)
 {
 	int ret = 0;
 
-	switch (be32toh(recv_hdr->cmd)) {
+	switch (header->cmd) {
 	case RELAYD_CREATE_SESSION:
-		ret = relay_create_session(recv_hdr, conn);
+		ret = relay_create_session(header, conn, payload);
 		break;
 	case RELAYD_ADD_STREAM:
-		ret = relay_add_stream(recv_hdr, conn);
+		ret = relay_add_stream(header, conn, payload);
 		break;
 	case RELAYD_START_DATA:
-		ret = relay_start(recv_hdr, conn);
+		ret = relay_start(header, conn, payload);
 		break;
 	case RELAYD_SEND_METADATA:
-		ret = relay_recv_metadata(recv_hdr, conn);
+		ret = relay_recv_metadata(header, conn, payload);
 		break;
 	case RELAYD_VERSION:
-		ret = relay_send_version(recv_hdr, conn);
+		ret = relay_send_version(header, conn, payload);
 		break;
 	case RELAYD_CLOSE_STREAM:
-		ret = relay_close_stream(recv_hdr, conn);
+		ret = relay_close_stream(header, conn, payload);
 		break;
 	case RELAYD_DATA_PENDING:
-		ret = relay_data_pending(recv_hdr, conn);
+		ret = relay_data_pending(header, conn, payload);
 		break;
 	case RELAYD_QUIESCENT_CONTROL:
-		ret = relay_quiescent_control(recv_hdr, conn);
+		ret = relay_quiescent_control(header, conn, payload);
 		break;
 	case RELAYD_BEGIN_DATA_PENDING:
-		ret = relay_begin_data_pending(recv_hdr, conn);
+		ret = relay_begin_data_pending(header, conn, payload);
 		break;
 	case RELAYD_END_DATA_PENDING:
-		ret = relay_end_data_pending(recv_hdr, conn);
+		ret = relay_end_data_pending(header, conn, payload);
 		break;
 	case RELAYD_SEND_INDEX:
-		ret = relay_recv_index(recv_hdr, conn);
+		ret = relay_recv_index(header, conn, payload);
 		break;
 	case RELAYD_STREAMS_SENT:
-		ret = relay_streams_sent(recv_hdr, conn);
+		ret = relay_streams_sent(header, conn, payload);
 		break;
 	case RELAYD_RESET_METADATA:
-		ret = relay_reset_metadata(recv_hdr, conn);
+		ret = relay_reset_metadata(header, conn, payload);
 		break;
 	case RELAYD_UPDATE_SYNC_INFO:
 	default:
-		ERR("Received unknown command (%u)", be32toh(recv_hdr->cmd));
+		ERR("Received unknown command (%u)", header->cmd);
 		relay_unknown_command(conn);
 		ret = -1;
 		goto end;
 	}
 
 end:
+	return ret;
+}
+
+static int relay_process_control_receive_header(struct relay_connection *conn)
+{
+	int ret = 0;
+	struct lttcomm_relayd_hdr *header;
+	struct lttng_dynamic_buffer *reception_buffer =
+			&conn->protocol.ctrl.reception_buffer;
+	struct ctrl_connection_state_receive_header *state =
+			&conn->protocol.ctrl.state.receive_header;
+
+	assert(state->left_to_receive != 0);
+
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			reception_buffer->data + state->received,
+			state->left_to_receive, 0);
+	if (ret < 0) {
+		ERR("Unable to receive control command header on sock %d", conn->sock->fd);
+		goto end;
+	} else if (ret == 0) {
+		/* Orderly shutdown. Not necessary to print an error. */
+		DBG("Socket %d did an orderly shutdown", conn->sock->fd);
+		ret = -1;
+		goto end;
+	}
+
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
+
+	state->left_to_receive -= ret;
+	state->received += ret;
+
+	if (state->left_to_receive > 0) {
+		/*
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
+		 */
+		DBG("Partial reception of control connection protocol header (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		ret = 0;
+		goto end;
+	}
+
+	/* Transition to next state: receiving the command's payload. */
+	state = NULL;
+	conn->protocol.ctrl.state_id =
+			CTRL_CONNECTION_STATE_RECEIVE_PAYLOAD;
+	header = &conn->protocol.ctrl.state.receive_payload.header;
+
+	memcpy(header, reception_buffer->data, sizeof(*header));
+	header->circuit_id = be64toh(header->circuit_id);
+	header->data_size = be64toh(header->data_size);
+	header->cmd = be32toh(header->cmd);
+	header->cmd_version = be32toh(header->cmd_version);
+
+	/* FIXME temporary arbitrary limit on data size. */
+	if (header->data_size > (128 * 1024 * 1024)) {
+		ERR("Command header indicates a payload (%" PRIu64 " bytes) that exceeds the maximal payload size allowed on a control connection.",
+				header->data_size);
+		ret = -1;
+		goto end;
+	}
+
+	conn->protocol.ctrl.state.receive_payload.left_to_receive =
+			header->data_size;
+	conn->protocol.ctrl.state.receive_payload.received = 0;
+	ret = lttng_dynamic_buffer_set_size(reception_buffer,
+			header->data_size);
+end:
+	return ret;
+}
+
+static int relay_process_control_receive_payload(struct relay_connection *conn)
+{
+	int ret = 0;
+	struct lttng_dynamic_buffer *reception_buffer =
+			&conn->protocol.ctrl.reception_buffer;
+	struct ctrl_connection_state_receive_payload *state =
+			&conn->protocol.ctrl.state.receive_payload;
+	struct lttng_buffer_view payload_view;
+
+	assert(state->left_to_receive != 0);
+
+	ret = conn->sock->ops->recvmsg(conn->sock,
+			reception_buffer->data + state->received,
+			state->left_to_receive, 0);
+	if (ret < 0) {
+		ERR("Unable to receive command payload on sock %d", conn->sock->fd);
+		goto end;
+	} else if (ret == 0) {
+		/* Orderly shutdown. Not necessary to print an error. */
+		DBG("Socket %d did an orderly shutdown", conn->sock->fd);
+		ret = -1;
+		goto end;
+	}
+
+	assert(ret > 0);
+	assert(ret <= state->left_to_receive);
+
+	state->left_to_receive -= ret;
+	state->received += ret;
+
+	if (state->left_to_receive > 0) {
+		/*
+		 * Can't transition to the protocol's next state, wait to
+		 * receive the rest of the header.
+		 */
+		DBG("Partial reception of control connection protocol payload (received %" PRIu64 " bytes, %" PRIu64 " bytes left to receive, fd = %i)",
+				state->received, state->left_to_receive,
+				conn->sock->fd);
+		ret = 0;
+		goto end;
+	}
+
+	/*
+	 * The payload required to process the command has been received.
+	 * A view to the reception buffer is forwarded to the various
+	 * commands and the state of the control is reset on success.
+	 *
+	 * Commands are responsible for sending their reply to the peer.
+	 */
+	payload_view = lttng_buffer_view_from_dynamic_buffer(reception_buffer,
+			0, -1);
+	ret = relay_process_control_command(conn,
+			&state->header, &payload_view);
+	if (ret) {
+		goto end;
+	}
+
+	ret = connection_reset_protocol_state(conn);
+end:
+	return ret;
+}
+
+/*
+ * Process the commands received on the control socket
+ */
+static int relay_process_control(struct relay_connection *conn)
+{
+	int ret = 0;
+
+	switch (conn->protocol.ctrl.state_id) {
+	case CTRL_CONNECTION_STATE_RECEIVE_HEADER:
+		ret = relay_process_control_receive_header(conn);
+		break;
+	case CTRL_CONNECTION_STATE_RECEIVE_PAYLOAD:
+		ret = relay_process_control_receive_payload(conn);
+		break;
+	default:
+		ERR("Unknown control connection protocol state encountered.");
+		abort();
+	}
+
 	return ret;
 }
 
@@ -2347,7 +2509,7 @@ static int relay_process_data_receive_header(struct relay_connection *conn)
 	}
 
 	/* Transition to next state: receiving the payload. */
-	conn->protocol.data.current_state = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
+	conn->protocol.data.state_id = DATA_CONNECTION_STATE_RECEIVE_PAYLOAD;
 	data_hdr = &conn->protocol.data.state.receive_payload.header;
 
 	memcpy(data_hdr, state->data_hdr, sizeof(*data_hdr));
@@ -2563,7 +2725,7 @@ static int relay_process_data(struct relay_connection *conn)
 {
 	int ret;
 
-	switch (conn->protocol.data.current_state) {
+	switch (conn->protocol.data.state_id) {
 	case DATA_CONNECTION_STATE_RECEIVE_HEADER:
 		ret = relay_process_data_receive_header(conn);
 		break;
@@ -2626,7 +2788,6 @@ static void *relay_thread_worker(void *data)
 	struct lttng_poll_event events;
 	struct lttng_ht *relay_connections_ht;
 	struct lttng_ht_iter iter;
-	struct lttcomm_relayd_hdr recv_hdr;
 	struct relay_connection *destroy_conn = NULL;
 
 	DBG("[thread] Relay worker started");
@@ -2748,21 +2909,14 @@ restart:
 				assert(ctrl_conn->type == RELAY_CONTROL);
 
 				if (revents & LPOLLIN) {
-					ret = ctrl_conn->sock->ops->recvmsg(ctrl_conn->sock,
-							&recv_hdr, sizeof(recv_hdr), 0);
-					if (ret <= 0) {
-						/* Connection closed */
-						relay_thread_close_connection(&events, pollfd,
+					ret = relay_process_control(ctrl_conn);
+					if (ret < 0) {
+						/* Clear the connection on error. */
+						relay_thread_close_connection(&events,
+								pollfd,
 								ctrl_conn);
-					} else {
-						ret = relay_process_control(&recv_hdr, ctrl_conn);
-						if (ret < 0) {
-							/* Clear the session on error. */
-							relay_thread_close_connection(&events,
-									pollfd, ctrl_conn);
-						}
-						seen_control = 1;
 					}
+					seen_control = 1;
 				} else if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 					relay_thread_close_connection(&events,
 							pollfd, ctrl_conn);

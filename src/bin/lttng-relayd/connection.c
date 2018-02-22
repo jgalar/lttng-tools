@@ -62,13 +62,29 @@ int connection_reset_protocol_state(struct relay_connection *connection)
 
 	switch (connection->type) {
 	case RELAY_DATA:
-		connection->protocol.data.current_state =
+		connection->protocol.data.state_id =
 				DATA_CONNECTION_STATE_RECEIVE_HEADER;
 		memset(&connection->protocol.data.state.receive_header,
 				0,
 				sizeof(connection->protocol.data.state.receive_header));
 		connection->protocol.data.state.receive_header.left_to_receive =
 				sizeof(struct lttcomm_relayd_data_hdr);
+		break;
+	case RELAY_CONTROL:
+		connection->protocol.ctrl.state_id =
+				CTRL_CONNECTION_STATE_RECEIVE_HEADER;
+		memset(&connection->protocol.ctrl.state.receive_header,
+				0,
+				sizeof(connection->protocol.ctrl.state.receive_header));
+		connection->protocol.data.state.receive_header.left_to_receive =
+				sizeof(struct lttcomm_relayd_hdr);
+		ret = lttng_dynamic_buffer_set_size(
+				&connection->protocol.ctrl.reception_buffer,
+				sizeof(struct lttcomm_relayd_hdr));
+		if (ret) {
+			ERR("Failed to reinitialize control connection reception buffer size to %zu bytes.", sizeof(struct lttcomm_relayd_hdr));
+			goto end;
+		}
 		break;
 	default:
 		goto end;
@@ -94,6 +110,9 @@ struct relay_connection *connection_create(struct lttcomm_sock *sock,
 	conn->sock = sock;
 	lttng_ht_node_init_ulong(&conn->sock_n, (unsigned long) conn->sock->fd);
 	connection_reset_protocol_state(conn);
+	if (conn->type == RELAY_CONTROL) {
+		lttng_dynamic_buffer_init(&conn->protocol.ctrl.reception_buffer);
+	}
 end:
 	return conn;
 }

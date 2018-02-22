@@ -30,6 +30,7 @@
 #include <common/hashtable/hashtable.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/sessiond-comm/relayd.h>
+#include <common/dynamic-buffer.h>
 
 #include "session.h"
 
@@ -46,6 +47,11 @@ enum data_connection_state {
 	DATA_CONNECTION_STATE_RECEIVE_PAYLOAD = 1,
 };
 
+enum ctrl_connection_state {
+	CTRL_CONNECTION_STATE_RECEIVE_HEADER = 0,
+	CTRL_CONNECTION_STATE_RECEIVE_PAYLOAD = 1,
+};
+
 struct data_connection_state_receive_header {
 	uint64_t received, left_to_receive;
 	char data_hdr[sizeof(struct lttcomm_relayd_data_hdr)];
@@ -53,6 +59,15 @@ struct data_connection_state_receive_header {
 
 struct data_connection_state_receive_payload {
 	struct lttcomm_relayd_data_hdr header;
+	uint64_t received, left_to_receive;
+};
+
+struct ctrl_connection_state_receive_header {
+	uint64_t received, left_to_receive;
+};
+
+struct ctrl_connection_state_receive_payload {
+	struct lttcomm_relayd_hdr header;
 	uint64_t received, left_to_receive;
 };
 
@@ -106,14 +121,19 @@ struct relay_connection {
 
 	union {
 		struct {
-			enum data_connection_state current_state;
+			enum data_connection_state state_id;
 			union {
 				struct data_connection_state_receive_header receive_header;
 				struct data_connection_state_receive_payload receive_payload;
 			} state;
 		} data;
 		struct {
-			int foo;
+			enum ctrl_connection_state state_id;
+			union {
+				struct ctrl_connection_state_receive_header receive_header;
+				struct ctrl_connection_state_receive_payload receive_payload;
+			} state;
+			struct lttng_dynamic_buffer reception_buffer;
 		} ctrl;
 	} protocol;
 };
