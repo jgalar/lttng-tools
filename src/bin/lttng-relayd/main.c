@@ -1396,26 +1396,23 @@ int relay_reset_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
 
 	DBG("Reset metadata received");
 
-	if (!session || conn->version_check_done == 0) {
+	if (!session || !conn->version_check_done) {
 		ERR("Trying to reset a metadata stream before version check");
 		ret = -1;
 		goto end_no_session;
 	}
 
-	ret = conn->sock->ops->recvmsg(conn->sock, &stream_info,
-			sizeof(struct lttcomm_relayd_reset_metadata), 0);
-	if (ret < sizeof(struct lttcomm_relayd_reset_metadata)) {
-		if (ret == 0) {
-			/* Orderly shutdown. Not necessary to print an error. */
-			DBG("Socket %d did an orderly shutdown", conn->sock->fd);
-		} else {
-			ERR("Relay didn't receive valid reset_metadata struct "
-					"size : %d", ret);
-		}
+	if (payload->size < sizeof(stream_info)) {
+		ERR("Unexpected payload size in \"relay_reset_metadata\": expected >= %zu bytes, got %zu bytes",
+				sizeof(stream_info), payload->size);
 		ret = -1;
 		goto end_no_session;
 	}
-	DBG("Update metadata to version %" PRIu64, be64toh(stream_info.version));
+	memcpy(&stream_info, payload->data, sizeof(stream_info));
+	stream_info.stream_id = be64toh(stream_info.stream_id);
+	stream_info.version = be64toh(stream_info.version);
+
+	DBG("Update metadata to version %" PRIu64, stream_info.version);
 
 	/* Unsupported for live sessions for now. */
 	if (session->live_timer != 0) {
@@ -1423,7 +1420,7 @@ int relay_reset_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
 		goto end;
 	}
 
-	stream = stream_get_by_id(be64toh(stream_info.stream_id));
+	stream = stream_get_by_id(stream_info.stream_id);
 	if (!stream) {
 		ret = -1;
 		goto end;
@@ -1459,6 +1456,9 @@ end:
 	if (send_ret < 0) {
 		ERR("Relay sending reset metadata reply");
 		ret = send_ret;
+	} else if (send_ret < sizeof(reply)) {
+		ERR("Failed to send \"reset metadata\" command reply (ret = %i)", send_ret);
+		ret = -1;
 	}
 
 end_no_session:
