@@ -234,6 +234,7 @@ int cmd_rotate(int argc, const char **argv)
 	int popt_ret;
 	static poptContext pc;
 	char *session_name = NULL;
+	bool free_session_name = false;
 
 	pc = poptGetContext(NULL, argc, argv, long_options, 0);
 	popt_ret = poptReadDefaultConfig(pc, 0);
@@ -264,6 +265,7 @@ int cmd_rotate(int argc, const char **argv)
 		if (session_name == NULL) {
 			goto end;
 		}
+		free_session_name = true;
 	} else {
 		session_name = opt_session_name;
 	}
@@ -345,6 +347,8 @@ end:
 	/* Overwrite ret if an error occurred with start_tracing */
 	ret = command_ret ? command_ret : ret;
 	poptFreeContext(pc);
-	free(session_name);
+	if (free_session_name) {
+		free(session_name);
+	}
 	return ret;
 }
