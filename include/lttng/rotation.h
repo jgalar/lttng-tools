@@ -69,17 +69,32 @@ enum lttng_rotation_status {
 	LTTNG_ROTATION_STATUS_INVALID = -2,
 };
 
-/*
- * Input parameter to the lttng_rotate_session command.
- *
- * An immediate rotation is performed as soon as possible by the tracers.
- */
-struct lttng_rotation_immediate_attr;
+enum lttng_rotation_schedule_type {
+	LTTNG_ROTATION_SCHEDULE_TYPE_SIZE_THRESHOLD = 0,
+	LTTNG_ROTATION_SCHEDULE_TYPE_PERIODIC = 1,
+};
+
+enum lttng_trace_archive_location_type {
+	LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_LOCAL = 0,
+	LTTNG_TRACE_ARCHIVE_LOCATION_TYPE_RELAY = 1,
+};
+
+enum lttng_trace_archive_location_status {
+	LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_OK = 0,
+	LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_INVALID = -1,
+	LTTNG_TRACE_ARCHIVE_LOCATION_STATUS_ERROR = -2,
+};
 
 /*
- * Input parameter to the lttng_rotate_schedule command.
+ * Descriptor of an immediate session rotation to be performed as soon as
+ * possible by the tracers.
  */
-struct lttng_rotation_schedule_attr;
+struct lttng_rotation_immediate_descriptor;
+
+/*
+ * Descriptor of a session rotation schedule to add to a session.
+ */
+struct lttng_rotation_schedule_descriptor;
 
 /*
  * Handle used to represent a specific rotation.
@@ -87,66 +102,122 @@ struct lttng_rotation_schedule_attr;
 struct lttng_rotation_handle;
 
 /*
+ * Location of a trace archive.
+ */
+struct lttng_trace_archive_location;
+
+/*
+ * A set of lttng_rotation_schedule_descriptors.
+ */
+struct lttng_rotation_schedule_descriptors;
+
+/*
+ * Get the absolute path of a local trace archive location.
+ *
+ * absolute_path is dynamically allocated and must be free'd by the caller.
+ */
+extern enum lttng_trace_archive_location_status
+lttng_trace_archive_location_local_get_absolute_path(
+		struct lttng_trace_archive_location *location,
+		char **absolute_path);
+
+/*
+ * Get the URI of the relay daemon associated to this trace archive location.
+ *
+ * relay_uri is dynamically allocated and must be free'd by the caller.
+ */
+extern enum lttng_trace_archive_location_status
+lttng_trace_archive_location_relay_get_uri(
+		struct lttng_trace_archive_location *location,
+		char **relay_uri);
+
+/*
+ * Get path relative to the relay daemon's current output path.
+ *
+ * relative_path is dynamically allocated and must be free'd by the caller.
+ */
+extern enum lttng_trace_archive_location_status
+lttng_trace_archive_location_relay_get_relative_path(
+		struct lttng_trace_archive_location *location,
+		char **relative_path);
+
+/*
  * Return a newly allocated immediate session rotation descriptor object or NULL
  * on error.
  */
-extern struct lttng_rotation_immediate_attr *
-lttng_rotation_immediate_attr_create(void);
-
-/*
- * Return a newly allocated scheduled rotate session descriptor object or NULL
- * on error.
- */
-extern struct lttng_rotation_schedule_attr *
-lttng_rotation_schedule_attr_create(void);
-
-/*
- * Destroy a given immediate session rotation descriptor object.
- */
-extern void lttng_rotation_immediate_attr_destroy(
-		struct lttng_rotation_immediate_attr *attr);
-
-/*
- * Destroy a given scheduled rotate session descriptor object.
- */
-extern void lttng_rotation_schedule_attr_destroy(
-		struct lttng_rotation_schedule_attr *attr);
+extern struct lttng_rotation_immediate *
+lttng_rotation_immediate_descriptor_create(void);
 
 /*
  * Set the name of the session to rotate immediately.
  *
  * The session_name parameter is copied to the immediate session rotation
- * attributes.
+ * descriptor.
  */
-extern enum lttng_rotation_status lttng_rotation_immediate_attr_set_session_name(
-		struct lttng_rotation_immediate_attr *attr,
+extern enum lttng_rotation_status
+lttng_rotation_immediate_descriptor_set_session_name(
+		struct lttng_rotation_immediate_descriptor *descriptor,
 		const char *session_name);
 
 /*
- * Set the name of the session to rotate automatically.
+ * Destroy an immediate session rotation descriptor object.
+ */
+extern void lttng_rotation_immediate_descriptor_destroy(
+		struct lttng_rotation_immediate_descriptor *descriptor);
+
+/*
+ * Rotate the output of a session.
  *
- * The session_name parameter is copied to the immediate session rotation
- * attributes.
+ * On success, a session rotation handle is allocated and can be used to monitor
+ * the progress of the rotation using lttng_rotation_get_state().
+ * The handle must be destroyed by the caller using
+ * lttng_rotation_handle_destroy().
+ *
+ * Return 0 if the rotate action was successfully initiated or a negative LTTng
+ * error code on error.
  */
-extern enum lttng_rotation_status lttng_rotation_schedule_attr_set_session_name(
-		struct lttng_rotation_schedule_attr *attr,
-		const char *session_name);
+extern int lttng_rotate_session(
+		struct lttng_rotation_immediate_descriptor *descriptor,
+		struct lttng_rotation_handle **rotation_handle);
 
 /*
- * Set the timer to periodically rotate the session (µs, -1ULL to disable).
+ * Destroy an lttng_rotation_handle.
  */
-extern enum lttng_rotation_status lttng_rotation_schedule_attr_set_timer_period(
-		struct lttng_rotation_schedule_attr *attr, uint64_t timer);
+extern void lttng_rotation_handle_destroy(
+		struct lttng_rotation_handle *rotation_handle);
 
 /*
- * Set the size to rotate the session (bytes, -1ULL to disable).
+ * Return a newly allocated size-based session rotation descriptor or NULL on
+ * error.
  */
-void lttng_rotation_schedule_attr_set_size(
-		struct lttng_rotation_schedule_attr *attr, uint64_t size);
+extern struct lttng_rotation_schedule *
+lttng_rotation_schedule_size_threshold_create(void);
 
 /*
- * lttng rotate session handle functions.
+ * Set a session rotation schedule's size threshold.
  */
+extern enum lttng_rotation_status
+lttng_rotation_schedule_size_threshold_set_threshold(
+		uint64_t size_threshold_bytes);
+
+/*
+ * Return a newly allocated periodic session rotation descriptor or NULL on
+ * error.
+ */
+extern struct lttng_rotation_schedule *
+lttng_rotation_schedule_periodic_create(void);
+
+/*
+ * Set a time-based session rotation schedule's period.
+ */
+extern enum lttng_rotation_status lttng_rotation_schedule_periodic_set_period(
+		uint64_t period_us);
+
+/*
+ * Destroy a session rotation schedule object.
+ */
+extern void lttng_rotation_schedule_descriptor_destroy(
+		struct lttng_rotation_schedule_descriptor *schedule);
 
 /*
  * Get the current state of the rotation referenced by the handle.
@@ -162,61 +233,73 @@ extern enum lttng_rotation_status lttng_rotation_handle_get_state(
  * Get the location of the rotation's resulting archive.
  *
  * The rotation must be completed in order for this call to succeed.
- * The path returned is owned by the rotation handle.
+ * The location returned remains owned by the rotation handle.
  *
- * Note that path will not be set in case of error, or if the session
- * rotation has expired.
- *
- * FIXME: Return an lttng_location object instead of a path.
+ * Note that location will not be set in case of error, or if the session
+ * rotation handle has expired.
  */
-extern enum lttng_rotation_status lttng_rotation_handle_get_completed_archive_location(
+extern enum lttng_rotation_status lttng_rotation_handle_get_archive_location(
 		struct lttng_rotation_handle *rotation_handle,
-		const char **path);
+		struct lttng_trace_archive_location **location);
 
 /*
- * Destroy an lttng_rotate_session handle.
- */
-extern void lttng_rotation_handle_destroy(
-		struct lttng_rotation_handle *rotation_handle);
-
-/*
- * Rotate the output folder of the session
+ * Add a session rotation schedule to a session.
  *
- * On success, handle is allocated and can be used to monitor the progress
- * of the rotation with lttng_rotation_get_state(). The handle must be freed
- * by the caller with lttng_rotation_handle_destroy().
+ * Note that the current implementation currently limits the schedules
+ * associated with a given session to one per type of schedule.
  *
- * Return 0 if the rotate action was successfully launched or a negative
- * LTTng error code on error.
+ * Returns LTTNG_OK on success, or a negative lttng error code on error.
  */
-extern int lttng_rotate_session(struct lttng_rotation_immediate_attr *attr,
-		struct lttng_rotation_handle **rotation_handle);
+extern int lttng_session_add_rotation_schedule(
+		const char *session_name,
+		struct lttng_rotation_schedule_descriptor *schedule);
 
 /*
- * Configure a session to rotate periodically or based on the size written.
+ * Remove a session rotation schedule from a session.
+ *
+ * Returns LTTNG_OK on success, or a negative lttng error code on error.
  */
-extern int lttng_rotation_set_schedule(
-		struct lttng_rotation_schedule_attr *attr);
+extern int lttng_session_remove_rotation_schedule(
+		const char *session_name,
+		struct lttng_rotation_schedule_descriptor *schedule);
 
 /*
- * Ask the sessiond for the value of the rotate timer (in micro-seconds) of the
- * session.
- *
- * On success, return 0 and set the value or rotate_timer, on error return a
- * negative value.
+ * Destroy a set of rotation schedules. Pointers to any descriptor contained
+ * in this set become invalid after this call.
  */
-extern int lttng_rotation_schedule_get_timer_period(const char *session_name,
-		uint64_t *rotate_timer);
+extern void lttng_rotation_schedule_descriptors_destroy(
+		struct lttng_rotation_schedule_descriptors *descriptors);
 
 /*
- * Ask the sessiond for the value of the rotate size (in micro-seconds) of the
- * session.
+ * Get the number of descriptors in this set.
  *
- * On success, return 0 and set the value or rotate_size, on error return
- * a negative value.
+ * Returns the number of descriptors on success, or a negative lttng error code
+ * on error.
  */
-extern int lttng_rotation_schedule_get_size(const char *session_name,
-		uint64_t *rotate_size);
+extern int lttng_rotation_schedule_descriptors_get_count(
+		struct lttng_rotation_schedule_descriptors *descriptors);
+
+/*
+ * Get a schedule descriptor from the set at a given index.
+ *
+ * Note that the set maintains the ownership of the returned schedule
+ * descriptor. It must not be destroyed by the user.
+ *
+ * Returns a rotation schedule descriptor, or NULL on error.
+ */
+extern struct lttng_rotation_schedule_descriptor *
+lttng_rotation_schedule_descriptors_get_at_index(
+		struct lttng_rotation_schedule_descriptors *descriptors,
+		int index);
+
+/*
+ * Get the rotation schedules associated with a given session.
+ *
+ * Returns LTTNG_OK on success, or a negative lttng error code on error.
+ */
+extern int lttng_session_list_rotation_schedule_descriptors(
+		const char *session_name,
+		struct lttng_rotation_schedule_descriptors **descriptors);
 
 #ifdef __cplusplus
 }
