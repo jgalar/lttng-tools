@@ -72,6 +72,8 @@ libcommon_la_SOURCES = error.h error.c utils.c utils.h runas.c runas.h \
                        pipe.c pipe.h readwrite.c readwrite.h \
                        mi-lttng.h mi-lttng.c \
                        daemonize.c daemonize.h \
+                       dynamic-buffer.h dynamic-buffer.c \
+                       buffer-view.h buffer-view.c \
                        unix.c unix.h \
                        filter.c filter.h context.c context.h
 

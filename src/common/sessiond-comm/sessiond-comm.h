@@ -37,6 +37,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/un.h>
+#include <stdbool.h>
 
 #include "inet.h"
 #include "inet6.h"
