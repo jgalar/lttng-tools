@@ -90,6 +90,7 @@ static pid_t ppid;          /* Parent PID for --sig-parent option */
 static pid_t child_ppid;    /* Internal parent PID use with daemonize. */
 static char *rundir;
 static int lockfile_fd = -1;
+static int opt_print_version;
 
 /* Set to 1 when a SIGUSR1 signal is received. */
 static int recv_child_signal;
@@ -4760,8 +4761,7 @@ static int set_option(int opt, const char *arg, const char *optname)
 		}
 		exit(ret ? EXIT_FAILURE : EXIT_SUCCESS);
 	} else if (string_match(optname, "version") || opt == 'V') {
-		fprintf(stdout, "%s\n", VERSION);
-		exit(EXIT_SUCCESS);
+		opt_print_version = 1;
 	} else if (string_match(optname, "sig-parent") || opt == 'S') {
 		opt_sig_parent = 1;
 	} else if (string_match(optname, "kconsumerd-err-sock")) {
@@ -5099,6 +5099,20 @@ static int config_entry_handler(const struct config_entry *entry, void *unused)
 
 end:
 	return ret;
+}
+
+static void sessiond_config_log(void)
+{
+	DBG("LTTng-sessiond " VERSION " - " VERSION_NAME "%s%s",
+			GIT_VERSION[0] == '\0' ? "" : " - " GIT_VERSION,
+			EXTRA_VERSION_NAME[0] == '\0' ? "" : " - " EXTRA_VERSION_NAME);
+	if (EXTRA_VERSION_DESCRIPTION[0] != '\0') {
+		DBG("LTTng-sessiond extra version description:\n\t" EXTRA_VERSION_DESCRIPTION "\n");
+	}
+}
+
+static void print_version(void) {
+	fprintf(stdout, "%s\n", VERSION);
 }
 
 /*
@@ -5672,6 +5686,14 @@ int main(int argc, char **argv)
 	progname = argv[0];
 	if (set_options(argc, argv)) {
 		retval = -1;
+		goto exit_options;
+	}
+
+	sessiond_config_log();
+
+	if (opt_print_version) {
+		print_version();
+		retval = 0;
 		goto exit_options;
 	}
 
