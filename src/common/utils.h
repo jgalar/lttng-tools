@@ -18,6 +18,10 @@
 #ifndef _COMMON_UTILS_H
 #define _COMMON_UTILS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <sys/types.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -60,5 +64,9 @@ int utils_create_lock_file(const char *filepath);
 int utils_recursive_rmdir(const char *path);
 int utils_truncate_stream_file(int fd, off_t length);
 int utils_show_help(int section, const char *page_name, const char *help_msg);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _COMMON_UTILS_H */

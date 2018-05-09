@@ -25,6 +25,10 @@
 #include "conf.h"
 #include "utils.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define DECL_COMMAND(_name) \
 	extern int cmd_##_name(int, const char **)
 
@@ -89,5 +93,9 @@ DECL_COMMAND(disable_rotation);
 
 extern int cmd_help(int argc, const char **argv,
 		const struct cmd_struct commands[]);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _LTTNG_CMD_H */

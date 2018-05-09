@@ -18,6 +18,10 @@
 #ifndef _ERROR_H
 #define _ERROR_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -235,5 +239,9 @@ const char *error_get_str(int32_t code);
  * printed in the log.
  */
 const char *log_add_time();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _ERROR_H */
