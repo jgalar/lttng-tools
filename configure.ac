@@ -22,6 +22,10 @@ AC_SYS_LARGEFILE
 AC_PROG_CC
 AC_PROG_CC_STDC
 
+# Check for C++11-compliant compiler
+AC_PROG_CXX
+AX_CXX_COMPILE_STDCXX_11
+
 # Checks for programs.
 AC_PROG_GREP
 AC_PROG_MAKE_SET
