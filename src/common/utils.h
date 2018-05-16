@@ -61,5 +61,6 @@ int utils_create_lock_file(const char *filepath);
 int utils_recursive_rmdir(const char *path);
 int utils_truncate_stream_file(int fd, off_t length);
 int utils_show_man_page(int section, const char *page_name);
+int utils_change_working_dir(const char *path);
 
 #endif /* _COMMON_UTILS_H */
