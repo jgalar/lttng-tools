@@ -24,6 +24,13 @@
 #include <assert.h>
 
 LTTNG_HIDDEN
+void lttng_evaluation_init(struct lttng_evaluation *evaluation,
+		enum lttng_condition_type type)
+{
+	evaluation->type = type;
+}
+
+LTTNG_HIDDEN
 ssize_t lttng_evaluation_serialize(struct lttng_evaluation *evaluation,
 		char *buf)
 {
