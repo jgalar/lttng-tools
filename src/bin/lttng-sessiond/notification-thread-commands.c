@@ -165,6 +165,58 @@ end:
 	return ret_code;
 }
 
+enum lttng_error_code notification_thread_command_session_rotation_ongoing(
+		struct notification_thread_handle *handle,
+		const char *session_name, uint64_t trace_archive_chunk_id)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_ONGOING;
+	cmd.parameters.session_rotation_ongoing.session_name = session_name;
+	cmd.parameters.session_rotation_ongoing.trace_archive_chunk_id =
+			trace_archive_chunk_id;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
+enum lttng_error_code notification_thread_command_session_rotation_completed(
+		struct notification_thread_handle *handle,
+		const char *session_name, uint64_t trace_archive_chunk_id,
+		const struct lttng_trace_archive_location *location)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_COMPLETED;
+	cmd.parameters.session_rotation_completed.session_name = session_name;
+	cmd.parameters.session_rotation_completed.trace_archive_chunk_id =
+			trace_archive_chunk_id;
+	cmd.parameters.session_rotation_completed.location = location;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle)
 {
