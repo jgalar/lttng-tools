@@ -253,7 +253,6 @@ error:
 
 static
 struct lttng_evaluation *create_evaluation_from_buffer(
-		enum lttng_condition_type type,
 		const struct lttng_buffer_view *view)
 {
 	const struct lttng_evaluation_session_consumed_size_comm *comm =
@@ -264,7 +263,7 @@ struct lttng_evaluation *create_evaluation_from_buffer(
 		goto end;
 	}
 
-	evaluation = lttng_evaluation_session_consumed_size_create(type,
+	evaluation = lttng_evaluation_session_consumed_size_create(
 			comm->session_consumed);
 end:
 	return evaluation;
@@ -283,8 +282,7 @@ ssize_t lttng_evaluation_session_consumed_size_create_from_buffer(
 		goto error;
 	}
 
-	evaluation = create_evaluation_from_buffer(
-			LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE, view);
+	evaluation = create_evaluation_from_buffer(view);
 	if (!evaluation) {
 		ret = -1;
 		goto error;
@@ -430,7 +428,7 @@ void lttng_evaluation_session_consumed_size_destroy(
 
 LTTNG_HIDDEN
 struct lttng_evaluation *lttng_evaluation_session_consumed_size_create(
-		enum lttng_condition_type type, uint64_t consumed)
+		uint64_t consumed)
 {
 	struct lttng_evaluation_session_consumed_size *consumed_eval;
 
@@ -439,7 +437,7 @@ struct lttng_evaluation *lttng_evaluation_session_consumed_size_create(
 		goto end;
 	}
 
-	consumed_eval->parent.type = type;
+	consumed_eval->parent.type = LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE;
 	consumed_eval->session_consumed = consumed;
 	consumed_eval->parent.serialize = lttng_evaluation_session_consumed_size_serialize;
 	consumed_eval->parent.destroy = lttng_evaluation_session_consumed_size_destroy;
