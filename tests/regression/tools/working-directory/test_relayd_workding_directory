@@ -1,0 +1,200 @@
+#!/bin/bash
+#
+# Copyright (C) - 2018 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+#
+# This library is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; version 2.1 of the License.
+#
+# This library is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+TEST_DESC="Change working directory of process"
+
+CURDIR=$(dirname $0)/
+TESTDIR=$CURDIR/../../../
+
+DIR=$(readlink -f $TESTDIR)
+
+NUM_TESTS=22
+
+source $TESTDIR/utils/utils.sh
+
+
+#MUST set TESTDIR before calling those functions
+plan_tests $NUM_TESTS
+
+print_test_banner "$TEST_DESC"
+function test_relayd()
+{
+	local working_dir=$(mktemp -d)
+	local test_dir=$(readlink -f $TESTDIR)
+	local relayd_bin_path="$DIR/../src/bin/lttng-relayd/$RELAYD_BIN"
+
+	diag "Test lttng-relayd normal mode change working directory"
+
+	# There is no rendez-vous mechanism that can guarantee the good timing
+	# to check if the workdir directory was changed.
+	# In the case of lttng-sessiond this would be achieved using the
+	# --sig-parent option but lttng-relayd does not have this feature yet.
+	# Fall back on using polling of the value and unblock when the value is
+	# the one we expect. In case of a failure the test will hang.
+	$relayd_bin_path --working-directory $working_dir > /dev/null 2>&1 &
+	RELAYD_PIDS=$!
+
+	while true; do
+		local cwd=$(readlink /proc/${RELAYD_PIDS}/cwd)
+		test "${working_dir}" = "${cwd}"
+		if [ $? -eq 0 ]; then
+			# Working dir for process is valid
+			break
+		fi
+		sleep 0.1
+	done
+
+	# If we are here the test passed
+	pass "Working directory changed"
+
+	stop_lttng_relayd
+	rm -rf ${working_dir}
+}
+
+function test_relayd_daemon()
+{
+	local working_dir=$(mktemp -d)
+
+	diag "Test lttng-relayd daemon mode change working directory"
+
+	start_lttng_relayd_opt 1 "-d" "--working-directory $working_dir"
+
+	local cwd=$(readlink /proc/${RELAYD_PIDS}/cwd)
+
+	is "x${cwd}" "x${working_dir}" "Working directory changed"
+
+	stop_lttng_relayd
+	rm -rf ${working_dir}
+}
+
+function test_relayd_daemon_no_working_dir()
+{
+	local expected_working_dir="/"
+
+	diag "Test lttng-relayd daemon mode change working directory"
+
+	start_lttng_relayd_opt 1 "-d" ""
+
+	local cwd=$(readlink /proc/${RELAYD_PIDS}/cwd)
+
+	is "x${cwd}" "x${expected_working_dir}" "Working directory is ${expected_working_dir}"
+
+	stop_lttng_relayd
+	rm -rf ${working_dir}
+}
+
+function test_relayd_background()
+{
+	local working_dir=$(mktemp -d)
+
+	diag "Test lttng-relayd background mode change working directory"
+
+	start_lttng_relayd_opt 1 "-b" "--working-directory $working_dir"
+
+	local cwd=$(readlink /proc/${RELAYD_PIDS}/cwd)
+
+	is "x${cwd}" "x${working_dir}" "Working directory changed"
+
+	stop_lttng_relayd
+	rm -rf ${working_dir}
+}
+
+function test_relayd_background_no_working_dir()
+{
+	local expected_working_dir="/"
+	diag "Test lttng-relayd background working directory"
+
+	start_lttng_relayd_opt 1 "-b" ""
+
+	local cwd=$(readlink /proc/${RELAYD_PIDS}/cwd)
+
+	is "x${cwd}" "x${expected_working_dir}" "Working directory is ${expected_working_dir}"
+
+	stop_lttng_relayd
+	rm -rf ${working_dir}
+}
+
+function test_relayd_debug_permission()
+{
+	local working_dir=$(mktemp -d)
+	local output_pattern='Working directory is not writable'
+	ERROR_OUTPUT_DEST=$(mktemp -u)
+
+	diag "Test lttng-relayd change working directory on non writable directory"
+
+	# Removing write access to working dir
+	okx chmod -w ${working_dir}
+
+	start_lttng_relayd_opt 1 "-b" "-v --working-dir $working_dir"
+
+	local cwd=$(readlink /proc/${RELAYD_PIDS}/cwd)
+	is "x${cwd}" "x${working_dir}" "Workind directory changed"
+
+	local output_content="$(cat ${ERROR_OUTPUT_DEST})"
+	like "x${output_content}" "$output_pattern" "Warning about missing write permission is present"
+
+	stop_lttng_relayd
+	rm -rf ${working_dir} ${ERROR_OUTPUT_DEST}
+	ERROR_OUTPUT_DEST=/dev/null
+}
+
+function test_relayd_failure()
+{
+	local working_dir="$(mktemp -d)"
+	local working_dir_imaginary="${working_dir}/imaginary_directory"
+	local output_dest=$(mktemp -u)
+	local output_pattern='Error: Changing working directory'
+	local test_dir=$(readlink -f $TESTDIR)
+	local relayd_bin_path="$DIR/../src/bin/lttng-relayd/$RELAYD_BIN"
+
+	diag "Test lttng-relayd normal mode change non-existing directory"
+
+	$relayd_bin_path -b --working-directory $working_dir_imaginary > $output_dest 2>&1
+	test $? -eq "1"
+	ok $? "Expect failure to start lttng-relayd for non-existent working directory"
+
+	RELAYD_PIDS=$(pgrep $RELAYD_MATCH)
+	if [ -z "${RELAYD_PIDS}" ]; then
+		pass "No lttng-relayd present"
+	else
+		fail "No lttng-relayd present"
+		stop_lttng_relayd_notap
+	fi
+
+	local output_content="$(cat ${output_dest})"
+	like "x${output_content}" "$output_pattern" "Error about invalid directory"
+
+	rm -rf ${working_dir} ${output_dest}
+}
+
+TESTS=(
+	test_relayd
+	test_relayd_daemon
+	test_relayd_daemon_no_working_dir
+	test_relayd_background
+	test_relayd_background_no_working_dir
+	test_relayd_debug_permission
+	test_relayd_failure
+)
+
+for fct_test in ${TESTS[@]};
+do
+	${fct_test}
+	if [ $? -ne 0 ]; then
+		break;
+	fi
+done

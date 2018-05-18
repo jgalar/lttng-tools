@@ -23,7 +23,8 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/wildcard/test_event_wildcard \
 	tools/crash/test_crash \
 	tools/regen-metadata/test_ust \
-	tools/regen-statedump/test_ust
+	tools/regen-statedump/test_ust \
+	tools/working-directory/test_relayd_workding_directory
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust
