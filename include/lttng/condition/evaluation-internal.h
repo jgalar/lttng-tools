@@ -25,8 +25,8 @@
 #include <sys/types.h>
 
 typedef void (*evaluation_destroy_cb)(struct lttng_evaluation *evaluation);
-typedef ssize_t (*evaluation_serialize_cb)(struct lttng_evaluation *evaluation,
-		char *buf);
+typedef ssize_t (*evaluation_serialize_cb)(
+		const struct lttng_evaluation *evaluation, char *buf);
 
 struct lttng_evaluation_comm {
 	/* enum lttng_condition_type type */
@@ -49,7 +49,7 @@ ssize_t lttng_evaluation_create_from_buffer(const struct lttng_buffer_view *view
 		struct lttng_evaluation **evaluation);
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_serialize(struct lttng_evaluation *evaluation,
+ssize_t lttng_evaluation_serialize(const struct lttng_evaluation *evaluation,
 		char *buf);
 
 #endif /* LTTNG_EVALUATION_INTERNAL_H */

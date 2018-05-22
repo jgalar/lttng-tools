@@ -28,7 +28,7 @@
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/macros.h>
 #include <lttng/condition/condition.h>
-#include <lttng/action/action.h>
+#include <lttng/action/action-internal.h>
 #include <lttng/notification/notification-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
@@ -166,8 +166,8 @@ static int evaluate_condition(const struct lttng_condition *condition,
 		uint64_t latest_session_consumed_total,
 		struct channel_info *channel_info);
 static
-int send_evaluation_to_clients(struct lttng_trigger *trigger,
-		struct lttng_evaluation *evaluation,
+int send_evaluation_to_clients(const struct lttng_trigger *trigger,
+		const struct lttng_evaluation *evaluation,
 		struct notification_client_list *client_list,
 		struct notification_thread_state *state,
 		uid_t channel_uid, gid_t channel_gid);
@@ -292,7 +292,7 @@ int match_client_list_condition(struct cds_lfht_node *node, const void *key)
 
 static
 unsigned long lttng_condition_buffer_usage_hash(
-	struct lttng_condition *_condition)
+	const struct lttng_condition *_condition)
 {
 	unsigned long hash = 0;
 	struct lttng_condition_buffer_usage *condition;
@@ -327,7 +327,7 @@ unsigned long lttng_condition_buffer_usage_hash(
 
 static
 unsigned long lttng_condition_session_consumed_size_hash(
-	struct lttng_condition *_condition)
+	const struct lttng_condition *_condition)
 {
 	unsigned long hash = 0;
 	struct lttng_condition_session_consumed_size *condition;
@@ -350,7 +350,7 @@ unsigned long lttng_condition_session_consumed_size_hash(
  * don't want to link in liblttng-ctl.
  */
 static
-unsigned long lttng_condition_hash(struct lttng_condition *condition)
+unsigned long lttng_condition_hash(const struct lttng_condition *condition)
 {
 	switch (condition->type) {
 	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
@@ -547,8 +547,8 @@ int evaluate_condition_for_client(struct lttng_trigger *trigger,
 		struct lttng_trigger_list_element *element;
 
 		cds_list_for_each_entry(element, &channel_trigger_list->list, node) {
-			struct lttng_condition *current_condition =
-				lttng_trigger_get_condition(
+			const struct lttng_condition *current_condition =
+				lttng_trigger_get_const_condition(
 						element->trigger);
 
 			assert(current_condition);
@@ -1493,8 +1493,8 @@ int handle_notification_thread_command_unregister_trigger(
 
 		cds_list_for_each_entry_safe(trigger_element, tmp,
 				&trigger_list->list, node) {
-			struct lttng_condition *current_condition =
-					lttng_trigger_get_condition(
+			const struct lttng_condition *current_condition =
+					lttng_trigger_get_const_condition(
 						trigger_element->trigger);
 
 			assert(current_condition);
@@ -2377,8 +2377,8 @@ int client_enqueue_dropped_notification(struct notification_client *client,
 }
 
 static
-int send_evaluation_to_clients(struct lttng_trigger *trigger,
-		struct lttng_evaluation *evaluation,
+int send_evaluation_to_clients(const struct lttng_trigger *trigger,
+		const struct lttng_evaluation *evaluation,
 		struct notification_client_list* client_list,
 		struct notification_thread_state *state,
 		uid_t channel_uid, gid_t channel_gid)
@@ -2386,24 +2386,17 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 	int ret = 0;
 	struct lttng_dynamic_buffer msg_buffer;
 	struct notification_client_list_element *client_list_element, *tmp;
-	struct lttng_notification *notification;
-	struct lttng_condition *condition;
 	ssize_t expected_notification_size, notification_size;
 	struct lttng_notification_channel_message msg;
+	const struct lttng_const_notification notification = {
+		.condition = lttng_trigger_get_const_condition(trigger),
+		.evaluation = evaluation,
+	};
 
 	lttng_dynamic_buffer_init(&msg_buffer);
 
-	condition = lttng_trigger_get_condition(trigger);
-	assert(condition);
-
-	notification = lttng_notification_create(condition, evaluation);
-	if (!notification) {
-		ret = -1;
-		goto end;
-	}
-
-	expected_notification_size = lttng_notification_serialize(notification,
-			NULL);
+	expected_notification_size = lttng_const_notification_serialize(
+			&notification, NULL);
 	if (expected_notification_size < 0) {
 		ERR("[notification-thread] Failed to get size of serialized notification");
 		ret = -1;
@@ -2423,8 +2416,8 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 		goto end;
 	}
 
-	notification_size = lttng_notification_serialize(notification,
-			msg_buffer.data + sizeof(msg));
+	notification_size = lttng_const_notification_serialize(
+			&notification, msg_buffer.data + sizeof(msg));
 	if (notification_size != expected_notification_size) {
 		ERR("[notification-thread] Failed to serialize notification");
 		ret = -1;
@@ -2480,7 +2473,6 @@ int send_evaluation_to_clients(struct lttng_trigger *trigger,
 	}
 	ret = 0;
 end:
-	lttng_notification_destroy(notification);
 	lttng_dynamic_buffer_reset(&msg_buffer);
 	return ret;
 }
@@ -2621,19 +2613,19 @@ int handle_notification_thread_channel_sample(
 			channel_triggers_ht_node);
 	cds_list_for_each_entry(trigger_list_element, &trigger_list->list,
 		        node) {
-		struct lttng_condition *condition;
-		struct lttng_action *action;
-		struct lttng_trigger *trigger;
+		const struct lttng_condition *condition;
+		const struct lttng_action *action;
+		const struct lttng_trigger *trigger;
 		struct notification_client_list *client_list;
 		struct lttng_evaluation *evaluation = NULL;
 
 		trigger = trigger_list_element->trigger;
-		condition = lttng_trigger_get_condition(trigger);
+		condition = lttng_trigger_get_const_condition(trigger);
 		assert(condition);
-		action = lttng_trigger_get_action(trigger);
+		action = lttng_trigger_get_const_action(trigger);
 
 		/* Notify actions are the only type currently supported. */
-		assert(lttng_action_get_type(action) ==
+		assert(lttng_action_get_type_const(action) ==
 				LTTNG_ACTION_TYPE_NOTIFY);
 
 		/*

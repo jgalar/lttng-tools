@@ -732,7 +732,7 @@ end:
 
 static
 ssize_t lttng_evaluation_buffer_usage_serialize(
-		struct lttng_evaluation *evaluation, char *buf)
+		const struct lttng_evaluation *evaluation, char *buf)
 {
 	ssize_t ret;
 	struct lttng_evaluation_buffer_usage *usage;

@@ -31,7 +31,7 @@ void lttng_evaluation_init(struct lttng_evaluation *evaluation,
 }
 
 LTTNG_HIDDEN
-ssize_t lttng_evaluation_serialize(struct lttng_evaluation *evaluation,
+ssize_t lttng_evaluation_serialize(const struct lttng_evaluation *evaluation,
 		char *buf)
 {
 	ssize_t ret, offset = 0;
