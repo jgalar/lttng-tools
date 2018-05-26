@@ -38,7 +38,7 @@ NR_USEC_WAIT=5
 DIR=$(readlink -f $TESTDIR)
 
 source $TESTDIR/utils/utils.sh
-start_lttng_sessiond_notap
+#start_lttng_sessiond_notap
 
 create_lttng_session_notap $SESSION_NAME $SESSION_OUTPUT_PATH
 
@@ -62,7 +62,7 @@ fi
 
 stop_lttng_tracing_notap $SESSION_NAME
 
-stop_lttng_sessiond_notap
+#stop_lttng_sessiond_notap
 
 # On ungraceful kill the app is cleaned up via the full_cleanup call
 # Suppress kill message
