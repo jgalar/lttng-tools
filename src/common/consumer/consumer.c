@@ -792,13 +792,12 @@ int consumer_send_relayd_stream(struct lttng_consumer_stream *stream,
 		ret = relayd_add_stream(&relayd->control_sock, stream->name,
 				path, &stream->relayd_stream_id,
 				stream->chan->tracefile_size, stream->chan->tracefile_count);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (ret < 0) {
 			ERR("Relayd add stream failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
 			lttng_consumer_cleanup_relayd(relayd);
-			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			goto end;
 		}
-		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 
 		uatomic_inc(&relayd->refcount);
 		stream->sent_to_relayd = 1;
@@ -836,13 +835,12 @@ int consumer_send_relayd_streams_sent(uint64_t net_seq_idx)
 		/* Add stream on the relayd */
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 		ret = relayd_streams_sent(&relayd->control_sock);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (ret < 0) {
 			ERR("Relayd streams sent failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
 			lttng_consumer_cleanup_relayd(relayd);
-			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			goto end;
 		}
-		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 	} else {
 		ERR("Relayd ID %" PRIu64 " unknown. Can't send streams_sent.",
 				net_seq_idx);
@@ -3640,14 +3638,13 @@ int consumer_data_pending(uint64_t id)
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 		ret = relayd_begin_data_pending(&relayd->control_sock,
 				relayd->relayd_session_id);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (ret < 0) {
 			/* Communication error thus the relayd so no data pending. */
 			ERR("Relayd begin data pending failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
 			lttng_consumer_cleanup_relayd(relayd);
-			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			goto data_not_pending;
 		}
-		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 	}
 
 	cds_lfht_for_each_entry_duplicate(ht->ht,
@@ -3710,13 +3707,12 @@ int consumer_data_pending(uint64_t id)
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 		ret = relayd_end_data_pending(&relayd->control_sock,
 				relayd->relayd_session_id, &is_data_inflight);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (ret < 0) {
 			ERR("Relayd end data pending failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
 			lttng_consumer_cleanup_relayd(relayd);
-			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			goto data_not_pending;
 		}
-		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (is_data_inflight) {
 			goto data_pending;
 		}
