@@ -1,11 +1,12 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-SUBDIRS =
+SUBDIRS = fd-tracker
 
 # Make sure to always distribute all folders
 # since SUBDIRS is decided at configure time.
 DIST_SUBDIRS = compat health hashtable kernel-ctl sessiond-comm relayd \
-	  kernel-consumer ust-consumer testpoint index config consumer
+	  kernel-consumer ust-consumer testpoint index config consumer \
+	  fd-tracker
 
 if BUILD_LIB_COMPAT
 SUBDIRS += compat

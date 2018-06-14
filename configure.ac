@@ -1000,6 +1000,7 @@ AC_CONFIG_FILES([
 	src/common/index/Makefile
 	src/common/health/Makefile
 	src/common/config/Makefile
+	src/common/fd-tracker/Makefile
 	src/lib/Makefile
 	src/lib/lttng-ctl/Makefile
 	src/lib/lttng-ctl/filter/Makefile
