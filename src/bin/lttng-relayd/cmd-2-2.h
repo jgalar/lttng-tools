@@ -25,6 +25,7 @@
 
 int cmd_recv_stream_2_2(const struct lttng_buffer_view *payload,
 		char **path_name, char **channel_name,
-		uint64_t *tracefile_size, uint64_t *tracefile_count);
+		uint64_t *tracefile_size, uint64_t *tracefile_count,
+		struct relay_session *session);
 
 #endif /* RELAYD_CMD_2_2_H */

@@ -35,7 +35,8 @@
  */
 int cmd_recv_stream_2_2(const struct lttng_buffer_view *payload,
 		char **ret_path_name, char **ret_channel_name,
-		uint64_t *tracefile_size, uint64_t *tracefile_count)
+		uint64_t *tracefile_size, uint64_t *tracefile_count,
+		struct relay_session *session)
 {
 	int ret;
 	struct lttcomm_relayd_add_stream_2_2 stream_info;
@@ -58,7 +59,7 @@ int cmd_recv_stream_2_2(const struct lttng_buffer_view *payload,
 		ERR("Path name too long");
 		goto error;
 	}
-	path_name = create_output_path(stream_info.pathname);
+	path_name = create_output_path(stream_info.pathname, session->session_name);
 	if (!path_name) {
 		PERROR("Path name allocation");
 		ret = -ENOMEM;

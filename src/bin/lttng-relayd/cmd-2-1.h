@@ -21,9 +21,11 @@
  */
 
 #include "lttng-relayd.h"
+#include "session.h"
 #include <common/buffer-view.h>
 
 int cmd_recv_stream_2_1(const struct lttng_buffer_view *payload,
-		char **path_name, char **channel_name);
+		char **path_name, char **channel_name,
+		struct relay_session *session);
 
 #endif /* RELAYD_CMD_2_1_H */

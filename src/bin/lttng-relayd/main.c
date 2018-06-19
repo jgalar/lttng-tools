@@ -85,6 +85,8 @@ enum relay_connection_status {
 /* command line options */
 char *opt_output_path, *opt_working_directory;
 static int opt_daemon, opt_background;
+int opt_group_output_by_session;
+int opt_group_output_by_host;
 
 /*
  * We need to wait for listener and live listener threads, as well as
@@ -170,6 +172,8 @@ static struct option long_options[] = {
 	{ "config", 1, 0, 'f' },
 	{ "version", 0, 0, 'V' },
 	{ "working-directory", 1, 0, 'w', },
+	{ "group-output-by-session", 0, 0, 's', },
+	{ "group-output-by-host", 0, 0, 'p', },
 	{ NULL, 0, 0, 0, },
 };
 
@@ -304,6 +308,20 @@ static int set_option(int opt, const char *arg, const char *optname)
 				lttng_opt_verbose += 1;
 			}
 		}
+		break;
+	case 's':
+		if (opt_group_output_by_host) {
+			ERR("Cannot set --group-output-by-session, --group-output-by-host already defined");
+			exit(EXIT_FAILURE);
+		}
+		opt_group_output_by_session = 1;
+		break;
+	case 'p':
+		if (opt_group_output_by_session) {
+			ERR("Cannot set --group-output-by-host, --group-output-by-session already defined");
+			exit(EXIT_FAILURE);
+		}
+		opt_group_output_by_host = 1;
 		break;
 	default:
 		/* Unknown option or other error.
@@ -500,6 +518,11 @@ static int set_options(int argc, char **argv)
 			retval = -1;
 			goto exit;
 		}
+	}
+
+	if (!opt_group_output_by_session && !opt_group_output_by_host) {
+		/* Group by host by default */
+		opt_group_output_by_host = 1;
 	}
 
 exit:
@@ -1219,12 +1242,13 @@ static int relay_add_stream(const struct lttcomm_relayd_hdr *recv_hdr,
 	switch (session->minor) {
 	case 1: /* LTTng sessiond 2.1. Allocates path_name and channel_name. */
 		ret = cmd_recv_stream_2_1(payload, &path_name,
-			&channel_name);
+			&channel_name, session);
 		break;
 	case 2: /* LTTng sessiond 2.2. Allocates path_name and channel_name. */
 	default:
 		ret = cmd_recv_stream_2_2(payload, &path_name,
-			&channel_name, &tracefile_size, &tracefile_count);
+			&channel_name, &tracefile_size, &tracefile_count,
+			session);
 		break;
 	}
 	if (ret < 0) {
