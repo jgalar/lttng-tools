@@ -11,7 +11,8 @@ TESTS = test_kernel_data \
 	test_uri \
 	test_utils_parse_size_suffix \
 	test_utils_expand_path \
-	ini_config/test_ini_config
+	ini_config/test_ini_config \
+	test_fd_tracker
 
 if LTTNG_TOOLS_BUILD_WITH_LIBDL
 LIBS += -ldl
@@ -23,13 +24,16 @@ endif
 LIBTAP=$(top_builddir)/tests/utils/tap/libtap.la
 
 LIBCOMMON=$(top_builddir)/src/common/libcommon.la
+LIBFDTRACKER=$(top_builddir)/src/common/fd-tracker/libfd-tracker.la
 LIBSESSIOND_COMM=$(top_builddir)/src/common/sessiond-comm/libsessiond-comm.la
 LIBHASHTABLE=$(top_builddir)/src/common/hashtable/libhashtable.la
 LIBRELAYD=$(top_builddir)/src/common/relayd/librelayd.la
 
 # Define test programs
-noinst_PROGRAMS = test_uri test_session test_kernel_data
-noinst_PROGRAMS += test_utils_parse_size_suffix test_utils_expand_path
+noinst_PROGRAMS = test_uri test_session test_kernel_data \
+                  test_utils_parse_size_suffix \
+                  test_utils_expand_path \
+                  test_fd_tracker
 
 if HAVE_LIBLTTNG_UST_CTL
 noinst_PROGRAMS += test_ust_data
@@ -108,3 +112,7 @@ test_utils_parse_size_suffix_LDADD += $(UTILS_SUFFIX)
 test_utils_expand_path_SOURCES = test_utils_expand_path.c
 test_utils_expand_path_LDADD = $(LIBTAP) $(LIBHASHTABLE) $(LIBCOMMON)
 test_utils_expand_path_LDADD += $(UTILS_SUFFIX)
+
+# fd tracker unit test
+test_fd_tracker_SOURCES = test_fd_tracker.c
+test_fd_tracker_LDADD = $(LIBTAP) $(LIBFDTRACKER) $(DL_LIBS) -lurcu $(LIBCOMMON) $(LIBHASHTABLE)
