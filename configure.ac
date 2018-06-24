@@ -1025,6 +1025,7 @@ AC_CONFIG_FILES([
 	tests/regression/tools/regen-metadata/Makefile
 	tests/regression/tools/regen-statedump/Makefile
 	tests/regression/tools/working-directory/Makefile
+	tests/regression/tools/relayd-grouping/Makefile
 	tests/regression/ust/Makefile
 	tests/regression/ust/nprocesses/Makefile
 	tests/regression/ust/high-throughput/Makefile

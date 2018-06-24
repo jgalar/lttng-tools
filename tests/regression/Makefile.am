@@ -24,7 +24,9 @@ TESTS = tools/filtering/test_invalid_filter \
 	tools/crash/test_crash \
 	tools/regen-metadata/test_ust \
 	tools/regen-statedump/test_ust \
-	tools/working-directory/test_relayd_workding_directory
+	tools/working-directory/test_relayd_workding_directory \
+	tools/relayd-grouping/test_ust \
+	tools/relayd-grouping/test_kernel
 
 if HAVE_LIBLTTNG_UST_CTL
 SUBDIRS += ust

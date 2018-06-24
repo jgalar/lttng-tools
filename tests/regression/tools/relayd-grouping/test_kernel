@@ -1,0 +1,286 @@
+#!/bin/bash
+#
+# Copyright (C) - 2018 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+#
+# This library is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; version 2.1 of the License.
+#
+# This library is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+TEST_DESC="LTTng relayd filesystem grouping - Kernel tracing"
+
+CURDIR=$(dirname $0)/
+TESTDIR=$CURDIR/../../..
+EVENT_NAME="lttng_test_filter_event"
+
+TRACE_PATH=$(mktemp -d)
+
+NUM_TESTS=67
+
+source $TESTDIR/utils/utils.sh
+
+function test_kernel_live_static_name ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+
+	diag "Test kernel live with session name"
+
+	create_lttng_session_uri $session_name net://localhost --live
+	lttng_enable_kernel_channel_ok $session_name $channel_name 
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*
+}
+
+function test_kernel_live_static_name_custom_output ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+	local custom_output="my_live_custom_output"
+
+	diag "Test kernel live with session name, custom output"
+
+	create_lttng_session_uri $session_name net://localhost/$custom_output --live
+	lttng_enable_kernel_channel_ok $session_name $channel_name 
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/$custom_output
+}
+
+function test_kernel_streaming_static_name ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+
+	diag "Test kernel streaming with session name"
+
+	create_lttng_session_uri $session_name net://localhost
+	lttng_enable_kernel_channel_ok $session_name $channel_name 
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*
+}
+
+function test_kernel_streaming_static_name_custom_output ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+	local custom_output="custom_second_token"
+
+	diag "Test kernel streaming with session name, custom output"
+
+	create_lttng_session_uri $session_name net://localhost/$custom_output
+	lttng_enable_kernel_channel_ok $session_name $channel_name 
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/$custom_output
+}
+
+function test_kernel_streaming_rotate_static_name ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+
+	diag "Test kernel rotate with session name"
+
+	create_lttng_session_uri $session_name net://localhost
+	lttng_enable_kernel_channel_ok $session_name $channel_name 
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+	rotate_session_ok $session_name
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*
+}
+
+function test_kernel_streaming_rotate_static_name_custom_output ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+	local custom_output="rotate_custom_path"
+
+	diag "Test kernel rotate with session name, custom output"
+
+	create_lttng_session_uri $session_name net://localhost/$custom_output
+	lttng_enable_kernel_channel_ok $session_name $channel_name 
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+	rotate_session_ok $session_name
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/$custom_output
+}
+
+function test_kernel_streaming_snapshot_static_name ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+
+	diag "Test kernel snapshot streaming with session name using 'create --snapshot'"
+
+	create_lttng_session_uri $session_name net://localhost --snapshot
+	lttng_enable_kernel_channel_ok $session_name $channel_name
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+	lttng_snapshot_record $session_name
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/snapshot-1*
+}
+
+function test_kernel_streaming_snapshot_add_output_default_name ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+	diag "Test kernel snapshot using 'add-output' with default snapshot name"
+
+	create_lttng_session_no_output $session_name
+	enable_lttng_mmap_overwrite_kernel_channel $session_name $channel_name
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	lttng_snapshot_add_output_ok $session_name "net://localhost"
+	lttng_snapshot_record $session_name
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/snapshot-1*
+}
+
+function test_kernel_streaming_snapshot_add_output_custom_name ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+	local snapshot_name="this_is_my_snapshot"
+	diag "Test kernel snapshot using 'add-output' with custom snapshot name"
+
+	create_lttng_session_no_output $session_name
+	enable_lttng_mmap_overwrite_kernel_channel $session_name $channel_name
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	lttng_snapshot_add_output_ok $session_name "net://localhost" "-n $snapshot_name"
+	lttng_snapshot_record $session_name
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/$snapshot_name*
+}
+
+function test_kernel_streaming_snapshot_add_output_custom_name_custom_output ()
+{
+	local session_name=$(randstring 16 0)
+	local channel_name=$(randstring 8 0)
+	local snapshot_name="this_is_my_snapshot"
+	local custom_output="this/is/my/custom/path"
+	diag "Test kernel snapshot using 'add-output' with custom snapshot name and custom output"
+
+	create_lttng_session_no_output $session_name
+	enable_lttng_mmap_overwrite_kernel_channel $session_name $channel_name
+	enable_kernel_lttng_event_ok $session_name $EVENT_NAME $channel_name
+	start_lttng_tracing_ok $session_name
+
+	echo -n "10" > /proc/lttng-test-filter-event
+
+	lttng_snapshot_add_output_ok $session_name "net://localhost/$custom_output" "-n $snapshot_name"
+	lttng_snapshot_record $session_name
+
+	stop_lttng_tracing_ok $session_name
+	destroy_lttng_session_ok $session_name
+
+	validate_trace $EVENT_NAME $TRACE_PATH/$session_name/$HOSTNAME*/$custom_output/$snapshot_name*
+}
+
+plan_tests $NUM_TESTS
+
+print_test_banner "$TEST_DESC"
+
+if [ "$(id -u)" == "0" ]; then
+	isroot=1
+else
+	isroot=0
+fi
+
+skip $isroot "Root access is needed. Skipping all kernel streaming tests." $NUM_TESTS ||
+{
+	validate_lttng_modules_present
+
+	start_lttng_relayd "-o $TRACE_PATH --group-output-by-session"
+	start_lttng_sessiond
+	modprobe lttng-test
+
+	tests=(
+		test_kernel_live_static_name
+		test_kernel_live_static_name_custom_output
+		test_kernel_streaming_static_name
+		test_kernel_streaming_static_name_custom_output
+#		Rotation does not exists on stable 2.9
+#		test_kernel_streaming_rotate_static_name
+#		test_kernel_streaming_rotate_static_name_custom_output
+		test_kernel_streaming_snapshot_static_name
+		test_kernel_streaming_snapshot_add_output_default_name
+		test_kernel_streaming_snapshot_add_output_custom_name
+		test_kernel_streaming_snapshot_add_output_custom_name_custom_output
+	)
+	for fct_test in ${tests[@]};
+	do
+		${fct_test}
+	done
+
+	rm -rf $TRACE_PATH
+
+	rmmod lttng-test
+	stop_lttng_sessiond
+	stop_lttng_relayd
+}
