@@ -49,7 +49,8 @@ file system.
 [[output-directory]]
 Output directory
 ~~~~~~~~~~~~~~~~
-By default, the relay daemon writes the traces to:
+By default (option:--group-output-by-host), the relay daemon writes the traces
+to:
 
 [verse]
 $LTTNG_HOME/lttng-traces/'HOSTNAME'/'SESSION'/'DOMAIN'
@@ -65,9 +66,17 @@ with:
 'DOMAIN'::
     Tracing domain.
 
+You can group the output per session instead of per hostname with the
+option:--group-output-by-session option. This result in the following:
+
+[verse]
+
+$LTTNG_HOME/lttng-traces/'SESSION'/'HOST'/'DOMAIN'
+
 You can override the default output directory prefix
 (`$LTTNG_HOME/lttng-traces`) with the option:--output option. The other
 parts depend on the remote configuration.
+
 
 
 [[url-format]]
@@ -115,11 +124,23 @@ option:-o 'PATH', option:--output='PATH'::
 See the <<output-directory,Output directory>> section above for more
 information.
 
-option:-w 'PATH', option:--working-directory='PATH'::
-    Set the working directory of the processes this relay daemon creates.
+option:-p, option:--group-output-by-host::
+    Organize the output directory by host. Default behavior.
++
+See the <<output-directory,Output directory>> section above for more
+information.
+
+option:-s, option:--group-output-by-session::
+    Organize the output directory by session.
++
+See the <<output-directory,Output directory>> section above for more
+information.
 
 option:-v, option:--verbose::
     Increase verbosity.
+
+option:-w 'PATH', option:--working-directory='PATH'::
+    Set the working directory of the processes this relay daemon creates.
 +
 Three levels of verbosity are available, which are triggered by
 appending additional `v` letters to the option
