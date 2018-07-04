@@ -134,6 +134,12 @@
 #define LTTNG_KERNEL_SESSION_METADATA_REGEN	_IO(0xF6, 0x59)
 /* 0x5A and 0x5B are reserved for a future ABI-breaking cleanup. */
 #define LTTNG_KERNEL_SESSION_STATEDUMP		_IO(0xF6, 0x5C)
+#define LTTNG_KERNEL_SESSION_LIST_TRACKER_IDS	\
+	_IOR(0xF6, 0x5D, struct lttng_kernel_tracker_args)
+#define LTTNG_KERNEL_SESSION_TRACK_ID		\
+	_IOR(0xF6, 0x5E, struct lttng_kernel_tracker_args)
+#define LTTNG_KERNEL_SESSION_UNTRACK_ID		\
+	_IOR(0xF6, 0x5F, struct lttng_kernel_tracker_args)
 
 /* Channel FD ioctl */
 #define LTTNG_KERNEL_STREAM			_IO(0xF6, 0x62)
