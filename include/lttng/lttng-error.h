@@ -134,8 +134,8 @@ enum lttng_error_code {
 	LTTNG_ERR_EXCLUSION_NOMEM        = 111, /* Lack of memory while processing event exclusions */
 	LTTNG_ERR_INVALID_EVENT_NAME     = 112, /* Invalid event name */
 	LTTNG_ERR_INVALID_CHANNEL_NAME   = 113, /* Invalid channel name */
-	LTTNG_ERR_PID_TRACKED            = 114, /* PID already tracked */
-	LTTNG_ERR_PID_NOT_TRACKED        = 115, /* PID not tracked */
+	LTTNG_ERR_ID_TRACKED             = 114, /* ID already tracked */
+	LTTNG_ERR_ID_NOT_TRACKED         = 115, /* ID not tracked */
 	LTTNG_ERR_INVALID_CHANNEL_DOMAIN = 116, /* Invalid channel domain */
 	LTTNG_ERR_OVERFLOW		 = 117, /* Overflow occurred. */
 	LTTNG_ERR_SESSION_NOT_STARTED    = 118, /* Session not started */
@@ -146,6 +146,11 @@ enum lttng_error_code {
 	LTTNG_ERR_REGEN_STATEDUMP_NOMEM  = 123, /* Failed to regenerate the state dump, not enough memory */
 	LTTNG_ERR_NOT_SNAPSHOT_SESSION   = 124, /* Session is not in snapshot mode. */
 	LTTNG_ERR_AGENT_TRACING_DISABLED = 139, /* Agent tracing disabled. */
+	LTTNG_ERR_USER_NOT_FOUND = 140, /* User not found. */
+	LTTNG_ERR_GROUP_NOT_FOUND = 141, /* Group not found. */
+
+	LTTNG_ERR_PID_TRACKED            = 114, /* Backward compat alias to LTTNG_ERR_ID_TRACKED */
+	LTTNG_ERR_PID_NOT_TRACKED        = 115, /* Backward compat alias to LTTNG_ERR_ID_NOT_TRACKED */
 
 	/* MUST be last element */
 	LTTNG_ERR_NR,                           /* Last element */
