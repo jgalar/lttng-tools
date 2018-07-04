@@ -90,11 +90,11 @@ struct ltt_ust_domain_global {
 	struct cds_list_head registry_buffer_uid_list;
 };
 
-struct ust_pid_tracker_node {
+struct ust_id_tracker_node {
 	struct lttng_ht_node_ulong node;
 };
 
-struct ust_pid_tracker {
+struct ust_id_tracker {
 	struct lttng_ht *ht;
 };
 
@@ -137,7 +137,15 @@ struct ltt_ust_session {
 	char root_shm_path[PATH_MAX];
 	char shm_path[PATH_MAX];
 
-	struct ust_pid_tracker pid_tracker;
+	/* Trackers used for actual lookup on app registration. */
+	struct ust_id_tracker vpid_tracker;
+	struct ust_id_tracker vuid_tracker;
+	struct ust_id_tracker vgid_tracker;
+
+	/* Tracker list of keys requested by users. */
+	struct lttng_tracker_list *tracker_list_vpid;
+	struct lttng_tracker_list *tracker_list_vuid;
+	struct lttng_tracker_list *tracker_list_vgid;
 };
 
 /*
@@ -214,13 +222,19 @@ void trace_ust_destroy_channel(struct ltt_ust_channel *channel);
 void trace_ust_destroy_event(struct ltt_ust_event *event);
 void trace_ust_destroy_context(struct ltt_ust_context *ctx);
 
-int trace_ust_track_pid(struct ltt_ust_session *session, int pid);
-int trace_ust_untrack_pid(struct ltt_ust_session *session, int pid);
+int trace_ust_track_id(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session,
+		struct lttng_tracker_id *id);
+int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session,
+		struct lttng_tracker_id *id);
 
-int trace_ust_pid_tracker_lookup(struct ltt_ust_session *session, int pid);
+int trace_ust_id_tracker_lookup(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session, int id);
 
-ssize_t trace_ust_list_tracker_pids(struct ltt_ust_session *session,
-		int32_t **_pids);
+ssize_t trace_ust_list_tracker_ids(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session,
+		struct lttng_tracker_id **_ids);
 
 #else /* HAVE_LIBLTTNG_UST_CTL */
 
@@ -308,23 +322,27 @@ struct agent *trace_ust_find_agent(struct ltt_ust_session *session,
 	return NULL;
 }
 static inline
-int trace_ust_track_pid(struct ltt_ust_session *session, int pid)
+int trace_ust_track_id(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session, int id)
 {
 	return 0;
 }
 static inline
-int trace_ust_untrack_pid(struct ltt_ust_session *session, int pid)
+int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session, int id)
 {
 	return 0;
 }
 static inline
-int trace_ust_pid_tracker_lookup(struct ltt_ust_session *session, int pid)
+int trace_ust_id_tracker_lookup(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session, int pid)
 {
 	return 0;
 }
 static inline
-ssize_t trace_ust_list_tracker_pids(struct ltt_ust_session *session,
-		int32_t **_pids)
+ssize_t trace_ust_list_tracker_ids(enum lttng_tracker_type tracker_type,
+		struct ltt_ust_session *session,
+		struct lttng_tracker_id **_ids)
 {
 	return -1;
 }

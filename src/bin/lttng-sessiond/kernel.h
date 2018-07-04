@@ -30,7 +30,7 @@
  * dynamic reallocation is performed.
  */
 #define KERNEL_EVENT_INIT_LIST_SIZE 64
-#define KERNEL_TRACKER_PIDS_INIT_LIST_SIZE 64
+#define KERNEL_TRACKER_IDS_INIT_LIST_SIZE 64
 
 int kernel_add_channel_context(struct ltt_kernel_channel *chan,
 		struct ltt_kernel_context *ctx);
@@ -43,8 +43,12 @@ int kernel_disable_channel(struct ltt_kernel_channel *chan);
 int kernel_disable_event(struct ltt_kernel_event *event);
 int kernel_enable_event(struct ltt_kernel_event *event);
 int kernel_enable_channel(struct ltt_kernel_channel *chan);
-int kernel_track_pid(struct ltt_kernel_session *session, int pid);
-int kernel_untrack_pid(struct ltt_kernel_session *session, int pid);
+int kernel_track_id(enum lttng_tracker_type tracker_type,
+		struct ltt_kernel_session *session,
+		struct lttng_tracker_id *id);
+int kernel_untrack_id(enum lttng_tracker_type tracker_type,
+		struct ltt_kernel_session *session,
+		struct lttng_tracker_id *id);
 int kernel_open_metadata(struct ltt_kernel_session *session);
 int kernel_open_metadata_stream(struct ltt_kernel_session *session);
 int kernel_open_channel_stream(struct ltt_kernel_channel *channel);
@@ -63,7 +67,8 @@ int kernel_snapshot_record(struct ltt_kernel_session *ksess,
 int kernel_syscall_mask(int chan_fd, char **syscall_mask, uint32_t *nr_bits);
 
 int init_kernel_workarounds(void);
-ssize_t kernel_list_tracker_pids(struct ltt_kernel_session *session,
-		int **_pids);
+ssize_t kernel_list_tracker_ids(enum lttng_tracker_type tracker_type,
+		struct ltt_kernel_session *session,
+		struct lttng_tracker_id **_ids);
 
 #endif /* _LTT_KERNEL_CTL_H */

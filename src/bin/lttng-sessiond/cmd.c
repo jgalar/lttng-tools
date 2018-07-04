@@ -1195,12 +1195,14 @@ error:
 }
 
 /*
- * Command LTTNG_TRACK_PID processed by the client thread.
+ * Command LTTNG_TRACK_ID processed by the client thread.
  *
  * Called with session lock held.
  */
-int cmd_track_pid(struct ltt_session *session, enum lttng_domain_type domain,
-		int pid)
+int cmd_track_id(struct ltt_session *session,
+		enum lttng_tracker_type tracker_type,
+		enum lttng_domain_type domain,
+		struct lttng_tracker_id *id)
 {
 	int ret;
 
@@ -1213,7 +1215,7 @@ int cmd_track_pid(struct ltt_session *session, enum lttng_domain_type domain,
 
 		ksess = session->kernel_session;
 
-		ret = kernel_track_pid(ksess, pid);
+		ret = kernel_track_id(tracker_type, ksess, id);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -1227,7 +1229,7 @@ int cmd_track_pid(struct ltt_session *session, enum lttng_domain_type domain,
 
 		usess = session->ust_session;
 
-		ret = trace_ust_track_pid(usess, pid);
+		ret = trace_ust_track_id(tracker_type, usess, id);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -1246,12 +1248,14 @@ error:
 }
 
 /*
- * Command LTTNG_UNTRACK_PID processed by the client thread.
+ * Command LTTNG_UNTRACK_ID processed by the client thread.
  *
  * Called with session lock held.
  */
-int cmd_untrack_pid(struct ltt_session *session, enum lttng_domain_type domain,
-		int pid)
+int cmd_untrack_id(struct ltt_session *session,
+		enum lttng_tracker_type tracker_type,
+		enum lttng_domain_type domain,
+		struct lttng_tracker_id *id)
 {
 	int ret;
 
@@ -1264,7 +1268,7 @@ int cmd_untrack_pid(struct ltt_session *session, enum lttng_domain_type domain,
 
 		ksess = session->kernel_session;
 
-		ret = kernel_untrack_pid(ksess, pid);
+		ret = kernel_untrack_id(tracker_type, ksess, id);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -1278,7 +1282,7 @@ int cmd_untrack_pid(struct ltt_session *session, enum lttng_domain_type domain,
 
 		usess = session->ust_session;
 
-		ret = trace_ust_untrack_pid(usess, pid);
+		ret = trace_ust_untrack_id(tracker_type, usess, id);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2332,12 +2336,14 @@ ssize_t cmd_list_syscalls(struct lttng_event **events)
 }
 
 /*
- * Command LTTNG_LIST_TRACKER_PIDS processed by the client thread.
+ * Command LTTNG_LIST_TRACKER_IDS processed by the client thread.
  *
  * Called with session lock held.
  */
-ssize_t cmd_list_tracker_pids(struct ltt_session *session,
-		enum lttng_domain_type domain, int32_t **pids)
+ssize_t cmd_list_tracker_ids(enum lttng_tracker_type tracker_type,
+		struct ltt_session *session,
+		enum lttng_domain_type domain,
+		struct lttng_tracker_id **ids)
 {
 	int ret;
 	ssize_t nr_pids = 0;
@@ -2348,7 +2354,7 @@ ssize_t cmd_list_tracker_pids(struct ltt_session *session,
 		struct ltt_kernel_session *ksess;
 
 		ksess = session->kernel_session;
-		nr_pids = kernel_list_tracker_pids(ksess, pids);
+		nr_pids = kernel_list_tracker_ids(tracker_type, ksess, ids);
 		if (nr_pids < 0) {
 			ret = LTTNG_ERR_KERN_LIST_FAIL;
 			goto error;
@@ -2360,7 +2366,7 @@ ssize_t cmd_list_tracker_pids(struct ltt_session *session,
 		struct ltt_ust_session *usess;
 
 		usess = session->ust_session;
-		nr_pids = trace_ust_list_tracker_pids(usess, pids);
+		nr_pids = trace_ust_list_tracker_ids(tracker_type, usess, ids);
 		if (nr_pids < 0) {
 			ret = LTTNG_ERR_UST_LIST_FAIL;
 			goto error;

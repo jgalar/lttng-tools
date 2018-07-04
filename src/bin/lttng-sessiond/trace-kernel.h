@@ -26,6 +26,7 @@
 #include <common/defaults.h>
 
 #include "consumer.h"
+#include "tracker.h"
 
 /* Kernel event list */
 struct ltt_kernel_event_list {
@@ -116,6 +117,13 @@ struct ltt_kernel_session {
 	unsigned int output_traces;
 	unsigned int snapshot_mode;
 	unsigned int has_non_default_channel;
+
+	struct lttng_tracker_list *tracker_list_pid;
+	struct lttng_tracker_list *tracker_list_vpid;
+	struct lttng_tracker_list *tracker_list_uid;
+	struct lttng_tracker_list *tracker_list_vuid;
+	struct lttng_tracker_list *tracker_list_gid;
+	struct lttng_tracker_list *tracker_list_vgid;
 };
 
 /*
