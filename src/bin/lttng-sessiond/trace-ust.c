@@ -874,6 +874,8 @@ int trace_ust_track_id(enum lttng_tracker_type tracker_type,
 	struct ust_id_tracker *id_tracker;
 	struct lttng_tracker_list *tracker_list;
 	int value;
+	struct lttng_tracker_id *saved_ids;
+	ssize_t saved_ids_count, i;
 
 	if (tracker_type == LTTNG_TRACKER_PID) {
 		DBG("Backward compatible behavior: translate PID tracker to VPID tracker for UST domain.");
@@ -885,15 +887,19 @@ int trace_ust_track_id(enum lttng_tracker_type tracker_type,
 	if (retval != LTTNG_OK) {
 		return retval;
 	}
-
-	/* Add to list. */
 	tracker_list = get_id_tracker_list(session, tracker_type);
 	if (!tracker_list) {
 		return LTTNG_ERR_INVALID;
 	}
+	/* Save list for restore on error. */
+	saved_ids_count = lttng_tracker_id_get_list(tracker_list, &saved_ids);
+	if (saved_ids_count < 0) {
+		return LTTNG_ERR_INVALID;
+	}
+	/* Add to list. */
 	retval = lttng_tracker_list_add(tracker_list, id);
 	if (retval != LTTNG_OK) {
-		return retval;
+		goto end;
 	}
 
 	id_tracker = get_id_tracker(session, tracker_type);
@@ -913,12 +919,12 @@ int trace_ust_track_id(enum lttng_tracker_type tracker_type,
 			retval = init_id_tracker(id_tracker);
 			if (retval != LTTNG_OK) {
 				ERR("Error initializing ID tracker");
-				goto end;
+				goto end_restore;
 			}
 			retval = id_tracker_add_id(id_tracker, value);
 			if (retval != LTTNG_OK) {
 				fini_id_tracker(id_tracker);
-				goto end;
+				goto end_restore;
 			}
 			/* Keep only apps matching ID. */
 			ust_app_global_update_all(session);
@@ -927,7 +933,7 @@ int trace_ust_track_id(enum lttng_tracker_type tracker_type,
 
 			retval = id_tracker_add_id(id_tracker, value);
 			if (retval != LTTNG_OK) {
-				goto end;
+				goto end_restore;
 			}
 			/* Add session to application */
 			switch (tracker_type) {
@@ -943,7 +949,17 @@ int trace_ust_track_id(enum lttng_tracker_type tracker_type,
 			}
 		}
 	}
+	goto end;
+
+end_restore:
+	if (lttng_tracker_id_set_list(tracker_list, saved_ids, saved_ids_count) != LTTNG_OK) {
+		ERR("Error on tracker add error handling.\n");
+	}
 end:
+	for (i = 0; i < saved_ids_count; i++) {
+		free(saved_ids[i].string);
+	}
+	free(saved_ids);
 	return retval;
 }
 
@@ -957,6 +973,8 @@ int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
 	struct ust_id_tracker *id_tracker;
 	struct lttng_tracker_list *tracker_list;
 	int value;
+	struct lttng_tracker_id *saved_ids;
+	ssize_t saved_ids_count, i;
 
 	if (tracker_type == LTTNG_TRACKER_PID) {
 		DBG("Backward compatible behavior: translate PID tracker to VPID tracker for UST domain.");
@@ -969,14 +987,19 @@ int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
 		return retval;
 	}
 
-	/* Remove from list. */
 	tracker_list = get_id_tracker_list(session, tracker_type);
 	if (!tracker_list) {
 		return LTTNG_ERR_INVALID;
 	}
+	/* Save list for restore on error. */
+	saved_ids_count = lttng_tracker_id_get_list(tracker_list, &saved_ids);
+	if (saved_ids_count < 0) {
+		return LTTNG_ERR_INVALID;
+	}
+	/* Remove from list. */
 	retval = lttng_tracker_list_remove(tracker_list, id);
 	if (retval != LTTNG_OK) {
-		return retval;
+		goto end;
 	}
 
 	id_tracker = get_id_tracker(session, tracker_type);
@@ -994,7 +1017,7 @@ int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
 			ERR("Error initializing ID tracker");
 			/* Rollback operation. */
 			*id_tracker = tmp_tracker;
-			goto end;
+			goto end_restore;
 		}
 		fini_id_tracker(&tmp_tracker);
 
@@ -1006,12 +1029,12 @@ int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
 		if (!id_tracker->ht) {
 			/* No ID being tracked. */
 			retval = LTTNG_ERR_ID_NOT_TRACKED;
-			goto end;
+			goto end_restore;
 		}
 		/* Remove ID from tracker */
 		retval = id_tracker_del_id(id_tracker, value);
 		if (retval != LTTNG_OK) {
-			goto end;
+			goto end_restore;
 		}
 		switch (tracker_type) {
 		case LTTNG_TRACKER_VPID:
@@ -1026,7 +1049,17 @@ int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
 			ust_app_global_update_all(session);
 		}
 	}
+	goto end;
+
+end_restore:
+	if (lttng_tracker_id_set_list(tracker_list, saved_ids, saved_ids_count) != LTTNG_OK) {
+		ERR("Error on tracker remove error handling.\n");
+	}
 end:
+	for (i = 0; i < saved_ids_count; i++) {
+		free(saved_ids[i].string);
+	}
+	free(saved_ids);
 	return retval;
 }
 
