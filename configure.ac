@@ -318,8 +318,8 @@ _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_SNAPSHOT], [Snapshot buffers of current t
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_START], [Start tracing])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_STATUS], [Get the status of the current tracing session])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_STOP], [Stop tracing])
-_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_TRACK], [Track specific system resources])
-_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_UNTRACK], [Untrack specific system resources])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_TRACK], [Track specific processes])
+_AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_UNTRACK], [Untrack specific processes])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_VERSION], [Show version information])
 _AC_DEFINE_QUOTED_AND_SUBST([CMD_DESCR_VIEW], [Start trace viewer])
 

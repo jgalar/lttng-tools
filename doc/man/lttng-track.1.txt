@@ -4,56 +4,95 @@ lttng-track(1)
 
 NAME
 ----
-lttng-track - Add one or more entries to an LTTng resource tracker
+lttng-track - Add one or more property values to an LTTng process tracker
 
 
 SYNOPSIS
 --------
+Track processes for Linux kernel channels:
+
 [verse]
-*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *track* (option:--kernel | option:--userspace)
-      [option:--session='SESSION'] (option:--pid='PID'[,'PID']... | option:--all option:--pid)
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *track* option:--kernel [option:--session='SESSION']
+      [option:--pid='PID'[,'PID']... | option:--pid option:--all]
+      [option:--vpid='PID'[,'PID']... | option:--vpid option:--all]
+      [option:--uid='USER'[,'USER']... | option:--uid option:--all]
+      [option:--vuid='USER'[,'USER']... | option:--vuid option:--all]
+      [option:--gid='GROUP'[,'GROUP']... | option:--gid option:--all]
+      [option:--vgid='GROUP'[,'GROUP']... | option:--vgid option:--all]
+
+Track processes for user space channels:
+
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *track* option:--userspace [option:--session='SESSION']
+      [option:--vpid='PID'[,'PID']... | option:--vpid option:--all]
+      [option:--vuid='USER'[,'USER']... | option:--vuid option:--all]
+      [option:--vgid='GROUP'[,'GROUP']... | option:--vgid option:--all]
 
 
 DESCRIPTION
 -----------
-The `lttng track` commands adds one or more entries to a
-resource tracker.
+The `lttng track` commands adds one or more property values to an LTTng
+process tracker.
 
-A resource tracker is a _whitelist_ of resources. Tracked resources are
-allowed to emit events, provided those events are targeted by enabled
-event rules (see man:lttng-enable-event(1)).
+A process tracker is a _whitelist_ of values of various process
+properties. Processes of which all the property values are in the
+whitelist are said to be _tracked_ and are allowed to emit events,
+provided those events are also targeted by enabled event rules (see
+man:lttng-enable-event(1)).
 
-Tracker entries can be removed from the whitelist with
+You can remove process property values from the whitelist with
 man:lttng-untrack(1).
 
-As of this version, the only available tracker is the *PID tracker*. The
-process ID (PID) tracker follows one or more process IDs; only the
-processes with a tracked PID are allowed to emit events. By default, all
-possible PIDs on the system are tracked: any process may emit enabled
-events (equivalent of `lttng track --pid --all` for all domains).
+The available process properties are:
 
-With the PID tracker, it is possible, for example, to record all system
-calls called by a given process:
+option:--pid::
+    Process ID as seen by the Linux kernel (root namespace).
 
-[role="term"]
--------------------------------------------
-lttng enable-event --kernel --all --syscall
-lttng track --kernel --pid=2345
-lttng start
--------------------------------------------
+option:--uid::
+    User ID or name as seen by the Linux kernel (root namespace).
 
-If all the PIDs are tracked (i.e. `lttng track --pid --all`, which is
-the default state of all domains when creating a tracing session), then
-using the track command with one or more specific PIDs has the effect of
-first removing all the PIDs from the whitelist, then adding the
-specified PIDs.
+option:--gid::
+    Group ID or name as seen by the Linux kernel (root namespace).
+
+option:--vpid::
+    Process ID as seen by the traced process.
+
+option:--vuid::
+    User ID or name as seen by the traced process.
+
+option:--vgid::
+    Group ID or name as seen by the traced process.
+
+With the option:--uid, option:--vuid, option:--gid, and option:--vgid
+options, when you use one or more user or group names, the LTTng session
+daemon process (see man:lttng-sessiond(8)) performs the name-to-ID
+lookup _once_ in the appropriate files in `/etc`.
+
+The option:--pid and option:--vpid options specify _numeric_ process
+IDs. Should a process with a given ID exit and a new process be assigned
+this same ID, then the latter would also be allowed to emit events.
+
+When you create a tracing session (see man:lttng-create(1)), all
+processes on the system are tracked: any process with any ID, user, and
+group may emit enabled events. This is the equivalent of using the
+option:--all option for each process property option.
+
+A process is only allowed to emit enabled events when _all_ its property
+values are part of the tracker's whitelist: its ID, its user ID, and its
+group ID.
+
+If all the values of a given property are tracked, which is the default
+state for each property and for all domains when creating a tracing
+session, then using the `lttng track` command with one or more specific
+property values has the effect of first removing all the property values
+from the whitelist, then adding the specified values.
 
 
-Example
-~~~~~~~
+Understanding the whitelist
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Assume the maximum system PID is 7 for this example.
 
-Initial whitelist:
+Initial PID whitelist:
 
 -------------------------------
 [0] [1] [2] [3] [4] [5] [6] [7]
@@ -62,9 +101,9 @@ Initial whitelist:
 Command:
 
 [role="term"]
------------------------------------
-lttng track --userspace --pid=3,6,7
------------------------------------
+----
+$ lttng track --kernel --pid=3,6,7
+----
 
 Whitelist:
 
@@ -75,9 +114,9 @@ Whitelist:
 Command:
 
 [role="term"]
----------------------------------
-lttng untrack --userspace --pid=7
----------------------------------
+----
+$ lttng untrack --kernel --pid=7
+----
 
 Whitelist:
 
@@ -88,9 +127,9 @@ Whitelist:
 Command:
 
 [role="term"]
----------------------------------
-lttng track --userspace --pid=1,5
----------------------------------
+----
+$ lttng track --kernel --pid=1,5
+----
 
 Whitelist:
 
@@ -98,12 +137,43 @@ Whitelist:
 [ ] [1] [ ] [3] [ ] [5] [6] [ ]
 -------------------------------
 
-It should be noted that the PID tracker tracks the numeric process IDs.
-Should a process with a given ID exit and another process be given this
-ID, then the latter would also be allowed to emit events.
+See the man:lttng-untrack(1) for more details about removing property
+values from the whitelist.
 
-See the man:lttng-untrack(1) for more details about removing
-entries.
+
+Usage examples
+~~~~~~~~~~~~~~
+Track processes with PID 2394 or 185 as seen from the kernel, any user,
+and any group for kernel channels:
+
+[role="term"]
+----
+$ lttng track --kernel --pid=2394,185
+----
+
+Track processes with any PID, user name `janine` as seen from the
+traced process, and any group for user space channels:
+
+[role="term"]
+----
+$ lttng track --userspace --vuid=janine
+----
+
+Track processes with any PID, user ID 1000 or user name `mireille` as
+seen from the traced process, and any group for kernel channels:
+
+[role="term"]
+----
+$ lttng track --kernel --vuid=1000,mireille
+----
+
+Track processes with any PID, any user, and group name `http` as seen
+from the traced process for user space channels:
+
+[role="term"]
+----
+$ lttng track --userspace --vgid=http
+----
 
 
 include::common-cmd-options-head.txt[]
@@ -114,31 +184,49 @@ Domain
 One of:
 
 option:-k, option:--kernel::
-    Track resources in the Linux kernel domain.
+    Track processes for Linux kernel channels.
 
 option:-u, option:--userspace::
-    Track resources in the user space domain.
+    Track processes for user space channels.
 
 
 Target
 ~~~~~~
 option:-s 'SESSION', option:--session='SESSION'::
-    Track resources in the tracing session named 'SESSION' instead of
+    Track processes in the tracing session named 'SESSION' instead of
     the current tracing session.
 
 
-Tracking
-~~~~~~~~
+Process property
+~~~~~~~~~~~~~~~~
 option:-a, option:--all::
-    Used in conjunction with an empty option:--pid option: track _all_
-    process IDs (add all entries to the whitelist).
+    Following any of the property options below (without an option's
+    argument): add _all_ possible values of this property to the process
+    tracker's whitelist.
 
-option:-p ['PID'[,'PID']...], option:--pid[='PID'[,'PID']...]::
-    Track process IDs 'PID' (add them to the current whitelist).
-+
-The 'PID' argument must be omitted when also using the option:--all
-option.
+option:--gid[='GROUP'[,'GROUP']...]::
+    Add group ID or name 'GROUP', as seen by the Linux kernel (root
+    namespace), to the tracker's whitelist.
 
+option:--pid[='PID'[,'PID']...]::
+    Add process ID 'PID', as seen by the Linux kernel (root namespace),
+    to the tracker's whitelist.
+
+option:--uid[='USER'[,'USER']...]::
+    Add user ID or name 'USER', as seen by the Linux kernel (root
+    namespace), to the tracker's whitelist.
+
+option:--vgid[='GROUP'[,'GROUP']...]::
+    Add group ID or name 'GROUP', as seen by the traced process, to the
+    tracker's whitelist.
+
+option:--vpid[='PID'[,'PID']...]::
+    Add process ID 'VPID', as seen by the traced process, to the
+    tracker's whitelist.
+
+option:--vuid[='USER'[,'USER']...]::
+    Add user ID or name 'USER', as seen by the traced process, to the
+    tracker's whitelist.
 
 include::common-cmd-help-options.txt[]
 

@@ -4,46 +4,81 @@ lttng-untrack(1)
 
 NAME
 ----
-lttng-untrack - Remove one or more entries from an LTTng resource tracker
+lttng-untrack - Remove one or more property values from an LTTng process tracker
 
 
 SYNOPSIS
 --------
 [verse]
-*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *untrack* (option:--kernel | option:--userspace)
-      [option:--session='SESSION'] (option:--pid='PID'[,'PID']... | option:--all option:--pid)
+Untrack processes for Linux kernel channels:
+
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *untrack* option:--kernel [option:--session='SESSION']
+      [option:--pid='PID'[,'PID']... | option:--pid option:--all]
+      [option:--vpid='PID'[,'PID']... | option:--vpid option:--all]
+      [option:--uid='USER'[,'USER']... | option:--uid option:--all]
+      [option:--vuid='USER'[,'USER']... | option:--vuid option:--all]
+      [option:--gid='GROUP'[,'GROUP']... | option:--gid option:--all]
+      [option:--vgid='GROUP'[,'GROUP']... | option:--vgid option:--all]
+
+Untrack processes for user space channels:
+
+[verse]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *untrack* option:--userspace [option:--session='SESSION']
+      [option:--vpid='PID'[,'PID']... | option:--vpid option:--all]
+      [option:--vuid='USER'[,'USER']... | option:--vuid option:--all]
+      [option:--vgid='GROUP'[,'GROUP']... | option:--vgid option:--all]
 
 
 DESCRIPTION
 -----------
-The `lttng untrack` commands removes one or more entries from a
-resource tracker.
+The `lttng untrack` commands removes one or more property values from an
+LTTng process tracker.
 
-See man:lttng-track(1) to learn more about LTTng trackers.
+See man:lttng-track(1) to learn more about LTTng process trackers.
 
-The untrack command removes specific resources from a tracker. The
-resources to remove must have been precedently added by
-man:lttng-track(1). It is also possible to remove all the
-resources from the whitelist using the option:--all option.
+The `lttng untrack` command removes specific property values from a
+process tracker's whitelist. The property values to remove must have
+been precedently added by man:lttng-track(1). It is also possible to
+remove all the values of a given property from the whitelist with the
+option:--all option following the specific property option.
 
-As of this version, the only available tracker is the PID tracker.
+The available process properties are:
+
+option:--pid::
+    Process ID as seen by the Linux kernel (root namespace).
+
+option:--uid::
+    User ID or name as seen by the Linux kernel (root namespace).
+
+option:--gid::
+    Group ID or name as seen by the Linux kernel (root namespace).
+
+option:--vpid::
+    Process ID as seen by the traced process.
+
+option:--vuid::
+    User ID or name as seen by the traced process.
+
+option:--vgid::
+    Group ID or name as seen by the traced process.
 
 
-Example
-~~~~~~~
-One common operation is to create a tracing session
-(see man:lttng-create(1)), remove all the entries from the PID
-tracker whitelist, start tracing, and then manually track PIDs
-while tracing is active.
+Understanding the whitelist
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+One common operation is to create a tracing session (see
+man:lttng-create(1)), remove all the process ID property values from the
+process tracker whitelist, start tracing, and then manually track
+processes with a given PID while tracing is active.
 
 Assume the maximum system PID is 7 for this example.
 
 Command:
 
 [role="term"]
-------------
-lttng create
-------------
+----
+$ lttng create
+----
 
 Initial whitelist:
 
@@ -54,9 +89,9 @@ Initial whitelist:
 Command:
 
 [role="term"]
--------------------------------------
-lttng untrack --userspace --pid --all
--------------------------------------
+----
+$ lttng untrack --kernel --pid --all
+----
 
 Whitelist:
 
@@ -67,12 +102,12 @@ Whitelist:
 Commands:
 
 [role="term"]
-----------------------------------
-lttng enable-event --userspace ...
-lttng start
-# ...
-lttng track --userspace --pid=3,5
-----------------------------------
+----
+$ lttng enable-event --kernel ...
+$ lttng start
+$ # ...
+$ lttng track --kernel --pid=3,5
+----
 
 Whitelist:
 
@@ -83,9 +118,9 @@ Whitelist:
 Command:
 
 [role="term"]
--------------------------------
-lttng track --userspace --pid=2
--------------------------------
+----
+$ lttng track --kernel --pid=2
+----
 
 Whitelist:
 
@@ -102,30 +137,49 @@ Domain
 One of:
 
 option:-k, option:--kernel::
-    Untrack resources tracked in the Linux kernel domain.
+    Untrack processes for Linux kernel channels.
 
 option:-u, option:--userspace::
-    Untrack resources tracked in the user space domain.
+    Untrack processes for user space channels.
 
 
 Target
 ~~~~~~
 option:-s, option:--session='SESSION'::
-    Untrack resources in the tracing session named 'SESSION' instead of
+    Untrack processes in the tracing session named 'SESSION' instead of
     the current tracing session.
 
 
-Untracking
-~~~~~~~~~~
+Process property
+~~~~~~~~~~~~~~~~
 option:-a, option:--all::
-    Used in conjunction with an empty option:--pid option: untrack _all_
-    process IDs (clear the whitelist).
+    Following any of the property options below (without an option's
+    argument): remove _all_ possible values of this property from the
+    process tracker's whitelist.
 
-option:-p ['PID'[,'PID']...], option:--pid[='PID'[,'PID']...]::
-    Untrack process IDs 'PID' (remove them from the current whitelist).
-+
-The 'PID' argument must be omitted when also using the option:--all
-option.
+option:--pid[='PID'[,'PID']...]::
+    Remove process ID 'PID', as seen by the Linux kernel (root
+    namespace), from the tracker's whitelist.
+
+option:--uid[='USER'[,'USER']...]::
+    Remove user ID or name 'USER', as seen by the Linux kernel (root
+    namespace), from the tracker's whitelist.
+
+option:--gid[='GROUP'[,'GROUP']...]::
+    Remove group ID or name 'GROUP', as seen by the Linux kernel (root
+    namespace), from the tracker's whitelist.
+
+option:--vpid[='PID'[,'PID']...]::
+    Remove process ID 'VPID', as seen by the traced process, from the
+    tracker's whitelist.
+
+option:--vuid[='USER'[,'USER']...]::
+    Remove user ID or name 'USER', as seen by the traced process, from
+    the tracker's whitelist.
+
+option:--vgid[='GROUP'[,'GROUP']...]::
+    Remove group ID or name 'GROUP', as seen by the traced process, from
+    the tracker's whitelist.
 
 
 include::common-cmd-help-options.txt[]
