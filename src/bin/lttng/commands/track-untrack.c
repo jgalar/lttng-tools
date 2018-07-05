@@ -518,26 +518,56 @@ int cmd_track_untrack(enum cmd_type cmd_type, const char *cmd_str,
 		case OPT_SESSION:
 			break;
 		case OPT_PID:
+			if (opt_pid.used) {
+				ERR("Duplicate --pid option is forbidden.\n");
+				command_ret = CMD_ERROR;
+				goto end;
+			}
 			opt_pid.used = 1;
 			type_state = STATE_PID;
 			break;
 		case OPT_VPID:
+			if (opt_vpid.used) {
+				ERR("Duplicate --vpid option is forbidden.\n");
+				command_ret = CMD_ERROR;
+				goto end;
+			}
 			opt_vpid.used = 1;
 			type_state = STATE_VPID;
 			break;
 		case OPT_UID:
+			if (opt_uid.used) {
+				ERR("Duplicate --uid option is forbidden.\n");
+				command_ret = CMD_ERROR;
+				goto end;
+			}
 			opt_uid.used = 1;
 			type_state = STATE_UID;
 			break;
 		case OPT_VUID:
+			if (opt_vuid.used) {
+				ERR("Duplicate --vuid option is forbidden.\n");
+				command_ret = CMD_ERROR;
+				goto end;
+			}
 			opt_vuid.used = 1;
 			type_state = STATE_VUID;
 			break;
 		case OPT_GID:
+			if (opt_gid.used) {
+				ERR("Duplicate --gid option is forbidden.\n");
+				command_ret = CMD_ERROR;
+				goto end;
+			}
 			opt_gid.used = 1;
 			type_state = STATE_GID;
 			break;
 		case OPT_VGID:
+			if (opt_vgid.used) {
+				ERR("Duplicate --vgid option is forbidden.\n");
+				command_ret = CMD_ERROR;
+				goto end;
+			}
 			opt_vgid.used = 1;
 			type_state = STATE_VGID;
 			break;
