@@ -481,7 +481,6 @@ int consumer_channel_timer_stop(timer_t *timer_id, int signal)
 		goto end;
 	}
 
-	consumer_timer_signal_thread_qs(signal);
 	*timer_id = 0;
 end:
 	return ret;
