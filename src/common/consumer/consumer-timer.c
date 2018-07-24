@@ -41,7 +41,6 @@ typedef int (*get_produced_cb)(struct lttng_consumer_stream *stream,
 static struct timer_signal_data timer_signal = {
 	.tid = 0,
 	.setup_done = 0,
-	.qs_done = 0,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 };
 
@@ -59,10 +58,6 @@ static void setmask(sigset_t *mask)
 	ret = sigaddset(mask, LTTNG_CONSUMER_SIG_SWITCH);
 	if (ret) {
 		PERROR("sigaddset switch");
-	}
-	ret = sigaddset(mask, LTTNG_CONSUMER_SIG_TEARDOWN);
-	if (ret) {
-		PERROR("sigaddset teardown");
 	}
 	ret = sigaddset(mask, LTTNG_CONSUMER_SIG_LIVE);
 	if (ret) {
@@ -368,57 +363,6 @@ error:
 	return;
 }
 
-static
-void consumer_timer_signal_thread_qs(unsigned int signr)
-{
-	sigset_t pending_set;
-	int ret;
-
-	/*
-	 * We need to be the only thread interacting with the thread
-	 * that manages signals for teardown synchronization.
-	 */
-	pthread_mutex_lock(&timer_signal.lock);
-
-	/* Ensure we don't have any signal queued for this channel. */
-	for (;;) {
-		ret = sigemptyset(&pending_set);
-		if (ret == -1) {
-			PERROR("sigemptyset");
-		}
-		ret = sigpending(&pending_set);
-		if (ret == -1) {
-			PERROR("sigpending");
-		}
-		if (!sigismember(&pending_set, signr)) {
-			break;
-		}
-		caa_cpu_relax();
-	}
-
-	/*
-	 * From this point, no new signal handler will be fired that would try to
-	 * access "chan". However, we still need to wait for any currently
-	 * executing handler to complete.
-	 */
-	cmm_smp_mb();
-	CMM_STORE_SHARED(timer_signal.qs_done, 0);
-	cmm_smp_mb();
-
-	/*
-	 * Kill with LTTNG_CONSUMER_SIG_TEARDOWN, so signal management thread wakes
-	 * up.
-	 */
-	kill(getpid(), LTTNG_CONSUMER_SIG_TEARDOWN);
-
-	while (!CMM_LOAD_SHARED(timer_signal.qs_done)) {
-		caa_cpu_relax();
-	}
-	cmm_smp_mb();
-
-	pthread_mutex_unlock(&timer_signal.lock);
-}
-
 /*
  * Start a timer channel timer which will fire at a given interval
  * (timer_interval_us)and fire a given signal (signal).
@@ -481,7 +425,6 @@ int consumer_channel_timer_stop(timer_t *timer_id, int signal)
 		goto end;
 	}
 
-	consumer_timer_signal_thread_qs(signal);
 	*timer_id = 0;
 end:
 	return ret;
@@ -811,8 +754,7 @@ void log_ignored_signal(int signr, uint64_t channel_key)
 
 /*
  * This thread is the sighandler for signals LTTNG_CONSUMER_SIG_SWITCH,
- * LTTNG_CONSUMER_SIG_TEARDOWN, LTTNG_CONSUMER_SIG_LIVE, and
- * LTTNG_CONSUMER_SIG_MONITOR, LTTNG_CONSUMER_SIG_EXIT.
+ * LTTNG_CONSUMER_SIG_LIVE, LTTNG_CONSUMER_SIG_MONITOR, and LTTNG_CONSUMER_SIG_EXIT.
  */
 void *consumer_timer_thread(void *data)
 {
@@ -883,11 +825,6 @@ void *consumer_timer_thread(void *data)
 			continue;
 		} else if (signr == LTTNG_CONSUMER_SIG_SWITCH) {
 			metadata_switch_timer(ctx, channel);
-		} else if (signr == LTTNG_CONSUMER_SIG_TEARDOWN) {
-			cmm_smp_mb();
-			CMM_STORE_SHARED(timer_signal.qs_done, 1);
-			cmm_smp_mb();
-			DBG("Signal timer metadata thread teardown");
 		} else if (signr == LTTNG_CONSUMER_SIG_LIVE) {
 			live_timer(ctx, channel);
 		} else if (signr == LTTNG_CONSUMER_SIG_MONITOR) {
