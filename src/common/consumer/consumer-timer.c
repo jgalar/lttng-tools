@@ -88,12 +88,10 @@ static int channel_monitor_pipe = -1;
  * deadlocks.
  */
 static void metadata_switch_timer(struct lttng_consumer_local_data *ctx,
-		siginfo_t *si)
+		struct lttng_consumer_channel *channel)
 {
 	int ret;
-	struct lttng_consumer_channel *channel;
 
-	channel = si->si_value.sival_ptr;
 	assert(channel);
 
 	if (channel->switch_timer_error) {
@@ -319,18 +317,16 @@ end:
 
 /*
  * Execute action on a live timer
+ *
+ * RCU read lock must be held by the caller.
  */
 static void live_timer(struct lttng_consumer_local_data *ctx,
-		siginfo_t *si)
+		struct lttng_consumer_channel *channel)
 {
 	int ret;
-	struct lttng_consumer_channel *channel;
 	struct lttng_consumer_stream *stream;
 	struct lttng_ht *ht;
 	struct lttng_ht_iter iter;
-
-	channel = si->si_value.sival_ptr;
-	assert(channel);
 
 	if (channel->switch_timer_error) {
 		goto error;
@@ -339,7 +335,6 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 
 	DBG("Live timer for channel %" PRIu64, channel->key);
 
-	rcu_read_lock();
 	switch (ctx->type) {
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
@@ -349,7 +344,7 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 				stream, node_channel_id.node) {
 			ret = check_ust_stream(stream);
 			if (ret < 0) {
-				goto error_unlock;
+				goto error;
 			}
 		}
 		break;
@@ -360,7 +355,7 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 				stream, node_channel_id.node) {
 			ret = check_kernel_stream(stream);
 			if (ret < 0) {
-				goto error_unlock;
+				goto error;
 			}
 		}
 		break;
@@ -368,9 +363,6 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 		assert(0);
 		break;
 	}
-
-error_unlock:
-	rcu_read_unlock();
 
 error:
 	return;
@@ -436,15 +428,12 @@ void consumer_timer_signal_thread_qs(unsigned int signr)
  */
 static
 int consumer_channel_timer_start(timer_t *timer_id,
-		struct lttng_consumer_channel *channel,
+		uint64_t channel_key,
 		unsigned int timer_interval_us, int signal)
 {
 	int ret = 0, delete_ret;
 	struct sigevent sev;
 	struct itimerspec its;
-
-	assert(channel);
-	assert(channel->key);
 
 	if (timer_interval_us == 0) {
 		/* No creation needed; not an error. */
@@ -454,7 +443,7 @@ int consumer_channel_timer_start(timer_t *timer_id,
 
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = signal;
-	sev.sigev_value.sival_ptr = channel;
+	sev.sigev_value.sival_ptr = (void *) channel_key;
 	ret = timer_create(CLOCKID, &sev, timer_id);
 	if (ret == -1) {
 		PERROR("timer_create");
@@ -509,7 +498,7 @@ void consumer_timer_switch_start(struct lttng_consumer_channel *channel,
 	assert(channel);
 	assert(channel->key);
 
-	ret = consumer_channel_timer_start(&channel->switch_timer, channel,
+	ret = consumer_channel_timer_start(&channel->switch_timer, channel->key,
 			switch_timer_interval_us, LTTNG_CONSUMER_SIG_SWITCH);
 
 	channel->switch_timer_enabled = !!(ret == 0);
@@ -544,7 +533,7 @@ void consumer_timer_live_start(struct lttng_consumer_channel *channel,
 	assert(channel);
 	assert(channel->key);
 
-	ret = consumer_channel_timer_start(&channel->live_timer, channel,
+	ret = consumer_channel_timer_start(&channel->live_timer, channel->key,
 			live_timer_interval_us, LTTNG_CONSUMER_SIG_LIVE);
 
 	channel->live_timer_enabled = !!(ret == 0);
@@ -583,7 +572,7 @@ int consumer_timer_monitor_start(struct lttng_consumer_channel *channel,
 	assert(channel->key);
 	assert(!channel->monitor_timer_enabled);
 
-	ret = consumer_channel_timer_start(&channel->monitor_timer, channel,
+	ret = consumer_channel_timer_start(&channel->monitor_timer, channel->key,
 			monitor_timer_interval_us, LTTNG_CONSUMER_SIG_MONITOR);
 	channel->monitor_timer_enabled = !!(ret == 0);
 	return ret;
@@ -793,6 +782,33 @@ end:
 	return ret;
 }
 
+static
+bool signal_handler_needs_channel(int signr)
+{
+	return signr == LTTNG_CONSUMER_SIG_SWITCH ||
+			signr == LTTNG_CONSUMER_SIG_LIVE ||
+			signr == LTTNG_CONSUMER_SIG_MONITOR;
+}
+
+static
+void log_ignored_signal(int signr, uint64_t channel_key)
+{
+	const char *signal_name;
+
+	if (signr == LTTNG_CONSUMER_SIG_SWITCH) {
+		signal_name = "switch";
+	} else if (signr == LTTNG_CONSUMER_SIG_LIVE) {
+		signal_name = "live";
+	} else if (signr == LTTNG_CONSUMER_SIG_MONITOR) {
+		signal_name = "monitor";
+	} else {
+		abort();
+	}
+
+	DBG("Ignoring \"%s\" signal targeting channel with key %" PRIu64 " as it no longer exists",
+			signal_name, channel_key);
+}
+
 /*
  * This thread is the sighandler for signals LTTNG_CONSUMER_SIG_SWITCH,
  * LTTNG_CONSUMER_SIG_TEARDOWN, LTTNG_CONSUMER_SIG_LIVE, and
@@ -820,11 +836,40 @@ void *consumer_timer_thread(void *data)
 	CMM_STORE_SHARED(timer_signal.tid, pthread_self());
 
 	while (1) {
+		bool needs_channel;
+		struct lttng_consumer_channel *channel = NULL;
+
 		health_code_update();
 
 		health_poll_entry();
 		signr = sigwaitinfo(&mask, &info);
 		health_poll_exit();
+
+		/*
+		 * Multiple handlers need to apply an action to a channel.
+		 * The channel is acquired here to share that code and error
+		 * handling between them.
+		 */
+		needs_channel = signal_handler_needs_channel(signr);
+		if (needs_channel) {
+			uint64_t channel_key = (uint64_t) info.si_value.sival_ptr;
+
+			rcu_read_lock();
+			channel = consumer_find_channel(channel_key);
+
+			if (!channel) {
+				/*
+				 * It is possible for a channel to be destroyed
+				 * between the moment when a signal targeting it
+				 * was queued and the moment it is serviced.
+				 *
+				 * This is not a problem; the signal can be
+				 * ignored.
+				 */
+				log_ignored_signal(signr, channel_key);
+				goto ignore_signal;
+			}
+		}
 
 		/*
 		 * NOTE: cascading conditions are used instead of a switch case
@@ -837,24 +882,30 @@ void *consumer_timer_thread(void *data)
 			}
 			continue;
 		} else if (signr == LTTNG_CONSUMER_SIG_SWITCH) {
-			metadata_switch_timer(ctx, &info);
+			metadata_switch_timer(ctx, channel);
 		} else if (signr == LTTNG_CONSUMER_SIG_TEARDOWN) {
 			cmm_smp_mb();
 			CMM_STORE_SHARED(timer_signal.qs_done, 1);
 			cmm_smp_mb();
 			DBG("Signal timer metadata thread teardown");
 		} else if (signr == LTTNG_CONSUMER_SIG_LIVE) {
-			live_timer(ctx, &info);
+			live_timer(ctx, channel);
 		} else if (signr == LTTNG_CONSUMER_SIG_MONITOR) {
-			struct lttng_consumer_channel *channel;
-
-			channel = info.si_value.sival_ptr;
 			monitor_timer(channel);
 		} else if (signr == LTTNG_CONSUMER_SIG_EXIT) {
+			/*
+			 * This handler doesn't use a channel and rcu read
+			 * lock. It is therefore okay to quit directly.
+			 */
 			assert(CMM_LOAD_SHARED(consumer_quit));
 			goto end;
 		} else {
 			ERR("Unexpected signal %d\n", info.si_signo);
+		}
+
+ignore_signal:
+		if (needs_channel) {
+			rcu_read_unlock();
 		}
 	}
 
