@@ -553,7 +553,7 @@ static int send_sessiond_channel(int sock,
 {
 	int ret, ret_code = LTTCOMM_CONSUMERD_SUCCESS;
 	struct lttng_consumer_stream *stream;
-	uint64_t net_seq_idx = -1ULL;
+	uint64_t relayd_id = -1ULL;
 
 	assert(channel);
 	assert(ctx);
@@ -578,8 +578,8 @@ static int send_sessiond_channel(int sock,
 				}
 				ret_code = LTTCOMM_CONSUMERD_RELAYD_FAIL;
 			}
-			if (net_seq_idx == -1ULL) {
-				net_seq_idx = stream->net_seq_idx;
+			if (relayd_id == -1ULL) {
+				relayd_id = stream->relayd_id;
 			}
 		}
 	}
@@ -939,7 +939,7 @@ static int setup_metadata(struct lttng_consumer_local_data *ctx, uint64_t key)
 	}
 
 	/* Send metadata stream to relayd if needed. */
-	if (metadata->metadata_stream->net_seq_idx != (uint64_t) -1ULL) {
+	if (metadata->metadata_stream->relayd_id != (uint64_t) -1ULL) {
 		ret = consumer_send_relayd_stream(metadata->metadata_stream,
 				metadata->pathname);
 		if (ret < 0) {
@@ -947,7 +947,7 @@ static int setup_metadata(struct lttng_consumer_local_data *ctx, uint64_t key)
 			goto error;
 		}
 		ret = consumer_send_relayd_streams_sent(
-				metadata->metadata_stream->net_seq_idx);
+				metadata->metadata_stream->relayd_id);
 		if (ret < 0) {
 			ret = LTTCOMM_CONSUMERD_RELAYD_FAIL;
 			goto error;
@@ -1039,7 +1039,7 @@ static int snapshot_metadata(uint64_t key, char *path, uint64_t relayd_id,
 	assert(metadata_stream);
 
 	if (relayd_id != (uint64_t) -1ULL) {
-		metadata_stream->net_seq_idx = relayd_id;
+		metadata_stream->relayd_id = relayd_id;
 		ret = consumer_send_relayd_stream(metadata_stream, path);
 		if (ret < 0) {
 			goto error_stream;
@@ -1116,7 +1116,7 @@ static int snapshot_channel(uint64_t key, char *path, uint64_t relayd_id,
 
 		/* Lock stream because we are about to change its state. */
 		pthread_mutex_lock(&stream->lock);
-		stream->net_seq_idx = relayd_id;
+		stream->relayd_id = relayd_id;
 
 		if (use_relayd) {
 			ret = consumer_send_relayd_stream(stream, path);
@@ -2545,8 +2545,8 @@ retry:
 	 * The mmap operation should write subbuf_size amount of data when network
 	 * streaming or the full padding (len) size when we are _not_ streaming.
 	 */
-	if ((ret != subbuf_size && stream->net_seq_idx != (uint64_t) -1ULL) ||
-			(ret != len && stream->net_seq_idx == (uint64_t) -1ULL)) {
+	if ((ret != subbuf_size && stream->relayd_id != (uint64_t) -1ULL) ||
+			(ret != len && stream->relayd_id == (uint64_t) -1ULL)) {
 		/*
 		 * Display the error but continue processing to try to release the
 		 * subbuffer. This is a DBG statement since any unexpected kill or
@@ -2627,7 +2627,7 @@ int lttng_ustconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 	assert(stream);
 
 	/* Don't create anything if this is set for streaming. */
-	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor) {
+	if (stream->relayd_id == (uint64_t) -1ULL && stream->chan->monitor) {
 		ret = utils_create_stream_file(stream->chan->pathname, stream->name,
 				stream->chan->tracefile_size, stream->tracefile_count_current,
 				stream->uid, stream->gid, NULL);

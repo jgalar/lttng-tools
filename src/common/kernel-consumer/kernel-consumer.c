@@ -154,7 +154,7 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 		 * Assign the received relayd ID so we can use it for streaming. The streams
 		 * are not visible to anyone so this is OK to change it.
 		 */
-		stream->net_seq_idx = relayd_id;
+		stream->relayd_id = relayd_id;
 		channel->relayd_id = relayd_id;
 		if (relayd_id != (uint64_t) -1ULL) {
 			ret = consumer_send_relayd_stream(stream, path);
@@ -305,7 +305,7 @@ int lttng_kconsumer_snapshot_channel(uint64_t key, char *path,
 			}
 		} else {
 			close_relayd_stream(stream);
-			stream->net_seq_idx = (uint64_t) -1ULL;
+			stream->relayd_id = (uint64_t) -1ULL;
 		}
 		pthread_mutex_unlock(&stream->lock);
 	}
@@ -396,7 +396,7 @@ static int lttng_kconsumer_snapshot_metadata(uint64_t key, char *path,
 
 	if (use_relayd) {
 		close_relayd_stream(metadata_stream);
-		metadata_stream->net_seq_idx = (uint64_t) -1ULL;
+		metadata_stream->relayd_id = (uint64_t) -1ULL;
 	} else {
 		if (metadata_stream->out_fd >= 0) {
 			ret = close(metadata_stream->out_fd);
@@ -701,13 +701,13 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		if (!channel->monitor) {
 			DBG("Kernel consumer add stream %s in no monitor mode with "
 					"relayd id %" PRIu64, new_stream->name,
-					new_stream->net_seq_idx);
+					new_stream->relayd_id);
 			cds_list_add(&new_stream->send_node, &channel->streams.head);
 			break;
 		}
 
 		/* Send stream to relayd if the stream has an ID. */
-		if (new_stream->net_seq_idx != (uint64_t) -1ULL) {
+		if (new_stream->relayd_id != (uint64_t) -1ULL) {
 			ret = consumer_send_relayd_stream(new_stream,
 					new_stream->chan->pathname);
 			if (ret < 0) {
@@ -722,7 +722,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			 */
 			if (channel->streams_sent_to_relayd) {
 				ret = consumer_send_relayd_streams_sent(
-						new_stream->net_seq_idx);
+						new_stream->relayd_id);
 				if (ret < 0) {
 					goto end_nosignal;
 				}
@@ -1419,8 +1419,8 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		 * network streaming or the full padding (len) size when we are _not_
 		 * streaming.
 		 */
-		if ((ret != subbuf_size && stream->net_seq_idx != (uint64_t) -1ULL) ||
-				(ret != len && stream->net_seq_idx == (uint64_t) -1ULL)) {
+		if ((ret != subbuf_size && stream->relayd_id != (uint64_t) -1ULL) ||
+				(ret != len && stream->relayd_id == (uint64_t) -1ULL)) {
 			/*
 			 * Display the error but continue processing to try to release the
 			 * subbuffer. This is a DBG statement since this is possible to
@@ -1498,7 +1498,7 @@ int lttng_kconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 	 * Don't create anything if this is set for streaming or should not be
 	 * monitored.
 	 */
-	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor) {
+	if (stream->relayd_id == (uint64_t) -1ULL && stream->chan->monitor) {
 		ret = utils_create_stream_file(stream->chan->pathname, stream->name,
 				stream->chan->tracefile_size, stream->tracefile_count_current,
 				stream->uid, stream->gid, NULL);
