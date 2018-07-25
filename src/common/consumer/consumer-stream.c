@@ -366,6 +366,7 @@ int consumer_stream_write_index(struct lttng_consumer_stream *stream,
 	rcu_read_lock();
 	if (stream->relayd_id != (uint64_t) -1ULL) {
 		struct consumer_relayd_sock_pair *relayd;
+
 		relayd = consumer_find_relayd(stream->relayd_id);
 		if (relayd) {
 			pthread_mutex_lock(&relayd->ctrl_sock_mutex);
