@@ -28,8 +28,70 @@
 #include <common/compat/endian.h>
 #include <common/sessiond-comm/relayd.h>
 #include <common/index/ctf-index.h>
+#include <common/dynamic-buffer.h>
 
 #include "relayd.h"
+
+static int append_command_to_buffer(struct lttng_dynamic_buffer *buffer,
+		enum lttcomm_relayd_command cmd, const void *data, size_t size)
+{
+	int ret;
+	struct lttcomm_relayd_hdr header;
+
+	memset(&header, 0, sizeof(header));
+
+	header.cmd = htobe32(cmd);
+	header.data_size = htobe64(size);
+
+	ret = lttng_dynamic_buffer_append(buffer, &header,
+			sizeof(header));
+	if (ret) {
+		ERR("Failed to append command header to buffer");
+		ret = -1;
+		goto end;
+	}
+
+	if (!data) {
+		goto end;
+	}
+	ret = lttng_dynamic_buffer_append(buffer, data, size);
+	if (ret) {
+		ERR("Failed to append command payload to buffer");
+		ret = -1;
+		goto end;
+	}
+end:
+	return ret;
+
+}
+
+static int relayd_add_deferred_command(struct consumer_relayd_sock_pair *relayd,
+		enum lttcomm_relayd_command cmd, const void *data, size_t size)
+{
+	int ret;
+
+	ret = append_command_to_buffer(&relayd->deferred_commands.buffer,
+			cmd, data, size);
+	if (ret) {
+		ERR("Failed to append deferred command to relay deferred commands buffer");
+	} else {
+		relayd->deferred_commands.count++;
+	}
+	return ret;
+}
+
+static int send_buffer(struct lttcomm_relayd_sock *sock,
+		struct lttng_dynamic_buffer *buffer, int flags)
+{
+	int ret;
+
+	ret = sock->sock.ops->sendmsg(&sock->sock, buffer->data, buffer->size, flags);
+	if (ret < 0) {
+		PERROR("Failed to send buffer of size %" PRIu64, buffer->size);
+		ret = -errno;
+	}
+	return ret;
+}
 
 /*
  * Send command. Fill up the header and append the data.
@@ -39,50 +101,30 @@ static int send_command(struct lttcomm_relayd_sock *rsock,
 		int flags)
 {
 	int ret;
-	struct lttcomm_relayd_hdr header;
-	char *buf;
-	uint64_t buf_size = sizeof(header);
+	struct lttng_dynamic_buffer buffer;
 
 	if (rsock->sock.fd < 0) {
 		return -ECONNRESET;
 	}
 
-	if (data) {
-		buf_size += size;
+	lttng_dynamic_buffer_init(&buffer);
+
+	ret = append_command_to_buffer(&buffer, cmd, data, size);
+	if (ret) {
+		ERR("Error crafting command %d", (int) cmd);
+		ret = -ENOMEM;
+		goto error;
 	}
 
-	buf = zmalloc(buf_size);
-	if (buf == NULL) {
-		PERROR("zmalloc relayd send command buf");
-		ret = -1;
-		goto alloc_error;
-	}
-
-	memset(&header, 0, sizeof(header));
-	header.cmd = htobe32(cmd);
-	header.data_size = htobe64(size);
-
-	/* Zeroed for now since not used. */
-	header.cmd_version = 0;
-	header.circuit_id = 0;
-
-	/* Prepare buffer to send. */
-	memcpy(buf, &header, sizeof(header));
-	if (data) {
-		memcpy(buf + sizeof(header), data, size);
-	}
-
-	DBG3("Relayd sending command %d of size %" PRIu64, (int) cmd, buf_size);
-	ret = rsock->sock.ops->sendmsg(&rsock->sock, buf, buf_size, flags);
+	DBG3("Relayd sending command %d of size %" PRIu64, (int) cmd, buffer.size);
+	ret = send_buffer(rsock, &buffer, flags);
 	if (ret < 0) {
-		PERROR("Failed to send command %d of size %" PRIu64,
-				(int) cmd, buf_size);
-		ret = -errno;
+		ERR("Failed to send command %d of size %" PRIu64,
+				(int) cmd, buffer.size);
 		goto error;
 	}
 error:
-	free(buf);
-alloc_error:
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 
@@ -962,26 +1004,30 @@ error:
 }
 
 /*
- * Send index to the relayd.
+ * Queue index to send to the relayd.
  */
-int relayd_send_index(struct lttcomm_relayd_sock *rsock,
+int relayd_send_index(struct consumer_relayd_sock_pair *relayd,
 		struct ctf_packet_index *index, uint64_t relay_stream_id,
-		uint64_t net_seq_num)
+		uint64_t net_seq_num, bool deferred)
 {
 	int ret;
 	struct lttcomm_relayd_index msg;
-	struct lttcomm_relayd_generic_reply reply;
+	uint32_t index_major, index_minor;
+	size_t index_len;
 
-	/* Code flow error. Safety net. */
-	assert(rsock);
-
-	if (rsock->minor < 4) {
+	if (relayd->control_sock.minor < 4) {
 		DBG("Not sending indexes before protocol 2.4");
 		ret = 0;
 		goto error;
 	}
 
 	DBG("Relayd sending index for stream ID %" PRIu64, relay_stream_id);
+
+	index_major = lttng_to_index_major(relayd->control_sock.major,
+			relayd->control_sock.minor);
+	index_minor = lttng_to_index_minor(relayd->control_sock.major,
+			relayd->control_sock.minor);
+	index_len = lttcomm_relayd_index_len(index_major, index_minor);
 
 	memset(&msg, 0, sizeof(msg));
 	msg.relay_stream_id = htobe64(relay_stream_id);
@@ -995,38 +1041,46 @@ int relayd_send_index(struct lttcomm_relayd_sock *rsock,
 	msg.events_discarded = index->events_discarded;
 	msg.stream_id = index->stream_id;
 
-	if (rsock->minor >= 8) {
+	if (relayd->control_sock.minor >= 8) {
 		msg.stream_instance_id = index->stream_instance_id;
 		msg.packet_seq_num = index->packet_seq_num;
 	}
 
 	/* Send command */
-	ret = send_command(rsock, RELAYD_SEND_INDEX, &msg,
-		lttcomm_relayd_index_len(lttng_to_index_major(rsock->major,
-								rsock->minor),
-				lttng_to_index_minor(rsock->major, rsock->minor)),
-				0);
-	if (ret < 0) {
-		goto error;
-	}
+	if (!deferred) {
+		struct lttcomm_relayd_generic_reply reply;
 
-	/* Receive response */
-	ret = recv_reply(rsock, (void *) &reply, sizeof(reply));
-	if (ret < 0) {
-		goto error;
-	}
+		ret = send_command(&relayd->control_sock, RELAYD_SEND_INDEX, &msg,
+				index_len, 0);
+		if (ret < 0) {
+			goto error;
+		}
 
-	reply.ret_code = be32toh(reply.ret_code);
+		/* Receive response */
+		ret = recv_reply(&relayd->control_sock, (void *) &reply,
+				sizeof(reply));
+		if (ret < 0) {
+			goto error;
+		}
 
-	/* Return session id or negative ret code. */
-	if (reply.ret_code != LTTNG_OK) {
-		ret = -1;
-		ERR("Relayd send index replied error %d", reply.ret_code);
+		reply.ret_code = be32toh(reply.ret_code);
+
+		/* Return session id or negative ret code. */
+		if (reply.ret_code != LTTNG_OK) {
+			ret = -1;
+			ERR("Relayd send index replied error %d", reply.ret_code);
+		} else {
+			/* Success */
+			ret = 0;
+		}
 	} else {
-		/* Success */
-		ret = 0;
+		ret = relayd_add_deferred_command(relayd, RELAYD_SEND_INDEX,
+				&msg, index_len);
+		if (ret) {
+			ret = -1;
+			goto error;
+		}
 	}
-
 error:
 	return ret;
 }
@@ -1334,5 +1388,61 @@ int relayd_mkdir(struct lttcomm_relayd_sock *rsock, const char *path)
 
 error:
 	free(msg);
+	return ret;
+}
+
+int relayd_flush_commands(struct consumer_relayd_sock_pair *relayd)
+{
+	int ret = 0, i;
+	bool got_error = false;
+
+	if (relayd->deferred_commands.count == 0) {
+		goto end;
+	}
+
+	DBG("relayd flushing commands, %i commands deferred", relayd->deferred_commands.count);
+	/*
+	 * TODO handle case where the command buffer can't be flushed in one
+	 * go.
+	 */
+	ret = send_buffer(&relayd->control_sock, &relayd->deferred_commands.buffer,
+			0);
+	DBG("send buffer returned %i", ret);
+	if (ret < 0 || ret != relayd->deferred_commands.buffer.size) {
+		ERR("Failed to flush deferred commands, send_buffer returned %i", ret);
+		goto error;
+	}
+
+	/* Consume the replies of all pending commands. */
+	for (i = 0; i < relayd->deferred_commands.count; i++) {
+		struct lttcomm_relayd_generic_reply reply;
+
+		ret = recv_reply(&relayd->control_sock, (void *) &reply,
+				 sizeof(reply));
+		if (ret < 0) {
+			ERR("Error occured receiving reply in relayd_flush_commands()");
+			goto error;
+		}
+
+		reply.ret_code = be32toh(reply.ret_code);
+		DBG("Received reply with code %i in relayd_flush_commands()", reply.ret_code);
+
+		/* Return session id or negative ret code. */
+		if (reply.ret_code != LTTNG_OK) {
+			/*
+			 * Consume all replies even if an error was
+			 * encountered as the relayd will send a response for
+			 * each command.
+			 */
+			got_error = true;
+			ERR("Relayd send index replied error %d", reply.ret_code);
+		}
+	}
+
+	ret = got_error ? -1 : 0;
+error:
+	relayd->deferred_commands.count = 0;
+	lttng_dynamic_buffer_set_size(&relayd->deferred_commands.buffer, 0);
+end:
 	return ret;
 }

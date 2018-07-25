@@ -21,7 +21,7 @@ EXTRA_DIST += test_ust test_ust_tracefile_count test_lttng_ust
 endif
 
 live_test_SOURCES = live_test.c
-live_test_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBRELAYD) $(LIBSESSIOND_COMM) \
+live_test_LDADD = $(LIBTAP) $(LIBRELAYD) $(LIBCOMMON) $(LIBSESSIOND_COMM) \
 		$(LIBHASHTABLE) $(LIBHEALTH) $(DL_LIBS) -lrt
 live_test_LDADD += $(LIVE) \
 		$(top_builddir)/src/lib/lttng-ctl/liblttng-ctl.la

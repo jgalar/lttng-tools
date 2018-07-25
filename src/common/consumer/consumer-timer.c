@@ -31,17 +31,24 @@
 #include <common/consumer/consumer-timer.h>
 #include <common/consumer/consumer-testpoint.h>
 #include <common/ust-consumer/ust-consumer.h>
+#include <common/relayd/relayd.h>
 
 typedef int (*sample_positions_cb)(struct lttng_consumer_stream *stream);
 typedef int (*get_consumed_cb)(struct lttng_consumer_stream *stream,
 		unsigned long *consumed);
 typedef int (*get_produced_cb)(struct lttng_consumer_stream *stream,
 		unsigned long *produced);
+typedef int (*stream_action)(struct lttng_consumer_stream *, void *);
 
 static struct timer_signal_data timer_signal = {
 	.tid = 0,
 	.setup_done = 0,
 	.lock = PTHREAD_MUTEX_INITIALIZER,
+};
+
+struct stream_array {
+	unsigned int count;
+	struct lttng_dynamic_buffer buffer;
 };
 
 /*
@@ -124,7 +131,8 @@ static void metadata_switch_timer(struct lttng_consumer_local_data *ctx,
 }
 
 static int send_empty_index(struct lttng_consumer_stream *stream, uint64_t ts,
-		uint64_t stream_id)
+		uint64_t stream_id, struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	int ret;
 	struct ctf_packet_index index;
@@ -132,7 +140,7 @@ static int send_empty_index(struct lttng_consumer_stream *stream, uint64_t ts,
 	memset(&index, 0, sizeof(index));
 	index.stream_id = htobe64(stream_id);
 	index.timestamp_end = htobe64(ts);
-	ret = consumer_stream_write_index(stream, &index);
+	ret = consumer_stream_write_index(stream, &index, relayd, deferred);
 	if (ret < 0) {
 		goto error;
 	}
@@ -141,7 +149,9 @@ error:
 	return ret;
 }
 
-int consumer_flush_kernel_index(struct lttng_consumer_stream *stream)
+int consumer_flush_kernel_index(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	uint64_t ts, stream_id;
 	int ret;
@@ -169,7 +179,7 @@ int consumer_flush_kernel_index(struct lttng_consumer_stream *stream)
 			goto end;
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
-		ret = send_empty_index(stream, ts, stream_id);
+		ret = send_empty_index(stream, ts, stream_id, relayd, deferred);
 		if (ret < 0) {
 			goto end;
 		}
@@ -179,52 +189,28 @@ end:
 	return ret;
 }
 
-static int check_kernel_stream(struct lttng_consumer_stream *stream)
+/* Stream lock must be held by the caller. */
+static int check_kernel_stream(struct lttng_consumer_stream *stream,
+		void *_relayd)
 {
 	int ret;
+	struct consumer_relayd_sock_pair *relayd = _relayd;
 
 	/*
-	 * While holding the stream mutex, try to take a snapshot, if it
-	 * succeeds, it means that data is ready to be sent, just let the data
-	 * thread handle that. Otherwise, if the snapshot returns EAGAIN, it
-	 * means that there is no data to read after the flush, so we can
-	 * safely send the empty index.
-	 *
-	 * Doing a trylock and checking if waiting on metadata if
-	 * trylock fails. Bail out of the stream is indeed waiting for
-	 * metadata to be pushed. Busy wait on trylock otherwise.
+	 * The actual sending of the indexes is deferred since this is
+	 * performed withing the context of an iteration on all streams
+	 * of a channel. In all likelyhood, multiple indexes (beacons) will
+	 * need to be sent to a significant network communication efficiency
+	 * gain is realized by packing multiple 'send_index' commands together
+	 * as a single send().
 	 */
-	for (;;) {
-		ret = pthread_mutex_trylock(&stream->lock);
-		switch (ret) {
-		case 0:
-			break;	/* We have the lock. */
-		case EBUSY:
-			pthread_mutex_lock(&stream->metadata_timer_lock);
-			if (stream->waiting_on_metadata) {
-				ret = 0;
-				stream->missed_metadata_flush = true;
-				pthread_mutex_unlock(&stream->metadata_timer_lock);
-				goto end;	/* Bail out. */
-			}
-			pthread_mutex_unlock(&stream->metadata_timer_lock);
-			/* Try again. */
-			caa_cpu_relax();
-			continue;
-		default:
-			ERR("Unexpected pthread_mutex_trylock error %d", ret);
-			ret = -1;
-			goto end;
-		}
-		break;
-	}
-	ret = consumer_flush_kernel_index(stream);
-	pthread_mutex_unlock(&stream->lock);
-end:
+	ret = consumer_flush_kernel_index(stream, relayd, true);
 	return ret;
 }
 
-int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
+int consumer_flush_ust_index(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	uint64_t ts, stream_id;
 	int ret;
@@ -253,7 +239,8 @@ int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
 			goto end;
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
-		ret = send_empty_index(stream, ts, stream_id);
+		ret = send_empty_index(stream, ts, stream_id,
+				relayd, deferred);
 		if (ret < 0) {
 			goto end;
 		}
@@ -263,12 +250,38 @@ end:
 	return ret;
 }
 
-static int check_ust_stream(struct lttng_consumer_stream *stream)
+/* Stream lock must be held by the caller. */
+static int check_ust_stream(struct lttng_consumer_stream *stream,
+		void *_relayd)
 {
 	int ret;
+	struct consumer_relayd_sock_pair *relayd = _relayd;
 
 	assert(stream);
 	assert(stream->ustream);
+	/*
+	 * The actual sending of the indexes is deferred since this is
+	 * performed within the context of an iteration on all streams
+	 * of a channel. In all likelyhood, multiple indexes (beacons) will
+	 * need to be sent, so a significant network communication efficiency
+	 * gain is realized by packing multiple 'send_index' commands together
+	 * in a single send-buffer.
+	 */
+	ret = consumer_flush_ust_index(stream, relayd, true);
+	return ret;
+}
+
+static int unlock_stream(struct lttng_consumer_stream *stream, void *data)
+{
+	pthread_mutex_unlock(&stream->lock);
+	return 0;
+}
+
+static int lock_and_add_stream(struct lttng_consumer_stream *stream, void *data)
+{
+	int ret;
+	struct stream_array *streams = data;
+
 	/*
 	 * While holding the stream mutex, try to take a snapshot, if it
 	 * succeeds, it means that data is ready to be sent, just let the data
@@ -304,10 +317,54 @@ static int check_ust_stream(struct lttng_consumer_stream *stream)
 		}
 		break;
 	}
-	ret = consumer_flush_ust_index(stream);
-	pthread_mutex_unlock(&stream->lock);
+
+	streams->count++;
+	ret = lttng_dynamic_buffer_append(&streams->buffer, &stream,
+			sizeof(stream));
 end:
 	return ret;
+}
+
+static int for_each_stream_array(struct stream_array *streams,
+		stream_action action, void *data)
+{
+	unsigned int i;
+	bool error = false;
+	struct lttng_consumer_stream **it =
+			(struct lttng_consumer_stream **) streams->buffer.data;
+
+	for (i = 0; i < streams->count; i++) {
+		int ret;
+
+		ret = action(*it, data);
+		if (ret) {
+			error = true;
+		}
+		it++;
+	}
+	return error ? -1 : 0;
+}
+
+static int for_each_stream_ht(struct lttng_ht *stream_per_chan_id_ht,
+		uint64_t channel_key,
+		stream_action action, void *data)
+{
+	bool error = false;
+	struct lttng_consumer_stream *stream;
+	struct lttng_ht_iter iter;
+
+	cds_lfht_for_each_entry_duplicate(stream_per_chan_id_ht->ht,
+			stream_per_chan_id_ht->hash_fct(&channel_key, lttng_ht_seed),
+			stream_per_chan_id_ht->match_fct, &channel_key, &iter.iter,
+			stream, node_channel_id.node) {
+		int ret;
+
+		ret = action(stream, data);
+		if (ret) {
+			error = true;
+		}
+	}
+	return error ? -1 : 0;
 }
 
 /*
@@ -319,10 +376,53 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_channel *channel)
 {
 	int ret;
-	struct lttng_consumer_stream *stream;
 	struct lttng_ht *ht;
-	struct lttng_ht_iter iter;
+	struct consumer_relayd_sock_pair *relayd = NULL;
+	stream_action check_stream;
+	struct stream_array streams = { .count = 0 };
 
+	lttng_dynamic_buffer_init(&streams.buffer);
+
+	switch (ctx->type) {
+	case LTTNG_CONSUMER32_UST:
+	case LTTNG_CONSUMER64_UST:
+		check_stream = check_ust_stream;
+		break;
+	case LTTNG_CONSUMER_KERNEL:
+		check_stream = check_kernel_stream;
+		break;
+	default:
+		abort();
+	}
+
+	/*
+	 * The live timer periodically flushes a channel's streams' indexes
+	 * to provide the relayd with a checkpoint up to which it is safe
+	 * to provide the traces to a client. In doing so, indexes or beacons
+	 * (effectively empty indexes) will be sent for each stream.
+	 *
+	 * As this results in a lot of individual 'SEND_INDEX' command, a slow
+	 * network connection can make this operation fairly long.
+	 *
+	 * To preserve compatibility with existing relay daemons, we choose
+	 * to fill a single network send buffer containing a batch of
+	 * 'SEND_INDEX' commands to send it all at once.
+	 *
+	 * Batching the commands changes the assumptions that are made about
+	 * the order of commands reaching the relay daemon under certain
+	 * circumstances. One of the problematic scenarios that can arise
+	 * is that a stream's index/beacon could be enqueued in the send
+	 * buffer and it could then be closed (in another thread). Then,
+	 * when the send-buffer is finally flushed to the network, the
+	 * relay daemon will receive an index for a stream that was previously
+	 * closed. Unfortunately, the relay daemon may close the connection
+	 * when an invalid command is received.
+	 *
+	 * To prevent this scenario, the lock of every stream is acquired
+	 * and they are all released once the send-buffer has been sent
+	 * over the network. This preserves the expected order of commands
+	 * from the relay daemon's point of view.
+	 */
 	if (channel->switch_timer_error) {
 		goto error;
 	}
@@ -330,36 +430,42 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 
 	DBG("Live timer for channel %" PRIu64, channel->key);
 
-	switch (ctx->type) {
-	case LTTNG_CONSUMER32_UST:
-	case LTTNG_CONSUMER64_UST:
-		cds_lfht_for_each_entry_duplicate(ht->ht,
-				ht->hash_fct(&channel->key, lttng_ht_seed),
-				ht->match_fct, &channel->key, &iter.iter,
-				stream, node_channel_id.node) {
-			ret = check_ust_stream(stream);
-			if (ret < 0) {
-				goto error;
-			}
+	if (channel->relayd_id != (uint64_t) -1ULL) {
+		relayd = consumer_find_relayd(channel->relayd_id);
+		if (!relayd) {
+			ERR("Channel %s relayd ID %" PRIu64 " unknown. Can't process live timer.",
+					channel->name, channel->relayd_id);
 		}
-		break;
-	case LTTNG_CONSUMER_KERNEL:
-		cds_lfht_for_each_entry_duplicate(ht->ht,
-				ht->hash_fct(&channel->key, lttng_ht_seed),
-				ht->match_fct, &channel->key, &iter.iter,
-				stream, node_channel_id.node) {
-			ret = check_kernel_stream(stream);
-			if (ret < 0) {
-				goto error;
-			}
+	}
+
+	ret = for_each_stream_ht(ht, channel->key, lock_and_add_stream,
+			&streams);
+	if (ret) {
+		goto unlock_streams;
+	}
+
+	ret = for_each_stream_array(&streams, check_stream, relayd);
+	if (ret) {
+		goto unlock_streams;
+	}
+
+	if (relayd) {
+		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
+		ret = relayd_flush_commands(relayd);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
+		if (ret) {
+			ERR("relayd_flush_commands failed in live_timer()");
 		}
-		break;
-	case LTTNG_CONSUMER_UNKNOWN:
-		assert(0);
-		break;
+	}
+
+unlock_streams:
+	ret = for_each_stream_array(&streams, unlock_stream, NULL);
+	if (ret) {
+		goto error;
 	}
 
 error:
+	lttng_dynamic_buffer_reset(&streams.buffer);
 	return;
 }
 
