@@ -86,7 +86,7 @@ void consumer_stream_relayd_close(struct lttng_consumer_stream *stream,
 			uatomic_read(&relayd->destroy_flag)) {
 		consumer_destroy_relayd(relayd);
 	}
-	stream->net_seq_idx = (uint64_t) -1ULL;
+	stream->relayd_id = (uint64_t) -1ULL;
 	stream->sent_to_relayd = 0;
 }
 
@@ -170,7 +170,7 @@ void consumer_stream_close(struct lttng_consumer_stream *stream)
 
 	/* Check and cleanup relayd if needed. */
 	rcu_read_lock();
-	relayd = consumer_find_relayd(stream->net_seq_idx);
+	relayd = consumer_find_relayd(stream->relayd_id);
 	if (relayd != NULL) {
 		consumer_stream_relayd_close(stream, relayd);
 	}
@@ -364,9 +364,9 @@ int consumer_stream_write_index(struct lttng_consumer_stream *stream,
 	assert(element);
 
 	rcu_read_lock();
-	if (stream->net_seq_idx != (uint64_t) -1ULL) {
+	if (stream->relayd_id != (uint64_t) -1ULL) {
 		struct consumer_relayd_sock_pair *relayd;
-		relayd = consumer_find_relayd(stream->net_seq_idx);
+		relayd = consumer_find_relayd(stream->relayd_id);
 		if (relayd) {
 			pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 			ret = relayd_send_index(&relayd->control_sock, element,
@@ -374,7 +374,7 @@ int consumer_stream_write_index(struct lttng_consumer_stream *stream,
 			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		} else {
 			ERR("Stream %" PRIu64 " relayd ID %" PRIu64 " unknown. Can't write index.",
-					stream->key, stream->net_seq_idx);
+					stream->key, stream->relayd_id);
 			ret = -1;
 		}
 	} else {

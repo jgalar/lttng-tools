@@ -327,8 +327,11 @@ struct lttng_consumer_stream {
 	/* UID/GID of the user owning the session to which stream belongs */
 	uid_t uid;
 	gid_t gid;
-	/* Network sequence number. Indicating on which relayd socket it goes. */
-	uint64_t net_seq_idx;
+	/*
+	 * Relayd id, indicating on which relayd socket it goes. Set to -1ULL if
+	 * not the stream is not associated to a relay daemon.
+	 */
+	uint64_t relayd_id;
 	/*
 	 * Indicate if this stream was successfully sent to a relayd. This is set
 	 * after the refcount of the relayd is incremented and is checked when the
@@ -476,7 +479,7 @@ struct lttng_consumer_stream {
  */
 struct consumer_relayd_sock_pair {
 	/* Network sequence number. */
-	uint64_t net_seq_idx;
+	uint64_t id;
 	/* Number of stream associated with this relayd */
 	int refcount;
 
@@ -761,7 +764,7 @@ void consumer_del_channel(struct lttng_consumer_channel *channel);
 /* lttng-relayd consumer command */
 struct consumer_relayd_sock_pair *consumer_find_relayd(uint64_t key);
 int consumer_send_relayd_stream(struct lttng_consumer_stream *stream, char *path);
-int consumer_send_relayd_streams_sent(uint64_t net_seq_idx);
+int consumer_send_relayd_streams_sent(uint64_t relayd_id);
 void close_relayd_stream(struct lttng_consumer_stream *stream);
 struct lttng_consumer_channel *consumer_find_channel(uint64_t key);
 int consumer_handle_stream_before_relayd(struct lttng_consumer_stream *stream,
@@ -804,7 +807,7 @@ int lttng_consumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx);
 int lttng_consumer_on_recv_stream(struct lttng_consumer_stream *stream);
-void consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
+void consumer_add_relayd_socket(uint64_t relayd_id, int sock_type,
 		struct lttng_consumer_local_data *ctx, int sock,
 		struct pollfd *consumer_sockpoll, struct lttcomm_relayd_sock *relayd_sock,
 		uint64_t sessiond_id, uint64_t relayd_session_id);
