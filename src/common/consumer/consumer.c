@@ -749,6 +749,7 @@ static struct consumer_relayd_sock_pair *consumer_allocate_relayd_sock_pair(
 	obj->control_sock.sock.fd = -1;
 	obj->data_sock.sock.fd = -1;
 	lttng_ht_node_init_u64(&obj->node, obj->id);
+	lttng_dynamic_buffer_init(&obj->deferred_indexes.buffer);
 	pthread_mutex_init(&obj->ctrl_sock_mutex, NULL);
 
 error:

@@ -352,32 +352,24 @@ void consumer_stream_destroy(struct lttng_consumer_stream *stream,
 
 /*
  * Write index of a specific stream either on the relayd or local disk.
+ * RCU read lock must be held by the caller.
  *
  * Return 0 on success or else a negative value.
  */
 int consumer_stream_write_index(struct lttng_consumer_stream *stream,
-		struct ctf_packet_index *element)
+		struct ctf_packet_index *element,
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	int ret;
 
 	assert(stream);
 	assert(element);
 
-	rcu_read_lock();
-	if (stream->relayd_id != (uint64_t) -1ULL) {
-		struct consumer_relayd_sock_pair *relayd;
-
-		relayd = consumer_find_relayd(stream->relayd_id);
-		if (relayd) {
-			pthread_mutex_lock(&relayd->ctrl_sock_mutex);
-			ret = relayd_send_index(&relayd->control_sock, element,
-				stream->relayd_stream_id, stream->next_net_seq_num - 1);
-			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-		} else {
-			ERR("Stream %" PRIu64 " relayd ID %" PRIu64 " unknown. Can't write index.",
-					stream->key, stream->relayd_id);
-			ret = -1;
-		}
+	if (relayd) {
+		ret = relayd_send_index(relayd, element,
+				stream->relayd_stream_id, stream->next_net_seq_num - 1,
+				deferred);
 	} else {
 		if (lttng_index_file_write(stream->index_file, element)) {
 			ret = -1;
@@ -390,7 +382,6 @@ int consumer_stream_write_index(struct lttng_consumer_stream *stream,
 	}
 
 error:
-	rcu_read_unlock();
 	return ret;
 }
 

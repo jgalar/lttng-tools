@@ -962,20 +962,17 @@ error:
 }
 
 /*
- * Send index to the relayd.
+ * Queue index to send to the relayd.
  */
-int relayd_send_index(struct lttcomm_relayd_sock *rsock,
+int relayd_send_index(struct consumer_relayd_sock_pair *relayd,
 		struct ctf_packet_index *index, uint64_t relay_stream_id,
-		uint64_t net_seq_num)
+		uint64_t net_seq_num, bool deferred)
 {
 	int ret;
 	struct lttcomm_relayd_index msg;
 	struct lttcomm_relayd_generic_reply reply;
 
-	/* Code flow error. Safety net. */
-	assert(rsock);
-
-	if (rsock->minor < 4) {
+	if (relayd->control_sock.minor < 4) {
 		DBG("Not sending indexes before protocol 2.4");
 		ret = 0;
 		goto error;
@@ -995,38 +992,44 @@ int relayd_send_index(struct lttcomm_relayd_sock *rsock,
 	msg.events_discarded = index->events_discarded;
 	msg.stream_id = index->stream_id;
 
-	if (rsock->minor >= 8) {
+	if (relayd->control_sock.minor >= 8) {
 		msg.stream_instance_id = index->stream_instance_id;
 		msg.packet_seq_num = index->packet_seq_num;
 	}
 
 	/* Send command */
-	ret = send_command(rsock, RELAYD_SEND_INDEX, &msg,
-		lttcomm_relayd_index_len(lttng_to_index_major(rsock->major,
-								rsock->minor),
-				lttng_to_index_minor(rsock->major, rsock->minor)),
+	if (!deferred) {
+		ret = send_command(&relayd->control_sock, RELAYD_SEND_INDEX, &msg,
+				lttcomm_relayd_index_len(lttng_to_index_major(relayd->control_sock.major,
+						relayd->control_sock.minor),
+				lttng_to_index_minor(relayd->control_sock.major,
+						relayd->control_sock.minor)),
 				0);
-	if (ret < 0) {
-		goto error;
-	}
+		if (ret < 0) {
+			goto error;
+		}
 
-	/* Receive response */
-	ret = recv_reply(rsock, (void *) &reply, sizeof(reply));
-	if (ret < 0) {
-		goto error;
-	}
 
-	reply.ret_code = be32toh(reply.ret_code);
+		/* Receive response */
+		ret = recv_reply(&relayd->control_sock, (void *) &reply,
+				sizeof(reply));
+		if (ret < 0) {
+			goto error;
+		}
 
-	/* Return session id or negative ret code. */
-	if (reply.ret_code != LTTNG_OK) {
-		ret = -1;
-		ERR("Relayd send index replied error %d", reply.ret_code);
+		reply.ret_code = be32toh(reply.ret_code);
+
+		/* Return session id or negative ret code. */
+		if (reply.ret_code != LTTNG_OK) {
+			ret = -1;
+			ERR("Relayd send index replied error %d", reply.ret_code);
+		} else {
+			/* Success */
+			ret = 0;
+		}
 	} else {
-		/* Success */
-		ret = 0;
+		/* magic happens here. */
 	}
-
 error:
 	return ret;
 }
