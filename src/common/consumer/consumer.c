@@ -422,25 +422,24 @@ static void cleanup_relayd_ht(void)
 }
 
 /*
- * Update the end point status of all streams having the given network sequence
- * index (relayd index).
+ * Update the end point status of all streams having the given relayd id.
  *
  * It's atomically set without having the stream mutex locked which is fine
  * because we handle the write/read race with a pipe wakeup for each thread.
  */
-static void update_endpoint_status_by_netidx(uint64_t net_seq_idx,
+static void update_endpoint_status_by_netidx(uint64_t relayd_id,
 		enum consumer_endpoint_status status)
 {
 	struct lttng_ht_iter iter;
 	struct lttng_consumer_stream *stream;
 
-	DBG("Consumer set delete flag on stream by idx %" PRIu64, net_seq_idx);
+	DBG("Consumer set delete flag on stream by idx %" PRIu64, relayd_id);
 
 	rcu_read_lock();
 
 	/* Let's begin with metadata */
 	cds_lfht_for_each_entry(metadata_ht->ht, &iter.iter, stream, node.node) {
-		if (stream->net_seq_idx == net_seq_idx) {
+		if (stream->relayd_id == relayd_id) {
 			uatomic_set(&stream->endpoint_status, status);
 			DBG("Delete flag set to metadata stream %d", stream->wait_fd);
 		}
@@ -448,7 +447,7 @@ static void update_endpoint_status_by_netidx(uint64_t net_seq_idx,
 
 	/* Follow up by the data streams */
 	cds_lfht_for_each_entry(data_ht->ht, &iter.iter, stream, node.node) {
-		if (stream->net_seq_idx == net_seq_idx) {
+		if (stream->relayd_id == relayd_id) {
 			uatomic_set(&stream->endpoint_status, status);
 			DBG("Delete flag set to data stream %d", stream->wait_fd);
 		}
@@ -474,7 +473,7 @@ static void cleanup_relayd(struct consumer_relayd_sock_pair *relayd,
 	DBG("Cleaning up relayd sockets");
 
 	/* Save the net sequence index before destroying the object */
-	netidx = relayd->net_seq_idx;
+	netidx = relayd->id;
 
 	/*
 	 * Delete the relayd from the relayd hash table, close the sockets and free
@@ -584,7 +583,7 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 	stream->state = state;
 	stream->uid = uid;
 	stream->gid = gid;
-	stream->net_seq_idx = relayd_id;
+	stream->relayd_id = relayd_id;
 	stream->session_id = session_id;
 	stream->monitor = monitor;
 	stream->endpoint_status = CONSUMER_ENDPOINT_ACTIVE;
@@ -624,7 +623,7 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 	DBG3("Allocated stream %s (key %" PRIu64 ", chan_key %" PRIu64
 			" relayd_id %" PRIu64 ", session_id %" PRIu64,
 			stream->name, stream->key, channel_key,
-			stream->net_seq_idx, stream->session_id);
+			stream->relayd_id, stream->session_id);
 
 	rcu_read_unlock();
 	return stream;
@@ -714,7 +713,7 @@ static int add_relayd(struct consumer_relayd_sock_pair *relayd)
 	assert(relayd);
 
 	lttng_ht_lookup(consumer_data.relayd_ht,
-			&relayd->net_seq_idx, &iter);
+			&relayd->id, &iter);
 	node = lttng_ht_iter_get_node_u64(&iter);
 	if (node != NULL) {
 		goto end;
@@ -729,12 +728,12 @@ end:
  * Allocate and return a consumer relayd socket.
  */
 static struct consumer_relayd_sock_pair *consumer_allocate_relayd_sock_pair(
-		uint64_t net_seq_idx)
+		uint64_t relayd_id)
 {
 	struct consumer_relayd_sock_pair *obj = NULL;
 
 	/* net sequence index of -1 is a failure */
-	if (net_seq_idx == (uint64_t) -1ULL) {
+	if (relayd_id == (uint64_t) -1ULL) {
 		goto error;
 	}
 
@@ -744,12 +743,12 @@ static struct consumer_relayd_sock_pair *consumer_allocate_relayd_sock_pair(
 		goto error;
 	}
 
-	obj->net_seq_idx = net_seq_idx;
+	obj->id = relayd_id;
 	obj->refcount = 0;
 	obj->destroy_flag = 0;
 	obj->control_sock.sock.fd = -1;
 	obj->data_sock.sock.fd = -1;
-	lttng_ht_node_init_u64(&obj->node, obj->net_seq_idx);
+	lttng_ht_node_init_u64(&obj->node, obj->id);
 	pthread_mutex_init(&obj->ctrl_sock_mutex, NULL);
 
 error:
@@ -797,12 +796,12 @@ int consumer_send_relayd_stream(struct lttng_consumer_stream *stream,
 	struct consumer_relayd_sock_pair *relayd;
 
 	assert(stream);
-	assert(stream->net_seq_idx != -1ULL);
+	assert(stream->relayd_id != -1ULL);
 	assert(path);
 
 	/* The stream is not metadata. Get relayd reference if exists. */
 	rcu_read_lock();
-	relayd = consumer_find_relayd(stream->net_seq_idx);
+	relayd = consumer_find_relayd(stream->relayd_id);
 	if (relayd != NULL) {
 		/* Add stream on the relayd */
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
@@ -819,13 +818,13 @@ int consumer_send_relayd_stream(struct lttng_consumer_stream *stream,
 		stream->sent_to_relayd = 1;
 	} else {
 		ERR("Stream %" PRIu64 " relayd ID %" PRIu64 " unknown. Can't send it.",
-				stream->key, stream->net_seq_idx);
+				stream->key, stream->relayd_id);
 		ret = -1;
 		goto end;
 	}
 
 	DBG("Stream %s with key %" PRIu64 " sent to relayd id %" PRIu64,
-			stream->name, stream->key, stream->net_seq_idx);
+			stream->name, stream->key, stream->relayd_id);
 
 end:
 	rcu_read_unlock();
@@ -837,16 +836,16 @@ end:
  *
  * Returns 0 on success, < 0 on error
  */
-int consumer_send_relayd_streams_sent(uint64_t net_seq_idx)
+int consumer_send_relayd_streams_sent(uint64_t relayd_id)
 {
 	int ret = 0;
 	struct consumer_relayd_sock_pair *relayd;
 
-	assert(net_seq_idx != -1ULL);
+	assert(relayd_id != -1ULL);
 
 	/* The stream is not metadata. Get relayd reference if exists. */
 	rcu_read_lock();
-	relayd = consumer_find_relayd(net_seq_idx);
+	relayd = consumer_find_relayd(relayd_id);
 	if (relayd != NULL) {
 		/* Add stream on the relayd */
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
@@ -857,13 +856,13 @@ int consumer_send_relayd_streams_sent(uint64_t net_seq_idx)
 		}
 	} else {
 		ERR("Relayd ID %" PRIu64 " unknown. Can't send streams_sent.",
-				net_seq_idx);
+				relayd_id);
 		ret = -1;
 		goto end;
 	}
 
 	ret = 0;
-	DBG("All streams sent relayd id %" PRIu64, net_seq_idx);
+	DBG("All streams sent relayd id %" PRIu64, relayd_id);
 
 end:
 	rcu_read_unlock();
@@ -879,7 +878,7 @@ void close_relayd_stream(struct lttng_consumer_stream *stream)
 
 	/* The stream is not metadata. Get relayd reference if exists. */
 	rcu_read_lock();
-	relayd = consumer_find_relayd(stream->net_seq_idx);
+	relayd = consumer_find_relayd(stream->relayd_id);
 	if (relayd) {
 		consumer_stream_relayd_close(stream, relayd);
 	}
@@ -1541,8 +1540,8 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 	rcu_read_lock();
 
 	/* Flag that the current stream if set for network streaming. */
-	if (stream->net_seq_idx != (uint64_t) -1ULL) {
-		relayd = consumer_find_relayd(stream->net_seq_idx);
+	if (stream->relayd_id != (uint64_t) -1ULL) {
+		relayd = consumer_find_relayd(stream->relayd_id);
 		if (relayd == NULL) {
 			ret = -EPIPE;
 			goto end;
@@ -1772,8 +1771,8 @@ ssize_t lttng_consumer_on_read_subbuffer_splice(
 	rcu_read_lock();
 
 	/* Flag that the current stream if set for network streaming. */
-	if (stream->net_seq_idx != (uint64_t) -1ULL) {
-		relayd = consumer_find_relayd(stream->net_seq_idx);
+	if (stream->relayd_id != (uint64_t) -1ULL) {
+		relayd = consumer_find_relayd(stream->relayd_id);
 		if (relayd == NULL) {
 			written = -ret;
 			goto end;
@@ -3496,7 +3495,7 @@ error:
  * This will create a relayd socket pair and add it to the relayd hash table.
  * The caller MUST acquire a RCU read side lock before calling it.
  */
- void consumer_add_relayd_socket(uint64_t net_seq_idx, int sock_type,
+ void consumer_add_relayd_socket(uint64_t relayd_id, int sock_type,
 		struct lttng_consumer_local_data *ctx, int sock,
 		struct pollfd *consumer_sockpoll,
 		struct lttcomm_relayd_sock *relayd_sock, uint64_t sessiond_id,
@@ -3509,14 +3508,14 @@ error:
 	assert(ctx);
 	assert(relayd_sock);
 
-	DBG("Consumer adding relayd socket (idx: %" PRIu64 ")", net_seq_idx);
+	DBG("Consumer adding relayd socket (idx: %" PRIu64 ")", relayd_id);
 
 	/* Get relayd reference if exists. */
-	relayd = consumer_find_relayd(net_seq_idx);
+	relayd = consumer_find_relayd(relayd_id);
 	if (relayd == NULL) {
 		assert(sock_type == LTTNG_STREAM_CONTROL);
 		/* Not found. Allocate one. */
-		relayd = consumer_allocate_relayd_sock_pair(net_seq_idx);
+		relayd = consumer_allocate_relayd_sock_pair(relayd_id);
 		if (relayd == NULL) {
 			ret_code = LTTCOMM_CONSUMERD_ENOMEM;
 			goto error;
@@ -3635,7 +3634,7 @@ error:
 
 	DBG("Consumer %s socket created successfully with net idx %" PRIu64 " (fd: %d)",
 			sock_type == LTTNG_STREAM_CONTROL ? "control" : "data",
-			relayd->net_seq_idx, fd);
+			relayd->id, fd);
 
 	/* We successfully added the socket. Send status back. */
 	ret = consumer_send_status_msg(sock, ret_code);
@@ -3711,7 +3710,7 @@ static struct consumer_relayd_sock_pair *find_relayd_by_session_id(uint64_t id)
 	struct lttng_ht_iter iter;
 	struct consumer_relayd_sock_pair *relayd = NULL;
 
-	/* Iterate over all relayd since they are indexed by net_seq_idx. */
+	/* Iterate over all relayd since they are indexed by relayd_id. */
 	cds_lfht_for_each_entry(consumer_data.relayd_ht->ht, &iter.iter, relayd,
 			node.node) {
 		/*
@@ -4190,7 +4189,7 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 	struct consumer_relayd_sock_pair *relayd;
 
 	DBG("Rotate relay stream");
-	relayd = consumer_find_relayd(stream->net_seq_idx);
+	relayd = consumer_find_relayd(stream->relayd_id);
 	if (!relayd) {
 		ERR("Failed to find relayd");
 		ret = -1;
@@ -4225,7 +4224,7 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 
 	DBG("Consumer rotate stream %" PRIu64, stream->key);
 
-	if (stream->net_seq_idx != (uint64_t) -1ULL) {
+	if (stream->relayd_id != (uint64_t) -1ULL) {
 		ret = rotate_relay_stream(ctx, stream);
 	} else {
 		ret = rotate_local_stream(ctx, stream);
