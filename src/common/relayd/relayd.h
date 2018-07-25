@@ -19,9 +19,11 @@
 #define _RELAYD_H
 
 #include <unistd.h>
+#include <stdbool.h>
 
 #include <common/sessiond-comm/relayd.h>
 #include <common/sessiond-comm/sessiond-comm.h>
+#include <common/consumer/consumer.h>
 
 int relayd_connect(struct lttcomm_relayd_sock *sock);
 int relayd_close(struct lttcomm_relayd_sock *sock);
@@ -47,9 +49,9 @@ int relayd_quiescent_control(struct lttcomm_relayd_sock *sock,
 int relayd_begin_data_pending(struct lttcomm_relayd_sock *sock, uint64_t id);
 int relayd_end_data_pending(struct lttcomm_relayd_sock *sock, uint64_t id,
 		unsigned int *is_data_inflight);
-int relayd_send_index(struct lttcomm_relayd_sock *rsock,
+int relayd_send_index(struct consumer_relayd_sock_pair *relayd,
 		struct ctf_packet_index *index, uint64_t relay_stream_id,
-		uint64_t net_seq_num);
+		uint64_t net_seq_num, bool deferred);
 int relayd_reset_metadata(struct lttcomm_relayd_sock *rsock,
 		uint64_t stream_id, uint64_t version);
 int relayd_rotate_stream(struct lttcomm_relayd_sock *sock, uint64_t stream_id,
@@ -59,5 +61,6 @@ int relayd_rotate_rename(struct lttcomm_relayd_sock *sock,
 int relayd_rotate_pending(struct lttcomm_relayd_sock *sock,
 		uint64_t chunk_id);
 int relayd_mkdir(struct lttcomm_relayd_sock *rsock, const char *path);
+int relayd_flush_commands(struct consumer_relayd_sock_pair *relayd);
 
 #endif /* _RELAYD_H */

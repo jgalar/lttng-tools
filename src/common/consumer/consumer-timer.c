@@ -31,6 +31,7 @@
 #include <common/consumer/consumer-timer.h>
 #include <common/consumer/consumer-testpoint.h>
 #include <common/ust-consumer/ust-consumer.h>
+#include <common/relayd/relayd.h>
 
 typedef int (*sample_positions_cb)(struct lttng_consumer_stream *stream);
 typedef int (*get_consumed_cb)(struct lttng_consumer_stream *stream,
@@ -124,7 +125,8 @@ static void metadata_switch_timer(struct lttng_consumer_local_data *ctx,
 }
 
 static int send_empty_index(struct lttng_consumer_stream *stream, uint64_t ts,
-		uint64_t stream_id)
+		uint64_t stream_id, struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	int ret;
 	struct ctf_packet_index index;
@@ -132,7 +134,7 @@ static int send_empty_index(struct lttng_consumer_stream *stream, uint64_t ts,
 	memset(&index, 0, sizeof(index));
 	index.stream_id = htobe64(stream_id);
 	index.timestamp_end = htobe64(ts);
-	ret = consumer_stream_write_index(stream, &index);
+	ret = consumer_stream_write_index(stream, &index, relayd, deferred);
 	if (ret < 0) {
 		goto error;
 	}
@@ -141,7 +143,9 @@ error:
 	return ret;
 }
 
-int consumer_flush_kernel_index(struct lttng_consumer_stream *stream)
+int consumer_flush_kernel_index(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	uint64_t ts, stream_id;
 	int ret;
@@ -169,7 +173,7 @@ int consumer_flush_kernel_index(struct lttng_consumer_stream *stream)
 			goto end;
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
-		ret = send_empty_index(stream, ts, stream_id);
+		ret = send_empty_index(stream, ts, stream_id, relayd, deferred);
 		if (ret < 0) {
 			goto end;
 		}
@@ -179,7 +183,8 @@ end:
 	return ret;
 }
 
-static int check_kernel_stream(struct lttng_consumer_stream *stream)
+static int check_kernel_stream(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd)
 {
 	int ret;
 
@@ -218,13 +223,23 @@ static int check_kernel_stream(struct lttng_consumer_stream *stream)
 		}
 		break;
 	}
-	ret = consumer_flush_kernel_index(stream);
+	/*
+	 * The actual sending of the indexes is deferred since this is
+	 * performed withing the context of an iteration on all streams
+	 * of a channel. In all likelyhood, multiple indexes (beacons) will
+	 * need to be sent to a significant network communication efficiency
+	 * gain is realized by packing multiple 'send_index' commands together
+	 * as a single send().
+	 */
+	ret = consumer_flush_kernel_index(stream, relayd, true);
 	pthread_mutex_unlock(&stream->lock);
 end:
 	return ret;
 }
 
-int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
+int consumer_flush_ust_index(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	uint64_t ts, stream_id;
 	int ret;
@@ -253,7 +268,8 @@ int consumer_flush_ust_index(struct lttng_consumer_stream *stream)
 			goto end;
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
-		ret = send_empty_index(stream, ts, stream_id);
+		ret = send_empty_index(stream, ts, stream_id,
+				relayd, deferred);
 		if (ret < 0) {
 			goto end;
 		}
@@ -263,7 +279,8 @@ end:
 	return ret;
 }
 
-static int check_ust_stream(struct lttng_consumer_stream *stream)
+static int check_ust_stream(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd)
 {
 	int ret;
 
@@ -304,7 +321,15 @@ static int check_ust_stream(struct lttng_consumer_stream *stream)
 		}
 		break;
 	}
-	ret = consumer_flush_ust_index(stream);
+	/*
+	 * The actual sending of the indexes is deferred since this is
+	 * performed withing the context of an iteration on all streams
+	 * of a channel. In all likelyhood, multiple indexes (beacons) will
+	 * need to be sent to a significant network communication efficiency
+	 * gain is realized by packing multiple 'send_index' commands together
+	 * as a single send().
+	 */
+	ret = consumer_flush_ust_index(stream, relayd, true);
 	pthread_mutex_unlock(&stream->lock);
 end:
 	return ret;
@@ -322,6 +347,7 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 	struct lttng_consumer_stream *stream;
 	struct lttng_ht *ht;
 	struct lttng_ht_iter iter;
+	struct consumer_relayd_sock_pair *relayd = NULL;
 
 	if (channel->switch_timer_error) {
 		goto error;
@@ -330,6 +356,14 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 
 	DBG("Live timer for channel %" PRIu64, channel->key);
 
+	if (channel->relayd_id != (uint64_t) -1ULL) {
+		relayd = consumer_find_relayd(channel->relayd_id);
+		if (!relayd) {
+			ERR("Channel %s relayd ID %" PRIu64 " unknown. Can't process live timer.",
+					channel->name, channel->relayd_id);
+		}
+	}
+
 	switch (ctx->type) {
 	case LTTNG_CONSUMER32_UST:
 	case LTTNG_CONSUMER64_UST:
@@ -337,7 +371,7 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 				ht->hash_fct(&channel->key, lttng_ht_seed),
 				ht->match_fct, &channel->key, &iter.iter,
 				stream, node_channel_id.node) {
-			ret = check_ust_stream(stream);
+			ret = check_ust_stream(stream, relayd);
 			if (ret < 0) {
 				goto error;
 			}
@@ -348,7 +382,7 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 				ht->hash_fct(&channel->key, lttng_ht_seed),
 				ht->match_fct, &channel->key, &iter.iter,
 				stream, node_channel_id.node) {
-			ret = check_kernel_stream(stream);
+			ret = check_kernel_stream(stream, relayd);
 			if (ret < 0) {
 				goto error;
 			}
@@ -357,6 +391,15 @@ static void live_timer(struct lttng_consumer_local_data *ctx,
 	case LTTNG_CONSUMER_UNKNOWN:
 		assert(0);
 		break;
+	}
+
+	if (relayd) {
+		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
+		ret = relayd_flush_commands(relayd);
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
+		if (ret) {
+			ERR("relayd_flush_commands failed in live_timer()");
+		}
 	}
 
 error:

@@ -302,16 +302,8 @@ static void free_channel_rcu(struct rcu_head *head)
 	free(channel);
 }
 
-/*
- * RCU protected relayd socket pair free.
- */
-static void free_relayd_rcu(struct rcu_head *head)
+static void free_relayd(struct consumer_relayd_sock_pair *relayd)
 {
-	struct lttng_ht_node_u64 *node =
-		caa_container_of(head, struct lttng_ht_node_u64, head);
-	struct consumer_relayd_sock_pair *relayd =
-		caa_container_of(node, struct consumer_relayd_sock_pair, node);
-
 	/*
 	 * Close all sockets. This is done in the call RCU since we don't want the
 	 * socket fds to be reassigned thus potentially creating bad state of the
@@ -322,8 +314,21 @@ static void free_relayd_rcu(struct rcu_head *head)
 	 */
 	(void) relayd_close(&relayd->control_sock);
 	(void) relayd_close(&relayd->data_sock);
-
+	lttng_dynamic_buffer_reset(&relayd->deferred_commands.buffer);
 	free(relayd);
+}
+
+/*
+ * RCU protected relayd socket pair free.
+ */
+static void free_relayd_rcu(struct rcu_head *head)
+{
+	struct lttng_ht_node_u64 *node =
+		caa_container_of(head, struct lttng_ht_node_u64, head);
+	struct consumer_relayd_sock_pair *relayd =
+		caa_container_of(node, struct consumer_relayd_sock_pair, node);
+
+	free_relayd(relayd);
 }
 
 /*
@@ -749,6 +754,7 @@ static struct consumer_relayd_sock_pair *consumer_allocate_relayd_sock_pair(
 	obj->control_sock.sock.fd = -1;
 	obj->data_sock.sock.fd = -1;
 	lttng_ht_node_init_u64(&obj->node, obj->id);
+	lttng_dynamic_buffer_init(&obj->deferred_commands.buffer);
 	pthread_mutex_init(&obj->ctrl_sock_mutex, NULL);
 
 error:
