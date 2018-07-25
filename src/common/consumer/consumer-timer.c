@@ -129,7 +129,7 @@ static void metadata_switch_timer(struct lttng_consumer_local_data *ctx,
 }
 
 static int send_empty_index(struct lttng_consumer_stream *stream, uint64_t ts,
-		uint64_t stream_id, struct consumer_relayd_sock_pair *relayd)
+		uint64_t stream_id, struct consumer_relayd_sock_pair *relayd, bool deferred)
 {
 	int ret;
 	struct ctf_packet_index index;
@@ -137,7 +137,7 @@ static int send_empty_index(struct lttng_consumer_stream *stream, uint64_t ts,
 	memset(&index, 0, sizeof(index));
 	index.stream_id = htobe64(stream_id);
 	index.timestamp_end = htobe64(ts);
-	ret = consumer_stream_write_index(stream, &index, relayd);
+	ret = consumer_stream_write_index(stream, &index, relayd, deferred);
 	if (ret < 0) {
 		goto error;
 	}
@@ -146,7 +146,9 @@ error:
 	return ret;
 }
 
-int consumer_flush_kernel_index(struct lttng_consumer_stream *stream)
+int consumer_flush_kernel_index(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	uint64_t ts, stream_id;
 	int ret;
@@ -174,7 +176,7 @@ int consumer_flush_kernel_index(struct lttng_consumer_stream *stream)
 			goto end;
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
-		ret = send_empty_index(stream, ts, stream_id);
+		ret = send_empty_index(stream, ts, stream_id, relayd, deferred);
 		if (ret < 0) {
 			goto end;
 		}
@@ -184,7 +186,8 @@ end:
 	return ret;
 }
 
-static int check_kernel_stream(struct lttng_consumer_stream *stream)
+static int check_kernel_stream(struct lttng_consumer_stream *stream,
+		struct consumer_relayd_sock_pair *relayd)
 {
 	int ret;
 
@@ -223,14 +226,15 @@ static int check_kernel_stream(struct lttng_consumer_stream *stream)
 		}
 		break;
 	}
-	ret = consumer_flush_kernel_index(stream);
+	ret = consumer_flush_kernel_index(stream, relayd, true);
 	pthread_mutex_unlock(&stream->lock);
 end:
 	return ret;
 }
 
 int consumer_flush_ust_index(struct lttng_consumer_stream *stream,
-		struct consumer_relayd_sock_pair *relayd)
+		struct consumer_relayd_sock_pair *relayd,
+		bool deferred)
 {
 	uint64_t ts, stream_id;
 	int ret;
@@ -260,7 +264,7 @@ int consumer_flush_ust_index(struct lttng_consumer_stream *stream,
 		}
 		DBG("Stream %" PRIu64 " empty, sending beacon", stream->key);
 		ret = send_empty_index(stream, ts, stream_id,
-				relayd);
+				relayd, deferred);
 		if (ret < 0) {
 			goto end;
 		}
@@ -312,7 +316,7 @@ static int check_ust_stream(struct lttng_consumer_stream *stream,
 		}
 		break;
 	}
-	ret = consumer_flush_ust_index(stream, relayd);
+	ret = consumer_flush_ust_index(stream, relayd, true);
 	pthread_mutex_unlock(&stream->lock);
 end:
 	return ret;

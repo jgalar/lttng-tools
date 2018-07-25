@@ -28,35 +28,15 @@
 #include <common/compat/endian.h>
 #include <common/sessiond-comm/relayd.h>
 #include <common/index/ctf-index.h>
+#include <common/dynamic-buffer.h>
 
 #include "relayd.h"
 
-/*
- * Send command. Fill up the header and append the data.
- */
-static int send_command(struct lttcomm_relayd_sock *rsock,
-		enum lttcomm_relayd_command cmd, const void *data, size_t size,
-		int flags)
+static int craft_command(struct lttng_dynamic_buffer *buffer,
+		enum lttcomm_relayd_command cmd, const void *data, size_t size)
 {
 	int ret;
 	struct lttcomm_relayd_hdr header;
-	char *buf;
-	uint64_t buf_size = sizeof(header);
-
-	if (rsock->sock.fd < 0) {
-		return -ECONNRESET;
-	}
-
-	if (data) {
-		buf_size += size;
-	}
-
-	buf = zmalloc(buf_size);
-	if (buf == NULL) {
-		PERROR("zmalloc relayd send command buf");
-		ret = -1;
-		goto alloc_error;
-	}
 
 	memset(&header, 0, sizeof(header));
 	header.cmd = htobe32(cmd);
@@ -66,23 +46,67 @@ static int send_command(struct lttcomm_relayd_sock *rsock,
 	header.cmd_version = 0;
 	header.circuit_id = 0;
 
-	/* Prepare buffer to send. */
-	memcpy(buf, &header, sizeof(header));
+	ret = lttng_dynamic_buffer_append(buffer, &header, sizeof(header));
+	if (ret) {
+		ret = -1;
+		goto end;
+	}
 	if (data) {
-		memcpy(buf + sizeof(header), data, size);
+		ret = lttng_dynamic_buffer_append(buffer, &data, size);
+		if (ret) {
+			ret = -1;
+			goto end;
+		}
+	}
+end:
+	return ret;
+}
+
+static int send_buffer(struct lttcomm_relayd_sock *sock,
+		struct lttng_dynamic_buffer *buffer, int flags)
+{
+	int ret;
+
+	ret = sock->sock.ops->sendmsg(&sock->sock, buffer->data, buffer->size, flags);
+	if (ret < 0) {
+		PERROR("Failed to send buffer of size %" PRIu64, buffer->size);
+		ret = -errno;
+	}
+	return ret;
+}
+
+/*
+ * Send command. Fill up the header and append the data.
+ */
+static int send_command(struct lttcomm_relayd_sock *rsock,
+		enum lttcomm_relayd_command cmd, const void *data, size_t size,
+		int flags)
+{
+	int ret;
+	struct lttng_dynamic_buffer buffer;
+
+	if (rsock->sock.fd < 0) {
+		return -ECONNRESET;
 	}
 
-	DBG3("Relayd sending command %d of size %" PRIu64, (int) cmd, buf_size);
-	ret = rsock->sock.ops->sendmsg(&rsock->sock, buf, buf_size, flags);
+	lttng_dynamic_buffer_init(&buffer);
+
+	ret = craft_command(&buffer, cmd, data, size);
+	if (ret) {
+		ERR("Error crafting command %d", (int) cmd);
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	DBG3("Relayd sending command %d of size %" PRIu64, (int) cmd, buffer.size);
+	ret = send_buffer(rsock, &buffer, flags);
 	if (ret < 0) {
-		PERROR("Failed to send command %d of size %" PRIu64,
-				(int) cmd, buf_size);
-		ret = -errno;
+		ERR("Failed to send command %d of size %" PRIu64,
+				(int) cmd, buffer.size);
 		goto error;
 	}
 error:
-	free(buf);
-alloc_error:
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 
@@ -1028,7 +1052,30 @@ int relayd_send_index(struct consumer_relayd_sock_pair *relayd,
 			ret = 0;
 		}
 	} else {
-		/* magic happens here. */
+		struct lttng_dynamic_buffer buffer;
+		lttng_dynamic_buffer_init(&buffer);
+
+		ret = craft_command(&buffer, RELAYD_SEND_INDEX, &msg,
+				lttcomm_relayd_index_len(lttng_to_index_major(relayd->control_sock.major,
+						relayd->control_sock.minor),
+				lttng_to_index_minor(relayd->control_sock.major,
+						relayd->control_sock.minor))
+				);
+		if (ret) {
+			ret = -1;
+			goto deferred_error;
+		}
+
+		ret = lttng_dynamic_buffer_append_buffer(&relayd->deferred_indexes.buffer, &buffer);
+		if (ret) {
+			ret = -1;
+			goto deferred_error;
+		}
+
+		/* Increment the number of indexes deferred */
+		relayd->deferred_indexes.count++;
+deferred_error:
+		lttng_dynamic_buffer_reset(&buffer);
 	}
 error:
 	return ret;

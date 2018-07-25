@@ -2831,7 +2831,19 @@ retry:
 	if (!write_index) {
 		goto rotate;
 	}
+	
+	struct consumer_relayd_sock_pair *relayd = NULL;
+	if (stream->chan->relayd_id != (uint64_t) -1ULL) {
+		relayd = consumer_find_relayd(stream->chan->relayd_id);
+		if (!relayd) {
+			ERR("Channel %s relayd ID %" PRIu64 " unknown. Can't write index to it.",
+					stream->chan->name, stream->chan->relayd_id);
+			ret = -1;
+			goto error;
+		}
 
+		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
+	}
 	if (stream->chan->live_timer_interval && !stream->metadata_flag) {
 		/*
 		 * In live, block until all the metadata is sent.
@@ -2848,18 +2860,24 @@ retry:
 		if (stream->missed_metadata_flush) {
 			stream->missed_metadata_flush = false;
 			pthread_mutex_unlock(&stream->metadata_timer_lock);
-			(void) consumer_flush_ust_index(stream);
+			(void) consumer_flush_ust_index(stream, relayd, false);
 		} else {
 			pthread_mutex_unlock(&stream->metadata_timer_lock);
 		}
 
 		if (err < 0) {
+			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			goto error;
 		}
 	}
 
 	assert(!stream->metadata_flag);
-	err = consumer_stream_write_index(stream, &index);
+
+	
+	err = consumer_stream_write_index(stream, &index, relayd, false);
+	if (relayd) {
+		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
+	}
 	if (err < 0) {
 		goto error;
 	}

@@ -57,8 +57,8 @@ int consumer_timer_monitor_stop(struct lttng_consumer_channel *channel);
 void *consumer_timer_thread(void *data);
 int consumer_signal_init(void);
 
-int consumer_flush_kernel_index(struct lttng_consumer_stream *stream);
-int consumer_flush_ust_index(struct lttng_consumer_stream *stream);
+int consumer_flush_kernel_index(struct lttng_consumer_stream *stream, struct consumer_relayd_sock_pair *relayd, bool deferred);
+int consumer_flush_ust_index(struct lttng_consumer_stream *stream, struct consumer_relayd_sock_pair *relayd, bool deferred);
 
 int consumer_timer_thread_get_channel_monitor_pipe(void);
 int consumer_timer_thread_set_channel_monitor_pipe(int fd);
