@@ -65,8 +65,9 @@ int unlink_through_handle(const char *path)
 	DBG("Unlinking index at %s through a filesystem handle", path);
 	handle = fd_tracker_open_fs_handle(the_fd_tracker, path, flags, NULL);
 	if (!handle) {
-		/* There is nothing to do. */
-		DBG("File %s does not exist, ignoring unlink", path);
+		if (errno == ENOENT) {
+			DBG("File %s does not exist, ignoring unlink", path);
+		}
 		goto end;
 	}
 
@@ -151,12 +152,14 @@ struct relay_index_file *relay_index_file_create(const char *path_name,
 	fs_handle = fd_tracker_open_fs_handle(the_fd_tracker, idx_file_path,
 			flags, &mode);
 	if (!fs_handle) {
+		PERROR("Failed to open index file at %s", idx_file_path);
 		goto error;
 	}
 	index_file->handle = fs_handle;
 
 	fd = fs_handle_get_fd(fs_handle);
 	if (fd < 0) {
+		PERROR("Failed to get fd of index file at %s", idx_file_path);
 		goto error;
 	}
 
@@ -302,6 +305,7 @@ int relay_index_file_write(const struct relay_index_file *index_file,
 
 	fd = fs_handle_get_fd(index_file->handle);
 	if (fd < 0) {
+		PERROR("Failed to get fd from handle");
 		ret = fd;
 		goto end;
 	}
@@ -329,6 +333,7 @@ int relay_index_file_read(const struct relay_index_file *index_file,
 
 	fd = fs_handle_get_fd(index_file->handle);
 	if (fd < 0) {
+		PERROR("Failed to get fd of handle %p", index_file->handle);
 		ret = fd;
 		goto end;
 	}
@@ -352,6 +357,7 @@ int relay_index_file_seek_end(struct relay_index_file *index_file)
 
 	fd = fs_handle_get_fd(index_file->handle);
 	if (fd < 0) {
+		PERROR("Failed to get fd of handle %p", index_file->handle);
 		ret = fd;
 		goto end;
 	}
