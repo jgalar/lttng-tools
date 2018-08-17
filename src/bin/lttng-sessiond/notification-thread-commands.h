@@ -34,6 +34,8 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_UNREGISTER_TRIGGER,
 	NOTIFICATION_COMMAND_TYPE_ADD_CHANNEL,
 	NOTIFICATION_COMMAND_TYPE_REMOVE_CHANNEL,
+	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_ONGOING,
+	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_COMPLETED,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 };
 
@@ -63,6 +65,15 @@ struct notification_thread_command {
 			uint64_t key;
 			enum lttng_domain_type domain;
 		} remove_channel;
+		struct {
+			const char *session_name;
+			uint64_t trace_archive_chunk_id;
+		} session_rotation_ongoing;
+		struct {
+			const char *session_name;
+			uint64_t trace_archive_chunk_id;
+			const struct lttng_trace_archive_location *location;
+		} session_rotation_completed;
 	} parameters;
 
 	/* lttng_waiter on which to wait for command reply (optional). */
@@ -87,6 +98,15 @@ enum lttng_error_code notification_thread_command_add_channel(
 enum lttng_error_code notification_thread_command_remove_channel(
 		struct notification_thread_handle *handle,
 		uint64_t key, enum lttng_domain_type domain);
+
+enum lttng_error_code notification_thread_command_session_rotation_ongoing(
+		struct notification_thread_handle *handle,
+		const char *session_name, uint64_t trace_archive_chunk_id);
+
+enum lttng_error_code notification_thread_command_session_rotation_completed(
+		struct notification_thread_handle *handle,
+		const char *session_name, uint64_t trace_archive_chunk_id,
+		const struct lttng_trace_archive_location *location);
 
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle);
