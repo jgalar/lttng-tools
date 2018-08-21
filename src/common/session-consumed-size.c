@@ -397,7 +397,7 @@ end:
 
 static
 ssize_t lttng_evaluation_session_consumed_size_serialize(
-		struct lttng_evaluation *evaluation, char *buf)
+		const struct lttng_evaluation *evaluation, char *buf)
 {
 	ssize_t ret;
 	struct lttng_evaluation_session_consumed_size *consumed;
