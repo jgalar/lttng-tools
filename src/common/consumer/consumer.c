@@ -3618,6 +3618,7 @@ int consumer_data_pending(uint64_t id)
 			/* Check the stream if there is data in the buffers. */
 			ret = data_pending(stream);
 			if (ret == 1) {
+				DBG("Data is pending locally on stream %" PRIu64, stream->key);
 				pthread_mutex_unlock(&stream->lock);
 				goto data_pending;
 			}
@@ -3678,6 +3679,7 @@ int consumer_data_pending(uint64_t id)
 			goto data_not_pending;
 		}
 		if (is_data_inflight) {
+			DBG("Data is in flight on relayd %" PRIu64, relayd->id);
 			goto data_pending;
 		}
 	}
