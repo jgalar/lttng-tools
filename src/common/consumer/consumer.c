@@ -3638,8 +3638,8 @@ int consumer_data_pending(uint64_t id)
 		ret = relayd_begin_data_pending(&relayd->control_sock,
 				relayd->relayd_session_id);
 		if (ret < 0) {
-			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			/* Communication error thus the relayd so no data pending. */
+			pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 			ERR("Relayd begin data pending failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
 			lttng_consumer_cleanup_relayd(relayd);
 			goto data_not_pending;
@@ -3663,6 +3663,8 @@ int consumer_data_pending(uint64_t id)
 				goto data_pending;
 			}
 			if (ret < 0) {
+				ERR("Relayd data pending failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
+				lttng_consumer_cleanup_relayd(relayd);
 				pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 				pthread_mutex_unlock(&stream->lock);
 				goto data_not_pending;
