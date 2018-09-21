@@ -46,65 +46,19 @@
 
 #include <urcu.h>
 #include <urcu/list.h>
-#include <urcu/rculfhash.h>
-
-/*
- * Store a struct rotation_channel_info for each channel that is currently
- * being rotated by the consumer.
- */
-struct cds_lfht *channel_pending_rotate_ht;
 
 struct lttng_notification_channel *rotate_notification_channel = NULL;
 
-struct rotation_thread_state {
+struct rotation_thread {
 	struct lttng_poll_event events;
 };
 
-static
-void channel_rotation_info_destroy(struct rotation_channel_info *channel_info)
-{
-	assert(channel_info);
-	free(channel_info);
-}
-
-static
-int match_channel_info(struct cds_lfht_node *node, const void *key)
-{
-	struct rotation_channel_key *channel_key = (struct rotation_channel_key *) key;
-	struct rotation_channel_info *channel_info;
-
-	channel_info = caa_container_of(node, struct rotation_channel_info,
-			rotate_channels_ht_node);
-
-	return !!((channel_key->key == channel_info->channel_key.key) &&
-			(channel_key->domain == channel_info->channel_key.domain));
-}
-
-static
-struct rotation_channel_info *lookup_channel_pending(uint64_t key,
-		enum lttng_domain_type domain)
-{
-	struct cds_lfht_iter iter;
-	struct cds_lfht_node *node;
-	struct rotation_channel_info *channel_info = NULL;
-	struct rotation_channel_key channel_key = { .key = key,
-			.domain = domain };
-
-	cds_lfht_lookup(channel_pending_rotate_ht,
-			hash_channel_key(&channel_key),
-			match_channel_info,
-			&channel_key, &iter);
-	node = cds_lfht_iter_get_node(&iter);
-	if (!node) {
-		goto end;
-	}
-
-	channel_info = caa_container_of(node, struct rotation_channel_info,
-			rotate_channels_ht_node);
-	cds_lfht_del(channel_pending_rotate_ht, node);
-end:
-	return channel_info;
-}
+struct rotation_thread_job {
+	enum rotation_thread_job_type type;
+	uint64_t session_id;
+	/* List member in struct rotation_thread_timer_queue. */
+	struct cds_list_head head;
+};
 
 /*
  * Destroy the thread data previously created by the init function.
@@ -112,40 +66,11 @@ end:
 void rotation_thread_handle_destroy(
 		struct rotation_thread_handle *handle)
 {
-	int ret;
-
-	if (!handle) {
-		goto end;
-	}
-
-	if (handle->ust32_consumer >= 0) {
-		ret = close(handle->ust32_consumer);
-		if (ret) {
-			PERROR("close 32-bit consumer channel rotation pipe");
-		}
-	}
-	if (handle->ust64_consumer >= 0) {
-		ret = close(handle->ust64_consumer);
-		if (ret) {
-			PERROR("close 64-bit consumer channel rotation pipe");
-		}
-	}
-	if (handle->kernel_consumer >= 0) {
-		ret = close(handle->kernel_consumer);
-		if (ret) {
-			PERROR("close kernel consumer channel rotation pipe");
-		}
-	}
-
-end:
 	free(handle);
 }
 
 struct rotation_thread_handle *rotation_thread_handle_create(
-		struct lttng_pipe *ust32_channel_rotate_pipe,
-		struct lttng_pipe *ust64_channel_rotate_pipe,
-		struct lttng_pipe *kernel_channel_rotate_pipe,
-		int thread_quit_pipe,
+		int quit_pipe,
 		struct rotation_thread_timer_queue *rotation_timer_queue,
 		struct notification_thread_handle *notification_thread_handle,
 		sem_t *notification_thread_ready)
@@ -157,46 +82,99 @@ struct rotation_thread_handle *rotation_thread_handle_create(
 		goto end;
 	}
 
-	if (ust32_channel_rotate_pipe) {
-		handle->ust32_consumer =
-				lttng_pipe_release_readfd(
-					ust32_channel_rotate_pipe);
-		if (handle->ust32_consumer < 0) {
-			goto error;
-		}
-	} else {
-		handle->ust32_consumer = -1;
-	}
-	if (ust64_channel_rotate_pipe) {
-		handle->ust64_consumer =
-				lttng_pipe_release_readfd(
-					ust64_channel_rotate_pipe);
-		if (handle->ust64_consumer < 0) {
-			goto error;
-		}
-	} else {
-		handle->ust64_consumer = -1;
-	}
-	if (kernel_channel_rotate_pipe) {
-		handle->kernel_consumer =
-				lttng_pipe_release_readfd(
-					kernel_channel_rotate_pipe);
-		if (handle->kernel_consumer < 0) {
-			goto error;
-		}
-	} else {
-		handle->kernel_consumer = -1;
-	}
-	handle->thread_quit_pipe = thread_quit_pipe;
+	handle->quit_pipe = quit_pipe;
 	handle->rotation_timer_queue = rotation_timer_queue;
 	handle->notification_thread_handle = notification_thread_handle;
 	handle->notification_thread_ready = notification_thread_ready;
 
 end:
 	return handle;
-error:
-	rotation_thread_handle_destroy(handle);
-	return NULL;
+}
+
+/*
+ * Called with the rotation_thread_timer_queue lock held.
+ * Return true if the same timer job already exists in the queue, false if not.
+ */
+static
+bool timer_job_exists(const struct rotation_thread_timer_queue *queue,
+		enum rotation_thread_job_type job_type, uint64_t session_id)
+{
+	bool found = false;
+	struct rotation_thread_job *job;
+
+	cds_list_for_each_entry(job, &queue->list, head) {
+		if (job->session_id == session_id && job->type == job_type) {
+			found = true;
+			goto end;
+		}
+	}
+end:
+	return found;
+}
+
+void rotation_thread_enqueue_job(struct rotation_thread_timer_queue *queue,
+		enum rotation_thread_job_type job_type, uint64_t session_id)
+{
+	int ret;
+	const char * const dummy = "!";
+	const char *job_type_str;
+	struct rotation_thread_job *job = NULL;
+
+	switch (job_type) {
+	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
+		job_type_str = "CHECK_PENDING_ROTATION";
+		break;
+	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
+		job_type_str = "SCHEDULED_ROTATION";
+		break;
+	default:
+		abort();
+	}
+
+	pthread_mutex_lock(&queue->lock);
+	if (timer_job_exists(queue, session_id, job_type)) {
+		/*
+		 * This timer job is already pending, we don't need to add
+		 * it.
+		 */
+		goto end;
+	}
+
+	job = zmalloc(sizeof(struct rotation_thread_job));
+	if (!job) {
+		PERROR("Failed to allocate rotation thread job of type \"%s\" for session id %" PRIu64,
+				job_type_str, session_id);
+		goto end;
+	}
+	job->type = job_type;
+	job->session_id = session_id;
+	cds_list_add_tail(&job->head, &queue->list);
+
+	ret = lttng_write(lttng_pipe_get_writefd(queue->event_pipe), dummy,
+			1);
+	if (ret < 0) {
+		/*
+		 * We do not want to block in the timer handler, the job has
+		 * been enqueued in the list, the wakeup pipe is probably full,
+		 * the job will be processed when the rotation_thread catches
+		 * up.
+		 */
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			/*
+			 * Not an error, but would be surprising and indicate
+			 * that the rotation thread can't keep up with the
+			 * current load.
+			 */
+			DBG("Wake-up pipe of rotation thread job queue is full");
+			goto end;
+		}
+		PERROR("Failed to wake-up the rotation thread after pushing a job of type \"%s\" for session id %" PRIu64,
+				job_type_str, session_id);
+		goto end;
+	}
+
+end:
+	pthread_mutex_unlock(&queue->lock);
 }
 
 static
@@ -218,10 +196,10 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 		goto end;
 	}
 
-	ret = lttng_poll_add(poll_set, handle->thread_quit_pipe,
+	ret = lttng_poll_add(poll_set, handle->quit_pipe,
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add thread_quit_pipe fd to pollset");
+		ERR("[rotation-thread] Failed to add quit_pipe fd to pollset");
 		goto error;
 	}
 	ret = lttng_poll_add(poll_set,
@@ -230,26 +208,6 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	if (ret < 0) {
 		ERR("[rotation-thread] Failed to add rotate_pending fd to pollset");
 		goto error;
-	}
-	ret = lttng_poll_add(poll_set, handle->ust32_consumer,
-			LPOLLIN | LPOLLERR);
-	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add ust-32 channel rotation pipe fd to pollset");
-		goto error;
-	}
-	ret = lttng_poll_add(poll_set, handle->ust64_consumer,
-			LPOLLIN | LPOLLERR);
-	if (ret < 0) {
-		ERR("[rotation-thread] Failed to add ust-64 channel rotation pipe fd to pollset");
-		goto error;
-	}
-	if (handle->kernel_consumer >= 0) {
-		ret = lttng_poll_add(poll_set, handle->kernel_consumer,
-				LPOLLIN | LPOLLERR);
-		if (ret < 0) {
-			ERR("[rotation-thread] Failed to add kernel channel rotation pipe fd to pollset");
-			goto error;
-		}
 	}
 
 end:
@@ -260,13 +218,9 @@ error:
 }
 
 static
-void fini_thread_state(struct rotation_thread_state *state)
+void fini_thread_state(struct rotation_thread *state)
 {
-	int ret;
-
 	lttng_poll_clean(&state->events);
-	ret = cds_lfht_destroy(channel_pending_rotate_ht, NULL);
-	assert(!ret);
 	if (rotate_notification_channel) {
 		lttng_notification_channel_destroy(rotate_notification_channel);
 	}
@@ -274,7 +228,7 @@ void fini_thread_state(struct rotation_thread_state *state)
 
 static
 int init_thread_state(struct rotation_thread_handle *handle,
-		struct rotation_thread_state *state)
+		struct rotation_thread *state)
 {
 	int ret;
 
@@ -284,14 +238,6 @@ int init_thread_state(struct rotation_thread_handle *handle,
 	ret = init_poll_set(&state->events, handle);
 	if (ret) {
 		ERR("[rotation-thread] Failed to initialize rotation thread poll set");
-		goto end;
-	}
-
-	channel_pending_rotate_ht = cds_lfht_new(DEFAULT_HT_SIZE,
-			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
-	if (!channel_pending_rotate_ht) {
-		ERR("[rotation-thread] Failed to create channel pending rotation hash table");
-		ret = -1;
 		goto end;
 	}
 
@@ -317,11 +263,11 @@ int init_thread_state(struct rotation_thread_handle *handle,
 end:
 	return ret;
 }
-
+/*
 static
 int handle_channel_rotation_pipe(int fd, uint32_t revents,
 		struct rotation_thread_handle *handle,
-		struct rotation_thread_state *state)
+		struct rotation_thread *state)
 {
 	int ret = 0;
 	enum lttng_domain_type domain;
@@ -373,10 +319,6 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 	session_lock_list();
 	session = session_find_by_id(channel_info->session_id);
 	if (!session) {
-		/*
-		 * The session may have been destroyed before we had a chance to
-		 * perform this action, return gracefully.
-		 */
 		DBG("[rotation-thread] Session %" PRIu64 " not found",
 				channel_info->session_id);
 		ret = 0;
@@ -413,7 +355,6 @@ int handle_channel_rotation_pipe(int fd, uint32_t revents,
 			struct lttng_trace_archive_location *location;
 
 			session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
-			/* Ownership of location is transferred. */
 			location = session_get_trace_archive_location(session);
 			ret = notification_thread_command_session_rotation_completed(
 					notification_thread_handle,
@@ -442,6 +383,7 @@ end_unlock_session_list:
 end:
 	return ret;
 }
+*/
 
 /*
  * Process the rotate_pending check, called with session lock held.
@@ -547,7 +489,7 @@ end:
 static
 int handle_rotate_timer_pipe(uint32_t revents,
 		struct rotation_thread_handle *handle,
-		struct rotation_thread_state *state,
+		struct rotation_thread *state,
 		struct rotation_thread_timer_queue *queue)
 {
 	int ret = 0;
@@ -715,7 +657,7 @@ end:
 static
 int handle_notification_channel(int fd, uint32_t revents,
 		struct rotation_thread_handle *handle,
-		struct rotation_thread_state *state)
+		struct rotation_thread *state)
 {
 	int ret;
 	bool notification_pending;
@@ -775,7 +717,7 @@ void *thread_rotation(void *data)
 {
 	int ret;
 	struct rotation_thread_handle *handle = data;
-	struct rotation_thread_state state;
+	struct rotation_thread thread;
 
 	DBG("[rotation-thread] Started rotation thread");
 
@@ -783,9 +725,6 @@ void *thread_rotation(void *data)
 		ERR("[rotation-thread] Invalid thread context provided");
 		goto end;
 	}
-
-	rcu_register_thread();
-	rcu_thread_online();
 
 	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_ROTATION);
 	health_code_update();
@@ -825,7 +764,7 @@ void *thread_rotation(void *data)
 			DBG("[rotation-thread] Handling fd (%i) activity (%u)",
 					fd, revents);
 
-			if (fd == handle->thread_quit_pipe) {
+			if (fd == handle->quit_pipe) {
 				DBG("[rotation-thread] Quit pipe activity");
 				goto exit;
 			} else if (fd == lttng_pipe_get_readfd(handle->rotation_timer_queue->event_pipe)) {
@@ -833,15 +772,6 @@ void *thread_rotation(void *data)
 						handle, &state, handle->rotation_timer_queue);
 				if (ret) {
 					ERR("[rotation-thread] Failed to handle rotation timer pipe event");
-					goto error;
-				}
-			} else if (fd == handle->ust32_consumer ||
-					fd == handle->ust64_consumer ||
-					fd == handle->kernel_consumer) {
-				ret = handle_channel_rotation_pipe(fd,
-						revents, handle, &state);
-				if (ret) {
-					ERR("[rotation-thread] Failed to handle channel rotation pipe");
 					goto error;
 				}
 			} else if (fd == rotate_notification_channel->socket) {
@@ -859,8 +789,6 @@ error:
 	DBG("[rotation-thread] Exit");
 	fini_thread_state(&state);
 	health_unregister(health_sessiond);
-	rcu_thread_offline();
-	rcu_unregister_thread();
 end:
 	return NULL;
 }

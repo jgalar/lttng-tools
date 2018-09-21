@@ -2701,7 +2701,7 @@ int cmd_start_trace(struct ltt_session *session)
 	session->rotated_after_last_stop = false;
 
 	if (session->rotate_timer_period) {
-		ret = sessiond_rotate_timer_start(session,
+		ret = timer_session_rotation_schedule_timer_start(session,
 				session->rotate_timer_period);
 		if (ret < 0) {
 			ERR("Failed to enable rotate timer");
@@ -2735,9 +2735,9 @@ int rename_active_chunk(struct ltt_session *session)
 		goto end;
 	}
 
-	ret = rename_complete_chunk(session, time(NULL));
+	ret = rename_completed_chunk(session, time(NULL));
 	if (ret < 0) {
-		ERR("Failed to rename current rotate path");
+		ERR("Failed to rename current rotation's path");
 		goto end;
 	}
 
@@ -2782,15 +2782,22 @@ int cmd_stop_trace(struct ltt_session *session)
 		goto error;
 	}
 
-	if (session->rotate_relay_pending_timer_enabled) {
-		sessiond_timer_rotate_pending_stop(session);
+	if (session->rotation_pending_check_timer_enabled) {
+		if (timer_session_rotation_pending_check_stop(session)) {
+			ERR("Failed to stop the \"rotation pending check\" timer of session %s",
+					session->name);
+		}
 	}
 
-	if (session->rotate_timer_enabled) {
-		sessiond_rotate_timer_stop(session);
+	if (session->rotation_schedule_timer_enabled) {
+		if (timer_session_rotation_schedule_timer_stop(
+				session)) {
+			ERR("Failed to stop the \"rotation schedule\" timer of session %s",
+					session->name);
+		}
 	}
 
-	if (session->current_archive_id > 0 && !session->rotate_pending) {
+	if (session->current_archive_id > 0 && !session->rotation_pending) {
 		ret = rename_active_chunk(session);
 		if (ret) {
 			/*
@@ -3089,12 +3096,19 @@ int cmd_destroy_session(struct ltt_session *session, int wpipe,
 
 	DBG("Begin destroy session %s (id %" PRIu64 ")", session->name, session->id);
 
-	if (session->rotate_relay_pending_timer_enabled) {
-		sessiond_timer_rotate_pending_stop(session);
+	if (session->rotation_pending_check_timer_enabled) {
+		if (timer_session_rotation_pending_check_stop(session)) {
+			ERR("Failed to stop the \"rotation pending check\" timer of session %s",
+					session->name);
+		}
 	}
 
-	if (session->rotate_timer_enabled) {
-		sessiond_rotate_timer_stop(session);
+	if (session->rotation_schedule_timer_enabled) {
+		if (timer_session_rotation_schedule_timer_stop(
+				session)) {
+			ERR("Failed to stop the \"rotation schedule\" timer of session %s",
+					session->name);
+		}
 	}
 
 	if (session->rotate_size) {
@@ -3564,10 +3578,8 @@ int cmd_data_pending(struct ltt_session *session)
 		}
 	}
 
-	/*
-	 * A rotation is still pending, we have to wait.
-	 */
-	if (session->rotate_pending) {
+	/* A rotation is still pending, we have to wait. */
+	if (session->rotation_pending) {
 		DBG("Rotate still pending for session %s", session->name);
 		ret = 1;
 		goto error;
@@ -4586,7 +4598,7 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto end;
 	}
 
-	if (session->rotate_pending || session->rotate_pending_relay) {
+	if (session->rotation_pending) {
 		ret = -LTTNG_ERR_ROTATION_PENDING;
 		DBG("Rotate already in progress");
 		goto end;
@@ -4640,8 +4652,12 @@ int cmd_rotate_session(struct ltt_session *session,
 	}
 	DBG("Current rotate path %s", session->rotation_chunk.current_rotate_path);
 
+	/*
+	 * Channels created after this point will belong to the next
+	 * archive id.
+	 */
 	session->current_archive_id++;
-	session->rotate_pending = true;
+	session->rotation_pending = true;
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
 	ret = notification_thread_command_session_rotation_ongoing(
 			notification_thread_handle,
@@ -4765,9 +4781,9 @@ int cmd_rotate_session(struct ltt_session *session,
 		if (!session->kernel_session && !ust_active) {
 			struct lttng_trace_archive_location *location;
 
-			session->rotate_pending = false;
+			session->rotation_pending = false;
 			session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
-			ret = rename_complete_chunk(session, now);
+			ret = rename_completed_chunk(session, now);
 			if (ret < 0) {
 				ERR("Failed to rename completed rotation chunk");
 				goto end;
@@ -4999,14 +5015,16 @@ int cmd_rotation_set_schedule(struct ltt_session *session,
 			 * Only start the timer if the session is active,
 			 * otherwise it will be started when the session starts.
 			 */
-			ret = sessiond_rotate_timer_start(session, new_value);
+			ret = timer_session_rotation_schedule_timer_start(
+					session, new_value);
 			if (ret) {
 				ERR("Failed to enable session rotation timer in ROTATION_SET_SCHEDULE command");
 				ret = LTTNG_ERR_UNK;
 				goto end;
 			}
 		} else {
-			ret = sessiond_rotate_timer_stop(session);
+			ret = timer_session_rotation_schedule_timer_stop(
+					session);
 			if (ret) {
 				ERR("Failed to disable session rotation timer in ROTATION_SET_SCHEDULE command");
 				ret = LTTNG_ERR_UNK;

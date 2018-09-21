@@ -62,7 +62,6 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_LOST_PACKETS,
 	LTTNG_CONSUMER_CLEAR_QUIESCENT_CHANNEL,
 	LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE,
-	LTTNG_CONSUMER_SET_CHANNEL_ROTATE_PIPE,
 	LTTNG_CONSUMER_ROTATE_CHANNEL,
 	LTTNG_CONSUMER_ROTATE_RENAME,
 	LTTNG_CONSUMER_ROTATE_PENDING_RELAY,
@@ -602,11 +601,6 @@ struct lttng_consumer_local_data {
 	 * to the session daemon (write-only).
 	 */
 	int channel_monitor_pipe;
-	/*
-	 * Pipe used to inform the session daemon that a stream has finished
-	 * its rotation (write-only).
-	 */
-	int channel_rotate_pipe;
 };
 
 /*

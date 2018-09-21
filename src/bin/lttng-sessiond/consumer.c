@@ -1081,10 +1081,6 @@ int consumer_send_pipe(struct consumer_socket *consumer_sock,
 		pipe_name = "channel monitor";
 		command_name = "SET_CHANNEL_MONITOR_PIPE";
 		break;
-	case LTTNG_CONSUMER_SET_CHANNEL_ROTATE_PIPE:
-		pipe_name = "channel rotate";
-		command_name = "SET_CHANNEL_ROTATE_PIPE";
-		break;
 	default:
 		ERR("Unexpected command received in %s (cmd = %d)", __func__,
 				(int) cmd);
@@ -1122,13 +1118,6 @@ int consumer_send_channel_monitor_pipe(struct consumer_socket *consumer_sock,
 {
 	return consumer_send_pipe(consumer_sock,
 			LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE, pipe);
-}
-
-int consumer_send_channel_rotate_pipe(struct consumer_socket *consumer_sock,
-		int pipe)
-{
-	return consumer_send_pipe(consumer_sock,
-			LTTNG_CONSUMER_SET_CHANNEL_ROTATE_PIPE, pipe);
 }
 
 /*
@@ -1649,8 +1638,7 @@ end:
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
 		char *domain_path, bool is_metadata_channel,
-		uint64_t new_chunk_id,
-		bool *rotate_pending_relay)
+		uint64_t new_chunk_id)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
@@ -1677,7 +1665,6 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 			ret = -1;
 			goto error;
 		}
-		*rotate_pending_relay = true;
 	} else {
 		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
 		ret = snprintf(msg.u.rotate_channel.pathname,

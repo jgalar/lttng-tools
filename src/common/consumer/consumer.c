@@ -2283,26 +2283,6 @@ static void validate_endpoint_status_metadata_stream(
 	rcu_read_unlock();
 }
 
-static
-int rotate_notify_sessiond(struct lttng_consumer_local_data *ctx,
-		uint64_t key)
-{
-	ssize_t ret;
-
-	do {
-		ret = write(ctx->channel_rotate_pipe, &key, sizeof(key));
-	} while (ret == -1 && errno == EINTR);
-	if (ret == -1) {
-		PERROR("Failed to write to the channel rotation pipe");
-	} else {
-		DBG("Sent channel rotation notification for channel key %"
-				PRIu64, key);
-		ret = 0;
-	}
-
-	return (int) ret;
-}
-
 /*
  * Perform operations that need to be done after a stream has
  * rotated and released the stream lock.
@@ -2339,13 +2319,7 @@ int consumer_post_rotation(struct lttng_consumer_stream *stream,
 			abort();
 	}
 
-	if (--stream->chan->nr_stream_rotate_pending == 0) {
-		DBG("Rotation of channel \"%s\" completed, notifying the session daemon",
-				stream->chan->name);
-		ret = rotate_notify_sessiond(ctx, stream->chan->key);
-	}
 	pthread_mutex_unlock(&stream->chan->lock);
-
 	return ret;
 }
 
