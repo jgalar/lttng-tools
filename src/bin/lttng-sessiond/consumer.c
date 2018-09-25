@@ -1747,14 +1747,15 @@ error:
 }
 
 /*
- * Ask the relay if a rotation is still pending. Must be called with the socket
- * lock held.
+ * Ask the consumer if a rotation is still pending. Must be called with the
+ * socket lock held. This command will cause the consumer to check both locally
+ * and on the session's associated relay daemon, if applicable.
  *
  * Return 1 if the rotation is still pending, 0 if finished, a negative value
  * on error.
  */
-int consumer_rotate_pending_relay(struct consumer_socket *socket,
-		struct consumer_output *output, uint64_t session_id,
+int consumer_rotation_pending(struct consumer_socket *socket,
+		const struct consumer_output *output, uint64_t session_id,
 		uint64_t chunk_id)
 {
 	int ret;
@@ -1768,7 +1769,7 @@ int consumer_rotate_pending_relay(struct consumer_socket *socket,
 	assert(output->type == CONSUMER_DST_NET);
 
 	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_ROTATE_PENDING_RELAY;
+	msg.cmd_type = LTTNG_CONSUMER_ROTATE_PENDING;
 	msg.u.rotate_pending_relay.session_id = session_id;
 	msg.u.rotate_pending_relay.relayd_id = output->net_seq_index;
 	msg.u.rotate_pending_relay.chunk_id = chunk_id;

@@ -1142,14 +1142,15 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
-	case LTTNG_CONSUMER_ROTATE_PENDING_RELAY:
+	case LTTNG_CONSUMER_ROTATE_PENDING:
 	{
 		int pending;
 		uint32_t pending_reply;
 
+		/* TODO LOCAL CHECK */
 		DBG("Consumer rotate pending on relay for session %" PRIu64,
 				msg.u.rotate_pending_relay.session_id);
-		pending = lttng_consumer_rotate_pending_relay(
+		pending = lttng_consumer_rotate_pending(
 				msg.u.rotate_pending_relay.session_id,
 				msg.u.rotate_pending_relay.relayd_id,
 				msg.u.rotate_pending_relay.chunk_id);

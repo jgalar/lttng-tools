@@ -184,14 +184,11 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	int ret;
 
 	/*
-	 * Create pollset with size 5:
-	 *	- sessiond quit pipe
-	 *	- sessiond timer pipe,
-	 *	- consumerd (32-bit user space) channel rotate pipe,
-	 *	- consumerd (64-bit user space) channel rotate pipe,
-	 *	- consumerd (kernel) channel rotate pipe,
+	 * Create pollset with size 2:
+	 *	- quit pipe,
+	 *	- rotation thread timer queue pipe,
 	 */
-	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
+	ret = lttng_poll_create(poll_set, 2, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto end;
 	}
@@ -487,7 +484,7 @@ end:
 }
 
 static
-int handle_rotate_timer_pipe(uint32_t revents,
+int handle_job_queue(uint32_t revents,
 		struct rotation_thread_handle *handle,
 		struct rotation_thread *state,
 		struct rotation_thread_timer_queue *queue)
@@ -498,11 +495,7 @@ int handle_rotate_timer_pipe(uint32_t revents,
 	char buf[1];
 
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-		ret = lttng_poll_del(&state->events, fd);
-		if (ret) {
-			ERR("[rotation-thread] Failed to remove consumer "
-					"rotate pending pipe from poll set");
-		}
+		ERR("[rotation-thread] Error reported on timer queue pipe");
 		goto end;
 	}
 
@@ -575,8 +568,8 @@ end:
 	return ret;
 }
 
-int handle_condition(
-		const struct lttng_condition *condition,
+static
+int handle_condition(const struct lttng_condition *condition,
 		const struct lttng_evaluation *evaluation,
 		struct notification_thread_handle *notification_thread_handle)
 {
@@ -764,19 +757,24 @@ void *thread_rotation(void *data)
 			DBG("[rotation-thread] Handling fd (%i) activity (%u)",
 					fd, revents);
 
+			if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+				ERR("[rotation-thread] Polling returned an error on fd %i", fd);
+				goto error;
+			}
+
 			if (fd == handle->quit_pipe) {
 				DBG("[rotation-thread] Quit pipe activity");
 				goto exit;
 			} else if (fd == lttng_pipe_get_readfd(handle->rotation_timer_queue->event_pipe)) {
-				ret = handle_rotate_timer_pipe(revents,
-						handle, &state, handle->rotation_timer_queue);
+				ret = handle_job_queue(handle, &state,
+						handle->rotation_timer_queue);
 				if (ret) {
 					ERR("[rotation-thread] Failed to handle rotation timer pipe event");
 					goto error;
 				}
 			} else if (fd == rotate_notification_channel->socket) {
-				ret = handle_notification_channel(fd, revents,
-						handle, &state);
+				ret = handle_notification_channel(fd, handle,
+						&state);
 				if (ret) {
 					ERR("[rotation-thread] Error occured while handling activity on notification channel socket");
 					goto error;

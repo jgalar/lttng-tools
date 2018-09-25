@@ -323,8 +323,8 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 		const struct consumer_output *output, const char *old_path,
 		const char *new_path, uid_t uid, gid_t gid);
-int consumer_rotate_pending_relay(struct consumer_socket *socket,
-		struct consumer_output *output, uint64_t session_id,
+int consumer_rotation_pending(struct consumer_socket *socket,
+		const struct consumer_output *output, uint64_t session_id,
 		uint64_t chunk_id);
 int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
 		const struct consumer_output *output, const char *path,
