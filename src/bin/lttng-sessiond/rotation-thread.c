@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2017 - Julien Desfossez <jdesfossez@efficios.com>
+ * Copyright (C) 2018 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License, version 2 only, as
@@ -58,6 +59,24 @@ struct rotation_thread_job {
 	uint64_t session_id;
 	/* List member in struct rotation_thread_timer_queue. */
 	struct cds_list_head head;
+};
+
+/*
+ * The timer thread enqueues jobs and wakes up the rotation thread.
+ * When the rotation thread wakes up, it empties the queue.
+ */
+struct rotation_thread_timer_queue {
+	struct lttng_pipe *event_pipe;
+	struct cds_list_head list;
+	pthread_mutex_t lock;
+};
+
+struct rotation_thread_handle {
+	int quit_pipe;
+	struct rotation_thread_timer_queue *rotation_timer_queue;
+	/* Access to the notification thread cmd_queue */
+	struct notification_thread_handle *notification_thread_handle;
+	sem_t *notification_thread_ready;
 };
 
 /*
@@ -383,33 +402,34 @@ end:
 */
 
 /*
- * Process the rotate_pending check, called with session lock held.
+ * Check if the last rotation was completed, called with session lock held.
  */
 static
-int rotate_pending_relay_timer(struct ltt_session *session)
+int check_session_rotation_pending(struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 
-	DBG("[rotation-thread] Check rotate pending on session %" PRIu64,
-			session->id);
-	ret = relay_rotate_pending(session, session->current_archive_id - 1);
+	DBG("[rotation-thread] Checking for rotation pending on session \"%s\"",
+			session->name);
+
+	ret = consumer_rotation_pending(session->id, session->current_archive_id - 1);
 	if (ret < 0) {
-		ERR("[rotation-thread] Check relay rotate pending");
+		ERR("[rotation-thread] ");
 		goto end;
 	}
 	if (ret == 0) {
 		struct lttng_trace_archive_location *location;
 
-		DBG("[rotation-thread] Rotation completed on the relay for "
-				"session %" PRIu64, session->id);
+		DBG("[rotation-thread] Rotation completed for "
+				"session %s", session->name);
 		/*
 		 * Now we can clear the pending flag in the session. New
 		 * rotations can start now.
 		 */
-		session->rotate_pending_relay = false;
+		session->rotate_pending = false;
 		session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
 
-		session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
 		/* Ownership of location is transferred. */
 		location = session_get_trace_archive_location(session);
 		ret = notification_thread_command_session_rotation_completed(
@@ -420,7 +440,7 @@ int rotate_pending_relay_timer(struct ltt_session *session)
 				session->current_archive_id,
 				location);
 		if (ret != LTTNG_OK) {
-			ERR("Failed to notify notification thread that rotation is complete for session %s",
+			ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
 					session->name);
 		}
 	} else if (ret == 1) {
@@ -441,65 +461,61 @@ end:
 	return ret;
 }
 
-/*
- * Process the rotate_timer, called with session lock held.
- */
+/* Call with the session lock held. */
 static
-int rotate_timer(struct ltt_session *session)
+int launch_session_rotation(struct ltt_session *session)
+{
+	struct lttng_rotate_session_return rotation_return;
+
+	DBG("[rotation-thread] Launching scheduled time-based rotation on session \"%s\"",
+			session->name);
+
+	ret = cmd_rotate_session(session, &rotation_return);
+	if (ret == LTTNG_OK) {
+		DBG("[rotation-thread] Scheduled time-based rotation successfully launched on session \"%s\"",
+				session->name);
+	} else {
+		/* Don't consider errors as fatal. */
+		DBG("[rotation-thread] Scheduled time-based rotation aborted for session %s: %s",
+				session->name, lttng_strerror(ret));
+	}
+	return 0;
+}
+
+static
+int run_job(struct rotation_thread_job *job, struct ltt_session *session)
 {
 	int ret;
 
-	/*
-	 * Complete _at most_ one scheduled rotation on a stopped session.
-	 */
-	if (!session->active && session->rotate_timer_enabled &&
-			session->rotated_after_last_stop) {
-		ret = 0;
-		goto end;
+	switch (job->type) {
+	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
+	        ret = launch_session_rotation(session);
+		break;
+	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
+		ret = check_session_rotation_pending(session);
+		break;
+	default:
+		abort();
 	}
-
-	/* Ignore this timer if a rotation is already in progress. */
-	if (session->rotate_pending || session->rotate_pending_relay) {
-		ret = 0;
-		goto end;
-	}
-
-	DBG("[rotation-thread] Rotate timer on session %s", session->name);
-
-	ret = cmd_rotate_session(session, NULL);
-	if (ret == -LTTNG_ERR_ROTATION_PENDING) {
-		DBG("Scheduled rotation aborted since a rotation is already in progress");
-		ret = 0;
-		goto end;
-	} else if (ret != LTTNG_OK) {
-		ERR("[rotation-thread] Automatic time-triggered rotation failed with error code %i", ret);
-		ret = -1;
-		goto end;
-	}
-
-	ret = 0;
-
-end:
 	return ret;
 }
 
 static
-int handle_job_queue(uint32_t revents,
-		struct rotation_thread_handle *handle,
+int handle_job_queue(struct rotation_thread_handle *handle,
 		struct rotation_thread *state,
 		struct rotation_thread_timer_queue *queue)
 {
 	int ret = 0;
 	int fd = lttng_pipe_get_readfd(queue->event_pipe);
 	struct ltt_session *session;
-	char buf[1];
+	char buf;
 
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 		ERR("[rotation-thread] Error reported on timer queue pipe");
 		goto end;
 	}
 
-	ret = lttng_read(fd, buf, 1);
+	ret = lttng_read(fd, &buf, 1);
 	if (ret != 1) {
 		ERR("[rotation-thread] Failed to read from wakeup pipe (fd = %i)", fd);
 		ret = -1;
@@ -507,45 +523,43 @@ int handle_job_queue(uint32_t revents,
 	}
 
 	for (;;) {
-		struct sessiond_rotation_timer *timer_data;
+		struct rotation_thread_job *job;
 
-		/*
-		 * Take the queue lock only to pop elements from the list.
-		 */
+		/* Take the queue lock only to pop an element from the list. */
 		pthread_mutex_lock(&queue->lock);
 		if (cds_list_empty(&queue->list)) {
 			pthread_mutex_unlock(&queue->lock);
 			break;
 		}
-		timer_data = cds_list_first_entry(&queue->list,
-				struct sessiond_rotation_timer, head);
-		cds_list_del(&timer_data->head);
+		job = cds_list_first_entry(&queue->list,
+				typeof(*job), head);
+		cds_list_del(&job->head);
 		pthread_mutex_unlock(&queue->lock);
 
-		/*
-		 * session lock to lookup the session ID.
-		 */
 		session_lock_list();
-		session = session_find_by_id(timer_data->session_id);
+		session = session_find_by_id(job->session_id);
 		if (!session) {
 			DBG("[rotation-thread] Session %" PRIu64 " not found",
 					timer_data->session_id);
 			/*
-			 * This is a non-fatal error, and we cannot report it to the
-			 * user (timer), so just print the error and continue the
-			 * processing.
+			 * This is a non-fatal error, and we cannot report it to
+			 * the user (timer), so just print the error and
+			 * continue the processing.
+			 *
+			 * While the timer thread will purge pending signals for
+			 * a session on the session's destruction, it is
+			 * possible for a job targeting that session to have
+			 * already been queued before it was destroyed.
 			 */
 			session_unlock_list();
-			free(timer_data);
+			free(job);
 			continue;
 		}
 
-		/*
-		 * Take the session lock and release the session_list lock.
-		 */
 		session_lock(session);
 		session_unlock_list();
 
+	        ret = run_job(job);
 		if (timer_data->signal == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
 			ret = rotate_pending_relay_timer(session);
 		} else if (timer_data->signal == LTTNG_SESSIOND_SIG_ROTATE_TIMER) {
@@ -757,7 +771,7 @@ void *thread_rotation(void *data)
 			DBG("[rotation-thread] Handling fd (%i) activity (%u)",
 					fd, revents);
 
-			if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+			if (revents & LPOLLERR) {
 				ERR("[rotation-thread] Polling returned an error on fd %i", fd);
 				goto error;
 			}

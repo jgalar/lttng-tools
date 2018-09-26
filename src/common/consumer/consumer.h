@@ -2,6 +2,7 @@
  * Copyright (C) 2011 - Julien Desfossez <julien.desfossez@polymtl.ca>
  *                      Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *               2012 - David Goulet <dgoulet@efficios.com>
+ *               2018 - Jérémie Galarneau <jeremie.galarneau@efficios.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2 only,
@@ -64,7 +65,8 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_SET_CHANNEL_MONITOR_PIPE,
 	LTTNG_CONSUMER_ROTATE_CHANNEL,
 	LTTNG_CONSUMER_ROTATE_RENAME,
-	LTTNG_CONSUMER_ROTATE_PENDING,
+	LTTNG_CONSUMER_CHECK_ROTATION_PENDING_LOCAL,
+	LTTNG_CONSUMER_CHECK_ROTATION_PENDING_RELAY,
 	LTTNG_CONSUMER_MKDIR,
 };
 
@@ -830,7 +832,9 @@ int lttng_consumer_rotate_ready_streams(uint64_t key,
 		struct lttng_consumer_local_data *ctx);
 int lttng_consumer_rotate_rename(const char *current_path, const char *new_path,
 		uid_t uid, gid_t gid, uint64_t relayd_id);
-int lttng_consumer_rotate_pending( uint64_t session_id,
+int lttng_consumer_check_rotation_pending_local(uint64_t session_id,
+		uint64_t chunk_id);
+int lttng_consumer_check_rotation_pending_relay(uint64_t session_id,
 		uint64_t relayd_id, uint64_t chunk_id);
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream);
 int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,

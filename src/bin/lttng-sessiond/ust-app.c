@@ -6413,7 +6413,7 @@ int ust_app_rotate_session(struct ltt_session *session, bool *ust_active)
 					usess->consumer, pathname,
 					/* is_metadata_channel */ true,
 					session->current_archive_id,
-					&session->rotate_pending_relay);
+					&session->rotation_pending);
 			if (ret < 0) {
 				goto error;
 			}

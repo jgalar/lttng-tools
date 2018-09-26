@@ -29,32 +29,17 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include "session.h"
+#include "notification-thread.h"
 
 extern struct lttng_notification_channel *rotate_notification_channel;
-
-/*
- * The timer thread enqueues struct rotation_thread_work objects in the list
- * and wake up the rotation thread. When the rotation thread wakes up, it
- * empties the queue.
- */
-struct rotation_thread_timer_queue {
-	struct lttng_pipe *event_pipe;
-	struct cds_list_head list;
-	pthread_mutex_t lock;
-};
 
 enum rotation_thread_job_type {
 	ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION,
 	ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION
 };
 
-struct rotation_thread_handle {
-	int quit_pipe;
-	struct rotation_thread_timer_queue *rotation_timer_queue;
-	/* Access to the notification thread cmd_queue */
-	struct notification_thread_handle *notification_thread_handle;
-	sem_t *notification_thread_ready;
-};
+struct rotation_thread_timer_queue;
+struct rotation_thread_handle;
 
 struct rotation_thread_handle *rotation_thread_handle_create(
 		int thread_quit_pipe,

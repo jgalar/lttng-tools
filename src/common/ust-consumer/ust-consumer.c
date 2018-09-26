@@ -1990,28 +1990,25 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
-	case LTTNG_CONSUMER_ROTATE_PENDING:
+	case LTTNG_CONSUMER_CHECK_ROTATION_PENDING_LOCAL:
 	{
 		int pending;
 		uint32_t pending_reply;
 
-		/* TODO Perform local check. */
-		DBG("Consumer rotate pending on relay for session %" PRIu64,
-				msg.u.rotate_pending_relay.session_id);
-		pending = lttng_consumer_rotate_pending(
-				msg.u.rotate_pending_relay.session_id,
-				msg.u.rotate_pending_relay.relayd_id,
-				msg.u.rotate_pending_relay.chunk_id);
+		DBG("Perform local check of pending rotation for session id %" PRIu64,
+				msg.u.check_rotation_pending_local.session_id);
+		pending = lttng_consumer_check_rotation_pending_local(
+				msg.u.check_rotation_pending_local.session_id,
+				msg.u.check_rotation_pending_local.chunk_id);
 		if (pending < 0) {
-			ERR("Rotate pending relay failed");
-			ret_code = LTTCOMM_CONSUMERD_RELAYD_FAIL;
+			ERR("Local rotation pending check failed with code %i", pending);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
 		} else {
 			pending_reply = !!pending;
 		}
 
 		health_code_update();
 
-		/* Send whether the command was successful. */
 		ret = consumer_send_status_msg(sock, ret_code);
 		if (ret < 0) {
 			/* Somehow, the session daemon is not responding anymore. */
@@ -2021,17 +2018,61 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		if (pending < 0) {
 			/*
 			 * An error occured while running the command;
-			 * don't send the 'pending' reply as the sessiond
+			 * don't send the 'pending' flag as the sessiond
 			 * will not read it.
 			 */
 			break;
 		}
 
-		/* Send back the command's payload (pending reply). */
+		/* Send back returned value to session daemon */
 		ret = lttcomm_send_unix_sock(sock, &pending_reply,
 				sizeof(pending_reply));
 		if (ret < 0) {
-			PERROR("send data pending ret code");
+			PERROR("Failed to send rotation pending return code");
+			goto error_fatal;
+		}
+		break;
+	}
+	case LTTNG_CONSUMER_CHECK_ROTATION_PENDING_RELAY:
+	{
+		int pending;
+		uint32_t pending_reply;
+
+		DBG("Perform relayd check of pending rotation for session id %" PRIu64,
+				msg.u.check_rotation_pending_relay.session_id);
+		pending = lttng_consumer_check_rotation_pending_relay(
+				msg.u.check_rotation_pending_relay.session_id,
+				msg.u.check_rotation_pending_relay.relayd_id,
+				msg.u.check_rotation_pending_relay.chunk_id);
+		if (pending < 0) {
+			ERR("Relayd rotation pending check failed with code %i", pending);
+			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
+		} else {
+			pending_reply = !!pending;
+		}
+
+		health_code_update();
+
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+
+		if (pending < 0) {
+			/*
+			 * An error occured while running the command;
+			 * don't send the 'pending' flag as the sessiond
+			 * will not read it.
+			 */
+			break;
+		}
+
+		/* Send back returned value to session daemon */
+		ret = lttcomm_send_unix_sock(sock, &pending_reply,
+				sizeof(pending_reply));
+		if (ret < 0) {
+			PERROR("Failed to send rotation pending return code");
 			goto error_fatal;
 		}
 		break;

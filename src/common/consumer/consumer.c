@@ -4349,13 +4349,18 @@ int lttng_consumer_rotate_rename(const char *old_path, const char *new_path,
 	}
 }
 
-int lttng_consumer_rotate_pending(uint64_t session_id,
+int lttng_consumer_check_rotation_pending_local(uint64_t session_id,
+		uint64_t chunk_id)
+{
+	return -1;
+}
+
+int lttng_consumer_check_rotation_pending_relay(uint64_t session_id,
 		uint64_t relayd_id, uint64_t chunk_id)
 {
 	int ret;
 	struct consumer_relayd_sock_pair *relayd;
 
-	/* TODO Perform local check. */
 	relayd = consumer_find_relayd(relayd_id);
 	if (!relayd) {
 		ERR("Failed to find relayd");

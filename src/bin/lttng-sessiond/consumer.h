@@ -317,13 +317,16 @@ int consumer_snapshot_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, const char *session_path, int wait,
 		uint64_t nb_packets_per_stream, uint64_t trace_archive_id);
 
+/* Rotation commands. */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
 		char *domain_path, bool is_metadata_channel, uint64_t new_chunk_id);
 int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
 		const struct consumer_output *output, const char *old_path,
 		const char *new_path, uid_t uid, gid_t gid);
-int consumer_rotation_pending(struct consumer_socket *socket,
+int consumer_check_rotation_pending_local(struct consumer_socket *socket,
+		uint64_t session_id, uint64_t chunk_id);
+int consumer_check_rotation_pending_relay(struct consumer_socket *socket,
 		const struct consumer_output *output, uint64_t session_id,
 		uint64_t chunk_id);
 int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
