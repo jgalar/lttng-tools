@@ -86,6 +86,22 @@ int consumer_quit;
 static struct lttng_ht *metadata_ht;
 static struct lttng_ht *data_ht;
 
+const char *lttng_consumer_type_str(enum lttng_consumer_type type)
+{
+	switch (type) {
+	case LTTNG_CONSUMER_UNKNOWN:
+		return "unknown";
+	case LTTNG_CONSUMER_KERNEL:
+		return "kernel";
+	case LTTNG_CONSUMER32_UST:
+		return "32-bit user space";
+	case LTTNG_CONSUMER64_UST:
+		return "64-bit user space";
+	default:
+		abort();
+	}
+}
+
 /*
  * Notify a thread lttng pipe to poll back again. This usually means that some
  * global state has changed so we just send back the thread in a poll wait

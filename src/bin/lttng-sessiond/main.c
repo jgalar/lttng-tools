@@ -3338,7 +3338,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int sock,
 			}
 
 			/*
-			 * Setup socket for consumer 64 bit. No need for atomic access
+			 * Setup socket for consumer 32 bit. No need for atomic access
 			 * since it was set above and can ONLY be set in this thread.
 			 */
 			ret = consumer_create_socket(&ustconsumer32_data,
@@ -6016,11 +6016,11 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * The rotation_timer_queue structure is shared between the sessiond timer
-	 * thread and the rotation thread. The main() keeps the ownership and
-	 * destroys it when both threads have quit.
+	 * The rotation_thread_timer_queue structure is shared between the
+	 * sessiond timer thread and the rotation thread. The main thread keeps
+	 * its ownership and destroys it when both threads have been joined.
 	 */
-	rotation_timer_queue = create_rotate_timer_queue();
+	rotation_timer_queue = rotation_thread_timer_queue_create();
 	if (!rotation_timer_queue) {
 		retval = -1;
 		goto exit_init_data;
@@ -6501,7 +6501,7 @@ exit_init_data:
 	 * After the rotation and timer thread have quit, we can safely destroy
 	 * the rotation_timer_queue.
 	 */
-	destroy_rotate_timer_queue(rotation_timer_queue);
+	rotation_thread_timer_queue_destroy(rotation_timer_queue);
 
 	rcu_thread_offline();
 	rcu_unregister_thread();

@@ -41,6 +41,10 @@ enum rotation_thread_job_type {
 struct rotation_thread_timer_queue;
 struct rotation_thread_handle;
 
+struct rotation_thread_timer_queue *rotation_thread_timer_queue_create(void);
+void rotation_thread_timer_queue_destroy(
+		struct rotation_thread_timer_queue *queue);
+
 struct rotation_thread_handle *rotation_thread_handle_create(
 		int thread_quit_pipe,
 		struct rotation_thread_timer_queue *rotation_timer_queue,

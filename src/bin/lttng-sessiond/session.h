@@ -136,10 +136,17 @@ struct ltt_session {
 	 */
 	uint64_t current_archive_id;
 	/*
-	 * Rotation is pending between the time it starts until the consumer has
-	 * finished extracting the data.
+	 * Rotation is considered pending between the time it is launched up
+	 * until the moment when the data has been writen at the destination
+	 * and the trace archive has been renamed.
+	 *
+	 * When tracing locally, only 'rotation_pending_local' is used since
+	 * no remote checks are needed. However, when tracing to a relay daemon,
+	 * a second check is needed to ensure that the data has been
+	 * commited at the remote destination.
 	 */
-	bool rotation_pending;
+	bool rotation_pending_local;
+	bool rotation_pending_relay;
 	/* Current state of a rotation. */
 	enum lttng_rotation_state rotation_state;
 	struct {

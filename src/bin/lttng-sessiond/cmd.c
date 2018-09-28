@@ -2797,7 +2797,8 @@ int cmd_stop_trace(struct ltt_session *session)
 		}
 	}
 
-	if (session->current_archive_id > 0 && !session->rotation_pending) {
+	if (session->current_archive_id > 0 &&
+			session->rotation_state != LTTNG_ROTATION_STATE_ONGOING) {
 		ret = rename_active_chunk(session);
 		if (ret) {
 			/*
@@ -3579,7 +3580,7 @@ int cmd_data_pending(struct ltt_session *session)
 	}
 
 	/* A rotation is still pending, we have to wait. */
-	if (session->rotation_pending) {
+	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
 		DBG("Rotate still pending for session %s", session->name);
 		ret = 1;
 		goto error;
@@ -4598,9 +4599,10 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto end;
 	}
 
-	if (session->rotation_pending) {
+	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
 		ret = -LTTNG_ERR_ROTATION_PENDING;
-		DBG("Rotate already in progress");
+		DBG("Refusing to launch a rotation; a rotation is already in progress for session %s",
+				session->name);
 		goto end;
 	}
 
@@ -4657,7 +4659,13 @@ int cmd_rotate_session(struct ltt_session *session,
 	 * archive id.
 	 */
 	session->current_archive_id++;
-	session->rotation_pending = true;
+	/*
+	 * A rotation has a local step even if the destination is a relay
+	 * daemon; the buffers must be consumed by the consumer daemon.
+	 */
+	session->rotation_pending_local = true;
+	session->rotation_pending_relay =
+		session_get_consumer_destination_type(session) == CONSUMER_DST_NET;
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
 	ret = notification_thread_command_session_rotation_ongoing(
 			notification_thread_handle,
@@ -4781,7 +4789,8 @@ int cmd_rotate_session(struct ltt_session *session,
 		if (!session->kernel_session && !ust_active) {
 			struct lttng_trace_archive_location *location;
 
-			session->rotation_pending = false;
+			session->rotation_pending_local = false;
+			session->rotation_pending_relay = false;
 			session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
 			ret = rename_completed_chunk(session, now);
 			if (ret < 0) {

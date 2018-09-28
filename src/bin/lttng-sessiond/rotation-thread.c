@@ -79,6 +79,86 @@ struct rotation_thread_handle {
 	sem_t *notification_thread_ready;
 };
 
+static
+const char *get_job_type_str(enum rotation_thread_job_type job_type)
+{
+	switch (job_type) {
+	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
+		return "CHECK_PENDING_ROTATION";
+	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
+		return "SCHEDULED_ROTATION";
+	default:
+		abort();
+	}
+}
+
+struct rotation_thread_timer_queue *rotation_thread_timer_queue_create(void)
+{
+	struct rotation_thread_timer_queue *queue = NULL;
+
+	queue = zmalloc(sizeof(*queue));
+	if (!queue) {
+		PERROR("Failed to allocate timer rotate queue");
+		goto end;
+	}
+
+	queue->event_pipe = lttng_pipe_open(FD_CLOEXEC | O_NONBLOCK);
+	CDS_INIT_LIST_HEAD(&queue->list);
+	pthread_mutex_init(&queue->lock, NULL);
+end:
+	return queue;
+}
+
+void log_job_destruction(const struct rotation_thread_job *job)
+{
+	enum lttng_error_level log_level;
+	const char *job_type_str = get_job_type_str(job->type);
+
+	switch (job->type) {
+	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
+		/*
+		 * Not a problem, the scheduled rotation is racing with the teardown
+		 * of the daemon. In this case, the rotation will not happen, which
+		 * is not a problem (or at least, not important enough to delay
+		 * the shutdown of the session daemon).
+		 */
+		log_level = PRINT_DBG;
+		break;
+	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
+		/* This is not expected to happen; warn the user. */
+		log_level = PRINT_WARN;
+		break;
+	default:
+		abort();
+	}
+
+	LOG(log_level, "Rotation thread timer queue still contains job of type %s targeting session %" PRIu64 " on destruction",
+			job_type_str, job->session_id);
+}
+
+void rotation_thread_timer_queue_destroy(
+		struct rotation_thread_timer_queue *queue)
+{
+	struct rotation_thread_job *job, *tmp_job;
+
+	if (!queue) {
+		return;
+	}
+
+	lttng_pipe_destroy(queue->event_pipe);
+
+	pthread_mutex_lock(&queue->lock);
+	/* Empty wait queue. */
+	cds_list_for_each_entry_safe(job, tmp_job, &queue->list, head) {
+		log_job_destruction(job);
+		cds_list_del(&job->head);
+		free(job);
+	}
+	pthread_mutex_unlock(&queue->lock);
+	pthread_mutex_destroy(&queue->lock);
+	free(queue);
+}
+
 /*
  * Destroy the thread data previously created by the init function.
  */
@@ -118,17 +198,17 @@ static
 bool timer_job_exists(const struct rotation_thread_timer_queue *queue,
 		enum rotation_thread_job_type job_type, uint64_t session_id)
 {
-	bool found = false;
+	bool exists = false;
 	struct rotation_thread_job *job;
 
 	cds_list_for_each_entry(job, &queue->list, head) {
 		if (job->session_id == session_id && job->type == job_type) {
-			found = true;
+			exists = true;
 			goto end;
 		}
 	}
 end:
-	return found;
+	return exists;
 }
 
 void rotation_thread_enqueue_job(struct rotation_thread_timer_queue *queue,
@@ -136,19 +216,8 @@ void rotation_thread_enqueue_job(struct rotation_thread_timer_queue *queue,
 {
 	int ret;
 	const char * const dummy = "!";
-	const char *job_type_str;
 	struct rotation_thread_job *job = NULL;
-
-	switch (job_type) {
-	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
-		job_type_str = "CHECK_PENDING_ROTATION";
-		break;
-	case ROTATION_THREAD_JOB_TYPE_SCHEDULED_ROTATION:
-		job_type_str = "SCHEDULED_ROTATION";
-		break;
-	default:
-		abort();
-	}
+	const char *job_type_str = get_job_type_str(job_type);
 
 	pthread_mutex_lock(&queue->lock);
 	if (timer_job_exists(queue, session_id, job_type)) {
@@ -401,6 +470,130 @@ end:
 }
 */
 
+static
+int check_session_rotation_pending_local(struct ltt_session *session)
+{
+	int ret;
+	struct consumer_socket *socket;
+	struct cds_lfht_iter iter;
+	bool rotation_completed = true;
+
+	/*
+	 * Check for a local pending rotation on all consumers (32-bit
+	 * user space, 64-bit user space, and kernel).
+	 */
+	DBG("[rotation-thread] Checking for pending local rotation on session \"%s\", trace archive %" PRIu64,
+			session->name, session->current_archive_id - 1);
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(session->consumer->socks->ht, &iter,
+				socket, node.node) {
+		pthread_mutex_lock(socket->lock);
+		DBG("[rotation-thread] Checking for locally pending rotation on the %s consumer for session %s",
+				lttng_consumer_type_str(socket->type),
+				session->name);
+		ret = consumer_check_rotation_pending_local(socket,
+				session->id,
+				session->current_archive_id - 1);
+		pthread_mutex_unlock(socket->lock);
+
+		if (ret == 0) {
+			/* Rotation was completed on this consumer. */
+			DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" was completed on the %s consumer",
+					session->current_archive_id - 1,
+					session->name,
+					lttng_consumer_type_str(socket->type));
+		} else if (ret == 1) {
+			/* Rotation pending on this consumer. */
+			DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the %s consumer",
+					session->current_archive_id - 1,
+					session->name,
+					lttng_consumer_type_str(socket->type));
+			rotation_completed = false;
+		} else {
+			/* Not a fatal error. */
+			ERR("[rotation-thread] Encountered an error when checking if local rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the %s consumer",
+					session->current_archive_id - 1,
+					session->name,
+					lttng_consumer_type_str(socket->type));
+			session->rotation_state = LTTNG_ROTATION_STATE_ERROR;
+			rotation_completed = false;
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	if (rotation_completed) {
+		DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" is complete on all consumers",
+				session->current_archive_id - 1,
+				session->name);
+		session->rotation_pending_local = false;
+	}
+	return 0;
+}
+
+static
+int check_session_rotation_pending_relay(struct ltt_session *session)
+{
+	int ret;
+	struct consumer_socket *socket;
+	struct cds_lfht_iter iter;
+	bool rotation_completed = true;
+
+	/*
+	 * Check for a pending rotation on any consumer as we only use
+	 * it as a "tunnel" to the relayd.
+	 */
+
+	rcu_read_lock();
+	cds_lfht_first(session->consumer->socks->ht, &iter);
+	assert(cds_lfht_iter_get_node(&iter));
+
+	socket = caa_container_of(cds_lfht_iter_get_node(&iter),
+			typeof(*socket), node.node);
+
+	pthread_mutex_lock(socket->lock);
+	DBG("[rotation-thread] Checking for pending relay rotation on session \"%s\", trace archive %" PRIu64 " through the %s consumer",
+			session->name, session->current_archive_id - 1,
+			lttng_consumer_type_str(socket->type));
+
+	ret = consumer_check_rotation_pending_relay(socket,
+			session->consumer,
+			session->id,
+			session->current_archive_id - 1);
+	pthread_mutex_unlock(socket->lock);
+
+	if (ret == 0) {
+		/* Rotation was completed on the relay. */
+		DBG("[rotation-thread] Relay rotation of trace archive %" PRIu64 " of session \"%s\" was completed",
+				session->current_archive_id - 1,
+				session->name);
+	} else if (ret == 1) {
+		/* Rotation pending on relay. */
+		DBG("[rotation-thread] Relay rotation of trace archive %" PRIu64 " of session \"%s\" is pending",
+				session->current_archive_id - 1,
+				session->name);
+		rotation_completed = false;
+	} else {
+		/* Not a fatal error. */
+		ERR("[rotation-thread] Encountered an error when checking if rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the relay",
+				session->current_archive_id - 1,
+				session->name);
+		session->rotation_state = LTTNG_ROTATION_STATE_ERROR;
+		rotation_completed = false;
+	}
+
+	rcu_read_unlock();
+
+	if (rotation_completed) {
+		DBG("[rotation-thread] Totation of trace archive %" PRIu64 " of session \"%s\" is complete on the relay",
+				session->current_archive_id - 1,
+				session->name);
+		session->rotation_pending_relay = false;
+	}
+	return 0;
+}
+
 /*
  * Check if the last rotation was completed, called with session lock held.
  */
@@ -409,45 +602,73 @@ int check_session_rotation_pending(struct ltt_session *session,
 		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
+	struct lttng_trace_archive_location *location;
 
-	DBG("[rotation-thread] Checking for rotation pending on session \"%s\"",
+	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
+			session->name, session->current_archive_id - 1);
+
+	if (session->rotation_pending_local) {
+		/* Updates session->rotation_pending_local as needed. */
+		ret = check_session_rotation_pending_local(session);
+		if (ret) {
+			goto end;
+		}
+
+		/*
+		 * No need to check for a pending rotation on the relay
+		 * since the rotation is not even completed locally yet.
+		 */
+		if (session->rotation_pending_local) {
+			goto end;
+		}
+	}
+
+	if (session->rotation_pending_relay) {
+		/* Updates session->rotation_pending_relay as needed. */
+		ret = check_session_rotation_pending_relay(session);
+		if (ret) {
+			goto end;
+		}
+
+		if (session->rotation_pending_relay) {
+			goto end;
+		}
+	}
+
+	DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " completed for "
+			"session %s", session->current_archive_id - 1,
 			session->name);
 
-	ret = consumer_rotation_pending(session->id, session->current_archive_id - 1);
-	if (ret < 0) {
-		ERR("[rotation-thread] ");
-		goto end;
+	/* Rename the completed trace archive's location. */
+
+	/*
+	 * Now we can clear the "ONGOING" state in the session. New
+	 * rotations can start now.
+	 */
+	session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
+
+	/* Ownership of location is transferred. */
+	location = session_get_trace_archive_location(session);
+	ret = notification_thread_command_session_rotation_completed(
+			notification_thread_handle,
+			session->name,
+			session->uid,
+			session->gid,
+			session->current_archive_id,
+			location);
+	if (ret != LTTNG_OK) {
+		ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
+				session->name);
 	}
-	if (ret == 0) {
-		struct lttng_trace_archive_location *location;
 
-		DBG("[rotation-thread] Rotation completed for "
-				"session %s", session->name);
-		/*
-		 * Now we can clear the pending flag in the session. New
-		 * rotations can start now.
-		 */
-		session->rotate_pending = false;
-		session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
 
-		/* Ownership of location is transferred. */
-		location = session_get_trace_archive_location(session);
-		ret = notification_thread_command_session_rotation_completed(
-				notification_thread_handle,
-				session->name,
-				session->uid,
-				session->gid,
-				session->current_archive_id,
-				location);
-		if (ret != LTTNG_OK) {
-			ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
-					session->name);
-		}
-	} else if (ret == 1) {
-		DBG("[rotation-thread] Rotation still pending on the relay for "
-				"session %" PRIu64, session->id);
-		ret = sessiond_timer_rotate_pending_start(session,
-				DEFAULT_ROTATE_PENDING_RELAY_TIMER);
+	ret = 0;
+end:
+	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
+		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " is still pending for session %s",
+				session->current_archive_id - 1, session->name);
+		ret = timer_session_rotation_pending_check_start(session,
+				DEFAULT_ROTATE_PENDING_TIMER);
 		if (ret) {
 			ERR("Re-enabling rotate pending timer");
 			ret = -1;
@@ -455,9 +676,6 @@ int check_session_rotation_pending(struct ltt_session *session,
 		}
 	}
 
-	ret = 0;
-
-end:
 	return ret;
 }
 
@@ -778,6 +996,7 @@ void *thread_rotation(void *data)
 
 			if (fd == handle->quit_pipe) {
 				DBG("[rotation-thread] Quit pipe activity");
+				/* TODO flush the queue. */
 				goto exit;
 			} else if (fd == lttng_pipe_get_readfd(handle->rotation_timer_queue->event_pipe)) {
 				ret = handle_job_queue(handle, &state,

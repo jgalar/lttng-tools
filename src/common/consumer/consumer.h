@@ -670,6 +670,9 @@ extern int consumer_quit;
 /* Flag used to temporarily pause data consumption from testpoints. */
 extern int data_consumption_paused;
 
+/* Return a human-readable consumer type string that is suitable for logging. */
+const char *lttng_consumer_type_str(enum lttng_consumer_type type);
+
 /*
  * Init consumer data structures.
  */

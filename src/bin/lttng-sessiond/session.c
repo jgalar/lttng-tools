@@ -520,7 +520,8 @@ int session_create(char *name, uid_t uid, gid_t gid)
 		goto error;
 	}
 
-	new_session->rotation_pending = false;
+	new_session->rotation_pending_local = false;
+	new_session->rotation_pending_relay = false;
 	new_session->rotation_state = LTTNG_ROTATION_STATE_NO_ROTATION;
 
 	new_session->rotation_pending_check_timer_enabled = false;
