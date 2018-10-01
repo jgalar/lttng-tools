@@ -4574,7 +4574,6 @@ int cmd_rotate_session(struct ltt_session *session,
 	struct tm *timeinfo;
 	char datetime[21];
 	time_t now;
-	bool ust_active = false;
 
 	assert(session);
 
@@ -4621,15 +4620,11 @@ int cmd_rotate_session(struct ltt_session *session,
 	if (session->current_archive_id == 0) {
 		const char *base_path = NULL;
 
+		assert(session->kernel_session || session->ust_session);
 		/* Either one of the two sessions is enough to get the root path. */
-		if (session->kernel_session) {
-			base_path = session_get_base_path(session);
-		} else if (session->ust_session) {
-			base_path = session_get_base_path(session);
-		} else {
-			assert(0);
-		}
+		base_path = session_get_base_path(session);
 		assert(base_path);
+
 		ret = lttng_strncpy(session->rotation_chunk.current_rotate_path,
 				base_path,
 				sizeof(session->rotation_chunk.current_rotate_path));
@@ -4670,15 +4665,13 @@ int cmd_rotate_session(struct ltt_session *session,
 	ret = notification_thread_command_session_rotation_ongoing(
 			notification_thread_handle,
 			session->name, session->uid, session->gid,
-			session->current_archive_id);
+			session->current_archive_id - 1);
 	if (ret != LTTNG_OK) {
 		ERR("Failed to notify notification thread that a session rotation is ongoing for session %s",
 				session->name);
 	}
 
-	/*
-	 * Create the path name for the next chunk.
-	 */
+	/* Create the path name for the next chunk. */
 	now = time(NULL);
 	if (now == (time_t) -1) {
 		ret = -LTTNG_ERR_ROTATION_NOT_AVAILABLE;
@@ -4776,42 +4769,16 @@ int cmd_rotate_session(struct ltt_session *session,
 			ret = -LTTNG_ERR_CREATE_DIR_FAIL;
 			goto end;
 		}
-		ret = ust_app_rotate_session(session, &ust_active);
+		ret = ust_app_rotate_session(session);
 		if (ret != LTTNG_OK) {
 			goto end;
 		}
-		/*
-		 * Handle the case where we did not start a rotation on any channel.
-		 * The consumer will never wake up the rotation thread to perform the
-		 * rename, so we have to do it here while we hold the session and
-		 * session_list locks.
-		 */
-		if (!session->kernel_session && !ust_active) {
-			struct lttng_trace_archive_location *location;
+	}
 
-			session->rotation_pending_local = false;
-			session->rotation_pending_relay = false;
-			session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
-			ret = rename_completed_chunk(session, now);
-			if (ret < 0) {
-				ERR("Failed to rename completed rotation chunk");
-				goto end;
-			}
-
-			/* Ownership of location is transferred. */
-			location = session_get_trace_archive_location(session);
-			ret = notification_thread_command_session_rotation_completed(
-					notification_thread_handle,
-					session->name,
-					session->uid,
-					session->gid,
-					session->current_archive_id,
-					location);
-			if (ret != LTTNG_OK) {
-				ERR("Failed to notify notification thread that rotation is complete for session %s",
-						session->name);
-			}
-		}
+	ret = timer_session_rotation_pending_check_start(session,
+			DEFAULT_ROTATE_PENDING_TIMER);
+	if (ret) {
+		goto end;
 	}
 
 	if (!session->active) {
@@ -4822,8 +4789,8 @@ int cmd_rotate_session(struct ltt_session *session,
 		rotate_return->rotation_id = session->current_archive_id;
 	}
 
-	DBG("Cmd rotate session %s, current_archive_id %" PRIu64 " sent",
-			session->name, session->current_archive_id);
+	DBG("Cmd rotate session %s, archive_id %" PRIu64 " sent",
+			session->name, session->current_archive_id - 1);
 	ret = LTTNG_OK;
 
 end:

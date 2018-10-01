@@ -348,127 +348,6 @@ int init_thread_state(struct rotation_thread_handle *handle,
 end:
 	return ret;
 }
-/*
-static
-int handle_channel_rotation_pipe(int fd, uint32_t revents,
-		struct rotation_thread_handle *handle,
-		struct rotation_thread *state)
-{
-	int ret = 0;
-	enum lttng_domain_type domain;
-	struct rotation_channel_info *channel_info;
-	struct ltt_session *session = NULL;
-	uint64_t key;
-
-	if (fd == handle->ust32_consumer ||
-			fd == handle->ust64_consumer) {
-		domain = LTTNG_DOMAIN_UST;
-	} else if (fd == handle->kernel_consumer) {
-		domain = LTTNG_DOMAIN_KERNEL;
-	} else {
-		ERR("[rotation-thread] Unknown channel rotation pipe fd %d",
-				fd);
-		abort();
-	}
-
-	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-		ret = lttng_poll_del(&state->events, fd);
-		if (ret) {
-			ERR("[rotation-thread] Failed to remove consumer "
-					"rotation pipe from poll set");
-		}
-		goto end;
-	}
-
-	do {
-		ret = read(fd, &key, sizeof(key));
-	} while (ret == -1 && errno == EINTR);
-	if (ret != sizeof(key)) {
-		ERR("[rotation-thread] Failed to read from pipe (fd = %i)",
-				fd);
-		ret = -1;
-		goto end;
-	}
-
-	DBG("[rotation-thread] Received notification for chan %" PRIu64
-			", domain %d", key, domain);
-
-	channel_info = lookup_channel_pending(key, domain);
-	if (!channel_info) {
-		ERR("[rotation-thread] Failed to find channel_info (key = %"
-				PRIu64 ")", key);
-		ret = -1;
-		goto end;
-	}
-	rcu_read_lock();
-	session_lock_list();
-	session = session_find_by_id(channel_info->session_id);
-	if (!session) {
-		DBG("[rotation-thread] Session %" PRIu64 " not found",
-				channel_info->session_id);
-		ret = 0;
-		goto end_unlock_session_list;
-	}
-
-	session_lock(session);
-	if (--session->nr_chan_rotate_pending == 0) {
-		time_t now = time(NULL);
-
-		if (now == (time_t) -1) {
-			session->rotation_state = LTTNG_ROTATION_STATE_ERROR;
-			ret = LTTNG_ERR_UNK;
-			goto end_unlock_session;
-		}
-
-		ret = rename_complete_chunk(session, now);
-		if (ret < 0) {
-			ERR("Failed to rename completed rotation chunk");
-			goto end_unlock_session;
-		}
-		session->rotate_pending = false;
-		session->last_chunk_start_ts = session->current_chunk_start_ts;
-		if (session->rotate_pending_relay) {
-			ret = sessiond_timer_rotate_pending_start(
-					session,
-					DEFAULT_ROTATE_PENDING_RELAY_TIMER);
-			if (ret) {
-				ERR("Failed to enable rotate pending timer");
-				ret = -1;
-				goto end_unlock_session;
-			}
-		} else {
-			struct lttng_trace_archive_location *location;
-
-			session->rotation_state = LTTNG_ROTATION_STATE_COMPLETED;
-			location = session_get_trace_archive_location(session);
-			ret = notification_thread_command_session_rotation_completed(
-					notification_thread_handle,
-					session->name,
-					session->uid,
-					session->gid,
-					session->current_archive_id,
-					location);
-			if (ret != LTTNG_OK) {
-				ERR("Failed to notify notification thread that rotation is complete for session %s",
-						session->name);
-			}
-
-		}
-		DBG("Rotation completed for session %s", session->name);
-	}
-
-	ret = 0;
-
-end_unlock_session:
-	channel_rotation_info_destroy(channel_info);
-	session_unlock(session);
-end_unlock_session_list:
-	session_unlock_list();
-	rcu_read_unlock();
-end:
-	return ret;
-}
-*/
 
 static
 int check_session_rotation_pending_local(struct ltt_session *session)
@@ -603,6 +482,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 {
 	int ret;
 	struct lttng_trace_archive_location *location;
+	time_t now;
 
 	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
 			session->name, session->current_archive_id - 1);
@@ -640,6 +520,19 @@ int check_session_rotation_pending(struct ltt_session *session,
 			session->name);
 
 	/* Rename the completed trace archive's location. */
+	now = time(NULL);
+	if (now == (time_t) -1) {
+		session->rotation_state = LTTNG_ROTATION_STATE_ERROR;
+		ret = LTTNG_ERR_UNK;
+		goto end;
+	}
+
+	ret = rename_completed_chunk(session, now);
+	if (ret < 0) {
+		ERR("Failed to rename completed rotation chunk");
+		goto end;
+	}
+	session->last_chunk_start_ts = session->current_chunk_start_ts;
 
 	/*
 	 * Now we can clear the "ONGOING" state in the session. New
@@ -660,7 +553,6 @@ int check_session_rotation_pending(struct ltt_session *session,
 		ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
 				session->name);
 	}
-
 
 	ret = 0;
 end:
@@ -683,6 +575,7 @@ end:
 static
 int launch_session_rotation(struct ltt_session *session)
 {
+	int ret;
 	struct lttng_rotate_session_return rotation_return;
 
 	DBG("[rotation-thread] Launching scheduled time-based rotation on session \"%s\"",
@@ -701,7 +594,8 @@ int launch_session_rotation(struct ltt_session *session)
 }
 
 static
-int run_job(struct rotation_thread_job *job, struct ltt_session *session)
+int run_job(struct rotation_thread_job *job, struct ltt_session *session,
+		struct notification_thread_handle *notification_thread_handle)
 {
 	int ret;
 
@@ -710,7 +604,8 @@ int run_job(struct rotation_thread_job *job, struct ltt_session *session)
 	        ret = launch_session_rotation(session);
 		break;
 	case ROTATION_THREAD_JOB_TYPE_CHECK_PENDING_ROTATION:
-		ret = check_session_rotation_pending(session);
+		ret = check_session_rotation_pending(session,
+				notification_thread_handle);
 		break;
 	default:
 		abort();
@@ -727,11 +622,6 @@ int handle_job_queue(struct rotation_thread_handle *handle,
 	int fd = lttng_pipe_get_readfd(queue->event_pipe);
 	struct ltt_session *session;
 	char buf;
-
-	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
-		ERR("[rotation-thread] Error reported on timer queue pipe");
-		goto end;
-	}
 
 	ret = lttng_read(fd, &buf, 1);
 	if (ret != 1) {
@@ -758,7 +648,7 @@ int handle_job_queue(struct rotation_thread_handle *handle,
 		session = session_find_by_id(job->session_id);
 		if (!session) {
 			DBG("[rotation-thread] Session %" PRIu64 " not found",
-					timer_data->session_id);
+					job->session_id);
 			/*
 			 * This is a non-fatal error, and we cannot report it to
 			 * the user (timer), so just print the error and
@@ -777,19 +667,10 @@ int handle_job_queue(struct rotation_thread_handle *handle,
 		session_lock(session);
 		session_unlock_list();
 
-	        ret = run_job(job);
-		if (timer_data->signal == LTTNG_SESSIOND_SIG_ROTATE_PENDING) {
-			ret = rotate_pending_relay_timer(session);
-		} else if (timer_data->signal == LTTNG_SESSIOND_SIG_ROTATE_TIMER) {
-			ret = rotate_timer(session);
-		} else {
-			ERR("Unknown signal in rotate timer %d", timer_data->signal);
-			ret = -1;
-		}
+	        ret = run_job(job, session, handle->notification_thread_handle);
 		session_unlock(session);
-		free(timer_data);
+		free(job);
 		if (ret) {
-			ERR("Error processing timer");
 			goto end;
 		}
 	}
@@ -880,7 +761,7 @@ end:
 }
 
 static
-int handle_notification_channel(int fd, uint32_t revents,
+int handle_notification_channel(int fd,
 		struct rotation_thread_handle *handle,
 		struct rotation_thread *state)
 {
@@ -954,7 +835,7 @@ void *thread_rotation(void *data)
 	health_register(health_sessiond, HEALTH_SESSIOND_TYPE_ROTATION);
 	health_code_update();
 
-	ret = init_thread_state(handle, &state);
+	ret = init_thread_state(handle, &thread);
 	if (ret) {
 		goto end;
 	}
@@ -967,7 +848,7 @@ void *thread_rotation(void *data)
 
 		health_poll_entry();
 		DBG("[rotation-thread] Entering poll wait");
-		ret = lttng_poll_wait(&state.events, -1);
+		ret = lttng_poll_wait(&thread.events, -1);
 		DBG("[rotation-thread] Poll wait returned (%i)", ret);
 		health_poll_exit();
 		if (ret < 0) {
@@ -983,8 +864,8 @@ void *thread_rotation(void *data)
 
 		fd_count = ret;
 		for (i = 0; i < fd_count; i++) {
-			int fd = LTTNG_POLL_GETFD(&state.events, i);
-			uint32_t revents = LTTNG_POLL_GETEV(&state.events, i);
+			int fd = LTTNG_POLL_GETFD(&thread.events, i);
+			uint32_t revents = LTTNG_POLL_GETEV(&thread.events, i);
 
 			DBG("[rotation-thread] Handling fd (%i) activity (%u)",
 					fd, revents);
@@ -999,7 +880,7 @@ void *thread_rotation(void *data)
 				/* TODO flush the queue. */
 				goto exit;
 			} else if (fd == lttng_pipe_get_readfd(handle->rotation_timer_queue->event_pipe)) {
-				ret = handle_job_queue(handle, &state,
+				ret = handle_job_queue(handle, &thread,
 						handle->rotation_timer_queue);
 				if (ret) {
 					ERR("[rotation-thread] Failed to handle rotation timer pipe event");
@@ -1007,7 +888,7 @@ void *thread_rotation(void *data)
 				}
 			} else if (fd == rotate_notification_channel->socket) {
 				ret = handle_notification_channel(fd, handle,
-						&state);
+						&thread);
 				if (ret) {
 					ERR("[rotation-thread] Error occured while handling activity on notification channel socket");
 					goto error;
@@ -1018,7 +899,7 @@ void *thread_rotation(void *data)
 exit:
 error:
 	DBG("[rotation-thread] Exit");
-	fini_thread_state(&state);
+	fini_thread_state(&thread);
 	health_unregister(health_sessiond);
 end:
 	return NULL;

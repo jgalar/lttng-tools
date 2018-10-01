@@ -5842,7 +5842,7 @@ int main(int argc, char **argv)
 		goto exit_set_signal_handler;
 	}
 
-	if (sessiond_timer_signal_init()) {
+	if (timer_signal_init()) {
 		retval = -1;
 		goto exit_set_signal_handler;
 	}
@@ -6025,7 +6025,7 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto exit_init_data;
 	}
-	timer_thread_ctx.rotation_timer_queue = rotation_timer_queue;
+	timer_thread_ctx.rotation_thread_job_queue = rotation_timer_queue;
 
 	ust64_channel_monitor_pipe = lttng_pipe_open(0);
 	if (!ust64_channel_monitor_pipe) {
@@ -6223,7 +6223,7 @@ int main(int argc, char **argv)
 
 	/* Create timer thread. */
 	ret = pthread_create(&timer_thread, default_pthread_attr(),
-			sessiond_timer_thread, &timer_thread_ctx);
+			timer_thread_func, &timer_thread_ctx);
 	if (ret) {
 		errno = ret;
 		PERROR("pthread_create timer");
@@ -6488,7 +6488,7 @@ exit_init_data:
 	}
 
 	if (timer_thread_launched) {
-		kill(getpid(), LTTNG_SESSIOND_SIG_EXIT);
+		timer_exit();
 		ret = pthread_join(timer_thread, &status);
 		if (ret) {
 			errno = ret;

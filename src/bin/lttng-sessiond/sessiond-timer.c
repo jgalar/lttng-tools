@@ -322,7 +322,7 @@ int timer_signal_init(void)
 /*
  * This thread is the sighandler for the timer signals.
  */
-void *sessiond_timer_thread(void *data)
+void *timer_thread_func(void *data)
 {
 	int signr;
 	sigset_t mask;
@@ -381,4 +381,9 @@ end:
 	rcu_thread_offline();
 	rcu_unregister_thread();
 	return NULL;
+}
+
+void timer_exit(void)
+{
+	kill(getpid(), LTTNG_SESSIOND_SIG_EXIT);
 }

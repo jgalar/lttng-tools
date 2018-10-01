@@ -28,7 +28,9 @@ struct timer_thread_parameters {
 };
 
 int timer_signal_init(void);
-void *timer_thread(void *data);
+void *timer_thread_func(void *data);
+
+void timer_exit(void);
 
 /* Start a session's rotation pending check timer (one-shot mode). */
 int timer_session_rotation_pending_check_start(struct ltt_session *session,

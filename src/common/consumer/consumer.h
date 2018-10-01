@@ -671,7 +671,22 @@ extern int consumer_quit;
 extern int data_consumption_paused;
 
 /* Return a human-readable consumer type string that is suitable for logging. */
-const char *lttng_consumer_type_str(enum lttng_consumer_type type);
+static inline
+const char *lttng_consumer_type_str(enum lttng_consumer_type type)
+{
+	switch (type) {
+	case LTTNG_CONSUMER_UNKNOWN:
+		return "unknown";
+	case LTTNG_CONSUMER_KERNEL:
+		return "kernel";
+	case LTTNG_CONSUMER32_UST:
+		return "32-bit user space";
+	case LTTNG_CONSUMER64_UST:
+		return "64-bit user space";
+	default:
+		abort();
+	}
+}
 
 /*
  * Init consumer data structures.
