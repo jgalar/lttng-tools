@@ -371,7 +371,8 @@ int check_session_rotation_pending_local_on_consumer(
 				session->current_archive_id - 1,
 				session->name,
 				lttng_consumer_type_str(socket->type));
-		*rotation_completed = true;
+		//*rotation_completed = true;
+		*rotation_completed = false;
 	} else if (ret == 1) {
 		/* Rotation pending on this consumer. */
 		DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the %s consumer",
