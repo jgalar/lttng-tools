@@ -27,6 +27,7 @@
 #include "health-sessiond.h"
 #include "testpoint.h"
 #include "utils.h"
+#include "thread.h"
 
 int ht_cleanup_quit_pipe[2] = { -1, -1 };
 
@@ -89,6 +90,12 @@ static int set_pollset(struct lttng_poll_event *events, size_t size)
 
 error:
 	return ret;
+}
+
+static void cleanup_ht_cleanup_thread(void *data)
+{
+	utils_close_pipe(ht_cleanup_quit_pipe);
+	utils_close_pipe(ht_cleanup_pipe);
 }
 
 static void *thread_ht_cleanup(void *data)
@@ -222,42 +229,11 @@ error_testpoint:
 	health_unregister(health_sessiond);
 	rcu_thread_offline();
 	rcu_unregister_thread();
+	cleanup_ht_cleanup_thread(NULL);
 	return NULL;
 }
 
-int init_ht_cleanup_thread(pthread_t *thread)
-{
-	int ret;
-
-	ret = init_pipe(ht_cleanup_pipe);
-	if (ret) {
-		goto error;
-	}
-
-	ret = init_pipe(ht_cleanup_quit_pipe);
-	if (ret) {
-		goto error_quit_pipe;
-	}
-
-	ret = pthread_create(thread, default_pthread_attr(), thread_ht_cleanup,
-			NULL);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_create ht_cleanup");
-		goto error_thread;
-	}
-
-error:
-	return ret;
-
-error_thread:
-	utils_close_pipe(ht_cleanup_quit_pipe);
-error_quit_pipe:
-	utils_close_pipe(ht_cleanup_pipe);
-	return ret;
-}
-
-int fini_ht_cleanup_thread(pthread_t *thread)
+static bool shutdown_ht_cleanup_thread(void *data)
 {
 	int ret;
 
@@ -266,14 +242,37 @@ int fini_ht_cleanup_thread(pthread_t *thread)
 		ERR("write error on ht_cleanup quit pipe");
 		goto end;
 	}
-
-	ret = pthread_join(*thread, NULL);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_join ht cleanup thread");
-	}
-	utils_close_pipe(ht_cleanup_pipe);
-	utils_close_pipe(ht_cleanup_quit_pipe);
 end:
 	return ret;
+}
+
+bool launch_ht_cleanup_thread(void)
+{
+	int ret;
+	struct lttng_thread *thread;
+
+	ret = init_pipe(ht_cleanup_pipe);
+	if (ret) {
+		goto error;
+	}
+
+	ret = init_pipe(ht_cleanup_quit_pipe);
+	if (ret) {
+		goto error;
+	}
+
+	thread = lttng_thread_create("HT cleanup",
+			thread_ht_cleanup,
+			shutdown_ht_cleanup_thread,
+			cleanup_ht_cleanup_thread,
+			NULL);
+	if (!thread) {
+		ret = -1;
+		goto error;
+	}
+
+	return true;
+error:
+	cleanup_ht_cleanup_thread(NULL);
+	return false;
 }

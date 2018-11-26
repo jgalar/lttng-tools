@@ -20,7 +20,6 @@
 
 #include <pthread.h>
 
-int init_ht_cleanup_thread(pthread_t *thread);
-int fini_ht_cleanup_thread(pthread_t *thread);
+bool launch_ht_cleanup_thread(void);
 
 #endif /* _LTTNG_HT_CLEANUP_H */
