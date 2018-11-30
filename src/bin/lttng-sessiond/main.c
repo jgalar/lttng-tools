@@ -194,7 +194,6 @@ static pthread_t kernel_thread;
 static pthread_t dispatch_thread;
 static pthread_t agent_reg_thread;
 static pthread_t load_session_thread;
-static pthread_t timer_thread;
 
 /*
  * UST registration command queue. This queue is tied with a futex and uses a N
@@ -5492,8 +5491,7 @@ int main(int argc, char **argv)
 	struct lttng_pipe *ust32_channel_monitor_pipe = NULL,
 			*ust64_channel_monitor_pipe = NULL,
 			*kernel_channel_monitor_pipe = NULL;
-	bool timer_thread_launched = false;
-	struct timer_thread_parameters timer_thread_ctx;
+	struct timer_thread_parameters timer_thread_parameters;
 	/* Rotation thread handle. */
 	struct rotation_thread_handle *rotation_thread_handle = NULL;
 	/* Queue of rotation jobs populated by the sessiond-timer. */
@@ -5691,7 +5689,8 @@ int main(int argc, char **argv)
 		retval = -1;
 		goto exit_init_data;
 	}
-	timer_thread_ctx.rotation_thread_job_queue = rotation_timer_queue;
+	timer_thread_parameters.rotation_thread_job_queue =
+			rotation_timer_queue;
 
 	ust64_channel_monitor_pipe = lttng_pipe_open(0);
 	if (!ust64_channel_monitor_pipe) {
@@ -5860,20 +5859,13 @@ int main(int argc, char **argv)
 	if (!launch_notification_thread(notification_thread_handle)) {
 		retval = -1;
 		goto exit_notification;
-
 	}
 
 	/* Create timer thread. */
-	ret = pthread_create(&timer_thread, default_pthread_attr(),
-			timer_thread_func, &timer_thread_ctx);
-	if (ret) {
-		errno = ret;
-		PERROR("pthread_create timer");
+	if (!launch_timer_thread(&timer_thread_parameters)) {
 		retval = -1;
-		stop_threads();
 		goto exit_notification;
 	}
-	timer_thread_launched = true;
 
 	/* rotation_thread_data acquires the pipes' read side. */
 	rotation_thread_handle = rotation_thread_handle_create(
@@ -6085,16 +6077,6 @@ exit_init_data:
 	 * the queue is empty before shutting down the clean-up thread.
 	 */
 	rcu_barrier();
-
-	if (timer_thread_launched) {
-		timer_exit();
-		ret = pthread_join(timer_thread, &status);
-		if (ret) {
-			errno = ret;
-			PERROR("pthread_join timer thread");
-			retval = -1;
-		}
-	}
 
 	rcu_thread_offline();
 	rcu_unregister_thread();
