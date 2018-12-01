@@ -34,6 +34,7 @@
 struct thread_notifiers {
 	struct ust_cmd_queue *ust_cmd_queue;
 	int apps_cmd_pipe_write_fd;
+	int apps_cmd_notify_pipe_write_fd;
 	int dispatch_thread_exit;
 };
 
@@ -223,6 +224,11 @@ error:
 	return (int) ret;
 }
 
+static void cleanup_ust_dispatch_thread(void *data)
+{
+	free(data);
+}
+
 /*
  * Dispatch request from the registration threads to the application
  * communication thread.
@@ -390,7 +396,8 @@ static void *thread_dispatch_ust_registration(void *data)
 				(void) ust_app_version(app);
 
 				/* Send notify socket through the notify pipe. */
-				ret = send_socket_to_thread(apps_cmd_notify_pipe[1],
+				ret = send_socket_to_thread(
+						notifiers->apps_cmd_notify_pipe_write_fd,
 						app->notify_sock);
 				if (ret < 0) {
 					rcu_read_unlock();
@@ -484,7 +491,6 @@ error_testpoint:
 	}
 	health_unregister(health_sessiond);
 	rcu_unregister_thread();
-	free(notifiers);
 	return NULL;
 }
 
@@ -498,7 +504,8 @@ static bool shutdown_ust_dispatch_thread(void *data)
 }
 
 bool launch_ust_dispatch_thread(struct ust_cmd_queue *cmd_queue,
-		int apps_cmd_pipe_write_fd)
+		int apps_cmd_pipe_write_fd,
+		int apps_cmd_notify_pipe_write_fd)
 {
 	struct lttng_thread *thread;
 	struct thread_notifiers *notifiers;
@@ -509,10 +516,12 @@ bool launch_ust_dispatch_thread(struct ust_cmd_queue *cmd_queue,
 	}
 	notifiers->ust_cmd_queue = cmd_queue;
 	notifiers->apps_cmd_pipe_write_fd = apps_cmd_pipe_write_fd;
+	notifiers->apps_cmd_notify_pipe_write_fd = apps_cmd_notify_pipe_write_fd;
 
 	thread = lttng_thread_create("UST registration dispatch",
 			thread_dispatch_ust_registration,
 			shutdown_ust_dispatch_thread,
+			cleanup_ust_dispatch_thread,
 			notifiers);
 	if (!thread) {
 		goto error;
