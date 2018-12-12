@@ -36,6 +36,7 @@
 #include <common/index/ctf-index.h>
 #include <common/trace-chunk-registry.h>
 #include <common/credentials.h>
+#include <common/optional.h>
 
 /* Commands for consumer */
 enum lttng_consumer_command {
@@ -612,6 +613,7 @@ struct lttng_consumer_local_data {
 	 * to the session daemon (write-only).
 	 */
 	int channel_monitor_pipe;
+	LTTNG_OPTIONAL(lttng_uuid) sessiond_uuid;
 };
 
 /*
@@ -885,5 +887,8 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 		const uint64_t *relayd_id, uint64_t session_id,
 		uint64_t chunk_id);
 void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
+enum lttcomm_return_code lttng_consumer_init_command(
+		struct lttng_consumer_local_data *ctx,
+		const lttng_uuid sessiond_uuid);
 
 #endif /* LIB_CONSUMER_H */
