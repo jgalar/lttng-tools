@@ -72,6 +72,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_MKDIR,
 	LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
 	LTTNG_CONSUMER_RELEASE_TRACE_CHUNK,
+	LTTNG_CONSUMER_INIT,
 };
 
 /* State of each fd in consumer */
@@ -601,6 +602,10 @@ struct lttng_consumer_local_data {
 	 * to the session daemon (write-only).
 	 */
 	int channel_monitor_pipe;
+	struct {
+		bool is_set;
+		lttng_uuid value;
+	} sessiond_uuid;
 };
 
 /*
@@ -869,5 +874,8 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 enum lttcomm_return_code lttng_consumer_release_trace_chunk(
 		uint64_t session_id, uint64_t chunk_id);
 void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
+enum lttcomm_return_code lttng_consumer_init_command(
+		struct lttng_consumer_local_data *ctx,
+		const lttng_uuid sessiond_uuid);
 
 #endif /* LIB_CONSUMER_H */

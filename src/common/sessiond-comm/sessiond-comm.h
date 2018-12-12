@@ -664,6 +664,9 @@ struct lttcomm_consumer_msg {
 			uint64_t session_id;
 			uint64_t chunk_id;
 		} LTTNG_PACKED release_trace_chunk;
+		struct {
+			lttng_uuid sessiond_uuid;
+		} LTTNG_PACKED init;
 	} u;
 } LTTNG_PACKED;
 
