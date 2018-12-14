@@ -2111,6 +2111,29 @@ int consumer_close_trace_chunk(struct consumer_socket *socket,
 		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
 		goto error;
 	}
+error:
+	health_code_update();
+	return ret;
+}
+
+int consumer_init(struct consumer_socket *socket,
+		const lttng_uuid sessiond_uuid)
+{
+	int ret;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_INIT,
+	};
+
+	assert(socket);
+
+	DBG("Sending consumer initialization command");
+	lttng_uuid_copy(msg.u.init.sessiond_uuid, sessiond_uuid);
+
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		goto error;
+	}
 
 error:
 	health_code_update();
