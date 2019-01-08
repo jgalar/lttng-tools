@@ -3657,14 +3657,12 @@ int consumer_data_pending(uint64_t id)
 			}
 			if (ret == 1) {
 				pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-				pthread_mutex_unlock(&stream->lock);
 				goto data_pending;
 			}
 			if (ret < 0) {
 				ERR("Relayd data pending failed. Cleaning up relayd %" PRIu64".", relayd->id);
 				lttng_consumer_cleanup_relayd(relayd);
 				pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-				pthread_mutex_unlock(&stream->lock);
 				goto data_not_pending;
 			}
 		}
