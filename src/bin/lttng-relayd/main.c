@@ -2834,7 +2834,6 @@ static enum relay_connection_status relay_process_data_receive_payload(
 			&conn->protocol.data.state.receive_payload;
 	const size_t chunk_size = RECV_DATA_BUFFER_SIZE;
 	char data_buffer[chunk_size];
-	bool partial_recv = false;
 	bool new_stream = false, close_requested = false;
 	uint64_t left_to_receive = state->left_to_receive;
 	struct relay_session *session;
@@ -2875,7 +2874,7 @@ static enum relay_connection_status relay_process_data_receive_payload(
 	 *   - the data immediately available on the socket,
 	 *   - the on-stack data buffer
 	 */
-	while (left_to_receive > 0 && !partial_recv) {
+	if (left_to_receive > 0) {
 		ssize_t write_ret;
 		size_t recv_size = min(left_to_receive, chunk_size);
 
@@ -2892,13 +2891,7 @@ static enum relay_connection_status relay_process_data_receive_payload(
 			DBG3("No more data ready for consumption on data socket of stream id %" PRIu64,
 					state->header.stream_id);
 			status = RELAY_CONNECTION_STATUS_CLOSED;
-			break;
-		} else if (ret < (int) recv_size) {
-			/*
-			 * All the data available on the socket has been
-			 * consumed.
-			 */
-			partial_recv = true;
+			goto data_left_to_process;
 		}
 
 		recv_size = ret;
@@ -2919,6 +2912,8 @@ static enum relay_connection_status relay_process_data_receive_payload(
 		DBG2("Relay wrote %zd bytes to tracefile for stream id %" PRIu64,
 				write_ret, stream->stream_handle);
 	}
+
+data_left_to_process:
 
 	if (state->left_to_receive > 0) {
 		/*
