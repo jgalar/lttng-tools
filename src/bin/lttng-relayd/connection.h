@@ -138,6 +138,11 @@ struct relay_connection {
 			struct lttng_dynamic_buffer reception_buffer;
 		} ctrl;
 	} protocol;
+	/*
+	 * The activity phase for which the connection was last active.
+	 * This is used to ensure fairness across connections.
+	 */
+	uint64_t activity_phase;
 };
 
 struct relay_connection *connection_create(struct lttcomm_sock *sock,

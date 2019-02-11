@@ -122,6 +122,7 @@ struct relay_connection *connection_create(struct lttcomm_sock *sock,
 	if (conn->type == RELAY_CONTROL) {
 		lttng_dynamic_buffer_init(&conn->protocol.ctrl.reception_buffer);
 	}
+	conn->activity_phase = 0;
 	connection_reset_protocol_state(conn);
 end:
 	return conn;
