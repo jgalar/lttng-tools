@@ -638,6 +638,23 @@ struct lttcomm_consumer_msg {
 			uint32_t uid;
 			uint32_t gid;
 		} LTTNG_PACKED mkdir;
+		struct {
+			/* Relayd id, if applicable (remote). */
+			uint64_t relayd_id;
+			uint64_t session_id;
+			uint64_t chunk_id;
+			uint64_t creation_timestamp;
+			struct {
+				uint32_t uid;
+				uint32_t gid;
+			} credentials LTTNG_PACKED;
+			/*
+			 * Absolute session base output path.
+			 * Only set in the case of a local destination.
+			 * e.g. /home/user/lttng-traces/my_session
+			 */
+			char absolute_session_output_path[LTTNG_PATH_MAX];
+		} LTTNG_PACKED create_trace_chunk;
 	} u;
 } LTTNG_PACKED;
 

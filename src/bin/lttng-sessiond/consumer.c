@@ -1894,3 +1894,79 @@ error:
 	health_code_update();
 	return ret;
 }
+
+/*
+ * Ask the consumer to create a new chunk for a given session.
+ *
+ * Called with the consumer socket lock held.
+ */
+int consumer_create_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		const struct lttng_trace_chunk *chunk,
+		const char *session_output_directory_path)
+{
+	int ret;
+	enum lttng_trace_chunk_status status;
+	struct lttng_credentials chunk_credentials;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
+		.u.create_trace_chunk.relayd_id = relayd_id,
+		.u.create_trace_chunk.session_id = session_id,
+	};
+
+	assert(socket);
+	assert(chunk);
+
+	status = lttng_trace_chunk_get_credentials(chunk,
+			&chunk_credentials);
+	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * Not associating credentials to a sessiond chunk is a fatal
+		 * internal error.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.create_trace_chunk.credentials.uid = chunk_credentials.uid;
+	msg.u.create_trace_chunk.credentials.gid = chunk_credentials.gid;
+	status = lttng_trace_chunk_get_id(chunk,
+			&msg.u.create_trace_chunk.chunk_id);
+	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * The sessiond makes no use of anonymous chunks, this is
+		 * unexpected.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	ret = lttng_strncpy(
+			msg.u.create_trace_chunk.absolute_session_output_path,
+			session_output_directory_path,
+			sizeof(msg.u.create_trace_chunk.absolute_session_output_path));
+	if (ret) {
+		ERR("Failed to initialize \"create trace chunk\" consumer command message's session output path parameter");
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+
+	DBG("Sending consumer create trace chunk command: relayd_id = %" PRId64
+			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
+			", timestamp_begin = %" PRId64
+			", absolute_base_output_path = %s",
+			msg.u.create_trace_chunk.relayd_id,
+			msg.u.create_trace_chunk.session_id,
+			msg.u.create_trace_chunk.chunk_id,
+			msg.u.create_trace_chunk.creation_timestamp,
+			*msg.u.create_trace_chunk.absolute_session_output_path ?
+				msg.u.create_trace_chunk.absolute_session_output_path : "None");
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+error:
+	health_code_update();
+	return ret;
+}
