@@ -37,6 +37,7 @@
 #include <common/defaults.h>
 #include <common/compat/uuid.h>
 #include <common/macros.h>
+#include <common/optional.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -172,6 +173,8 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_ROTATION_PENDING_RELAY_FAILED, /* Rotation pending relay failed. */
 	LTTCOMM_CONSUMERD_MKDIR_FAILED,             /* mkdir has failed. */
 	LTTCOMM_CONSUMERD_SNAPSHOT_FAILED,          /* snapshot has failed. */
+	LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED,/* Trace chunk creation failed. */
+	LTTCOMM_CONSUMERD_INVALID_PARAMETERS,       /* Invalid parameters. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */
@@ -638,6 +641,28 @@ struct lttcomm_consumer_msg {
 			uint32_t uid;
 			uint32_t gid;
 		} LTTNG_PACKED mkdir;
+		struct {
+			/*
+			 * Relayd id, if applicable (remote).
+			 *
+			 * A directory file descriptor referring to the chunk's
+			 * output folder is transmitted if the chunk is local
+			 * (relayd_id == -1ULL) and not anonymous (check if chunk_id
+			 * is set).
+			 *
+			 * `override_name` is left NULL (all-zeroes) if the
+			 * chunk's name is not overriden.
+			 */
+			char override_name[LTTNG_NAME_MAX];
+			uint64_t relayd_id;
+			uint64_t session_id;
+			LTTNG_OPTIONAL(uint64_t) LTTNG_PACKED chunk_id;
+			LTTNG_OPTIONAL(uint64_t) LTTNG_PACKED creation_timestamp;
+			struct {
+				uint32_t uid;
+				uint32_t gid;
+			} LTTNG_PACKED credentials;
+		} LTTNG_PACKED create_trace_chunk;
 	} u;
 } LTTNG_PACKED;
 

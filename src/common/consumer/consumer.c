@@ -33,6 +33,7 @@
 #include <bin/lttng-consumerd/health-consumerd.h>
 #include <common/common.h>
 #include <common/utils.h>
+#include <common/time.h>
 #include <common/compat/poll.h>
 #include <common/compat/endian.h>
 #include <common/index/index.h>
@@ -48,6 +49,9 @@
 #include <common/consumer/consumer-testpoint.h>
 #include <common/align.h>
 #include <common/consumer/consumer-metadata-cache.h>
+#include <common/trace-chunk.h>
+#include <common/trace-chunk-registry.h>
+#include <common/string-utils/format.h>
 
 struct lttng_consumer_global_data consumer_data = {
 	.stream_count = 0,
@@ -388,6 +392,9 @@ void consumer_del_channel(struct lttng_consumer_channel *channel)
 		assert(0);
 		goto end;
 	}
+
+	lttng_trace_chunk_put(channel->trace_chunk);
+	channel->trace_chunk = NULL;
 
 	rcu_read_lock();
 	iter.iter.node = &channel->node.node;
@@ -4484,4 +4491,142 @@ int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,
 	} else {
 		return mkdir_local(path, uid, gid);
 	}
+}
+
+enum lttcomm_return_code lttng_consumer_create_trace_chunk(
+		const uint64_t *relayd_id, uint64_t session_id,
+		uint64_t chunk_id,
+		time_t chunk_creation_timestamp,
+		const char *chunk_override_name,
+		const struct lttng_credentials *credentials,
+		struct lttng_directory_handle *chunk_directory_handle)
+{
+	int ret;
+	enum lttcomm_return_code ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+	struct lttng_trace_chunk *created_chunk, *published_chunk;
+	enum lttng_trace_chunk_status chunk_status;
+	char relayd_id_buffer[MAX_INT_DEC_LEN(*relayd_id)];
+	char creation_timestamp_buffer[ISO8601_STR_LEN];
+	const char *relayd_id_str = "(none)";
+	const char *creation_timestamp_str = "(none)";
+	struct lttng_ht_iter iter;
+	struct lttng_consumer_channel *channel;
+
+	if (relayd_id) {
+		/* Only used for logging purposes. */
+		ret = snprintf(relayd_id_buffer, sizeof(relayd_id_buffer),
+				"%" PRIu64, *relayd_id);
+		if (ret > 0 && ret < sizeof(relayd_id_buffer)) {
+			relayd_id_str = relayd_id_buffer;
+		} else {
+			relayd_id_str = "(formatting error)";
+		}
+        }
+
+        /* Local protocol error. */
+	assert(chunk_creation_timestamp);
+	ret = time_to_iso8601_str(chunk_creation_timestamp,
+			creation_timestamp_buffer,
+			sizeof(creation_timestamp_buffer));
+	creation_timestamp_str = !ret ? creation_timestamp_buffer :
+			"(formatting error)";
+
+	DBG("Consumer create trace chunk command: relay_id = %s"
+			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
+			", chunk_override_name = %s"
+			", chunk_creation_timestamp = %s",
+			relayd_id_str, session_id, chunk_id,
+			chunk_override_name ? : "(none)",
+			creation_timestamp_str);
+
+	/*
+	 * The trace chunk registry, as used by the consumer daemon, implicitly
+	 * owns the trace chunks. This is only needed in the consumer since
+	 * the consumer has no notion of a session beyond session IDs being
+	 * used to identify other objects.
+	 *
+	 * The lttng_trace_chunk_registry_publish() call below provides a
+	 * reference which is not released; it implicitly becomes the session
+	 * daemon's reference to the chunk in the consumer daemon.
+	 *
+	 * The lifetime of trace chunks in the consumer daemon is managed by
+	 * the session daemon through the LTTNG_CONSUMER_CREATE_TRACE_CHUNK
+	 * and LTTNG_CONSUMER_DESTROY_TRACE_CHUNK commands.
+	 */
+	created_chunk = lttng_trace_chunk_create(chunk_id,
+			chunk_creation_timestamp);
+	if (!created_chunk) {
+		ERR("Failed to create trace chunk");
+		ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+		goto end;
+	}
+
+	if (chunk_override_name) {
+		chunk_status = lttng_trace_chunk_override_name(created_chunk,
+				chunk_override_name);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+			goto end;
+		}
+	}
+
+	if (chunk_directory_handle) {
+		chunk_status = lttng_trace_chunk_set_credentials(created_chunk,
+				credentials);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Failed to set trace chunk credentials");
+			ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+			goto end;
+		}
+		/*
+		 * The consumer daemon has no ownership of the chunk output
+		 * directory.
+		 */
+		chunk_status = lttng_trace_chunk_set_as_user(created_chunk,
+				chunk_directory_handle);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Failed to set trace chunk's directory handle");
+			ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+			goto end;
+		}
+	}
+
+	published_chunk = lttng_trace_chunk_registry_publish_chunk(
+			consumer_data.chunk_registry, session_id,
+			created_chunk);
+	lttng_trace_chunk_put(created_chunk);
+	created_chunk = NULL;
+	if (!published_chunk) {
+		ERR("Failed to publish trace chunk");
+		ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+		goto end;
+	}
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(consumer_data.channel_ht->ht, &iter.iter,
+			channel, node.node) {
+		const bool acquired_reference =
+				lttng_trace_chunk_get(published_chunk);
+
+		/*
+		 * The acquisition of the reference cannot fail (barring
+		 * a severe internal error) since a reference to the published
+		 * chunk is already held (the "publish" operation implicitly
+		 * acquired a reference on our behalf).
+		 */
+		assert(acquired_reference);
+		pthread_mutex_lock(&channel->lock);
+		/*
+		 * Invalid state; the channel's trace chunk should have been
+		 * closed before a new chunk is created.
+		 */
+		assert(!channel->trace_chunk);
+		channel->trace_chunk = published_chunk;
+		pthread_mutex_unlock(&channel->lock);
+	}
+	rcu_read_unlock();
+	/* Release the reference returned by the "publish" operation. */
+	lttng_trace_chunk_put(published_chunk);
+end:
+	return ret_code;
 }

@@ -30,6 +30,7 @@
 #include <common/defaults.h>
 #include <common/uri.h>
 #include <common/relayd/relayd.h>
+#include <common/string-utils/format.h>
 
 #include "consumer.h"
 #include "health-sessiond.h"
@@ -1892,5 +1893,159 @@ int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
 
 error:
 	health_code_update();
+	return ret;
+}
+
+/*
+ * Ask the consumer to create a new chunk for a given session.
+ *
+ * Called with the consumer socket lock held.
+ */
+int consumer_create_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		const struct lttng_trace_chunk *chunk)
+{
+	int ret;
+	enum lttng_trace_chunk_status chunk_status;
+	struct lttng_credentials chunk_credentials;
+	const struct lttng_directory_handle *chunk_directory_handle;
+	int chunk_dirfd;
+	const char *chunk_name;
+	bool chunk_name_overriden;
+	uint64_t chunk_id;
+	time_t creation_timestamp;
+	char chunk_id_buffer[MAX_INT_DEC_LEN(chunk_id)];
+	char creation_timestamp_buffer[ISO8601_STR_LEN];
+	const char *chunk_id_str;
+	const char *creation_timestamp_str = "(none)";
+	const bool chunk_has_local_output = relayd_id == -1ULL;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
+		.u.create_trace_chunk.session_id = session_id,
+	};
+
+	assert(socket);
+	assert(chunk);
+
+	if (relayd_id != -1ULL) {
+		LTTNG_OPTIONAL_SET(&msg.u.create_trace_chunk.relayd_id,
+				relayd_id);
+	}
+
+	chunk_status = lttng_trace_chunk_get_name(chunk, &chunk_name,
+			&chunk_name_overriden);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK &&
+			chunk_status != LTTNG_TRACE_CHUNK_STATUS_NONE) {
+		ERR("Failed to get name of trace chunk");
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	if (chunk_name_overriden) {
+		ret = lttng_strncpy(msg.u.create_trace_chunk.override_name,
+				chunk_name,
+				sizeof(msg.u.create_trace_chunk.override_name));
+		if (ret) {
+			ERR("Trace chunk name \"%s\" exceeds the maximal length allowed by the consumer protocol",
+					chunk_name);
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+	}
+
+	chunk_status = lttng_trace_chunk_get_creation_timestamp(chunk,
+			&creation_timestamp);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.create_trace_chunk.creation_timestamp =
+			(uint64_t) creation_timestamp;
+	/* Only used for logging purposes. */
+	ret = time_to_iso8601_str(creation_timestamp,
+			creation_timestamp_buffer,
+			sizeof(creation_timestamp_buffer));
+	creation_timestamp_str = !ret ? creation_timestamp_buffer :
+			"(formatting error)";
+
+	chunk_status = lttng_trace_chunk_get_id(chunk, &chunk_id);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * Anonymous trace chunks should never be transmitted
+		 * to remote peers (consumerd and relayd). They are used
+		 * internally for backward-compatibility purposes.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.create_trace_chunk.chunk_id = chunk_id;
+	/* Only used for logging purposes. */
+	ret = snprintf(chunk_id_buffer, sizeof(chunk_id_buffer),
+			"%" PRIu64, chunk_id);
+	if (ret > 0 && ret < sizeof(chunk_id_buffer)) {
+		chunk_id_str = chunk_id_buffer;
+	} else {
+		chunk_id_str = "(formatting error)";
+	}
+
+	if (chunk_has_local_output) {
+		chunk_status = lttng_trace_chunk_get_chunk_directory_handle(
+				chunk, &chunk_directory_handle);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ret = -LTTNG_ERR_FATAL;
+			goto error;
+		}
+
+		/*
+		 * This will only compile on platforms that support
+		 * dirfd (POSIX.2008). This is fine as the session daemon
+		 * is only built for such platforms.
+		 *
+		 * The ownership of the chunk directory handle's is maintained
+		 * by the trace chunk.
+		 */
+		chunk_dirfd = lttng_directory_handle_get_dirfd(
+				chunk_directory_handle);
+		assert(chunk_dirfd >= 0);
+	}
+
+	chunk_status = lttng_trace_chunk_get_credentials(chunk,
+			&chunk_credentials);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * Not associating credentials to a sessiond chunk is a fatal
+		 * internal error.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.create_trace_chunk.credentials.uid = chunk_credentials.uid;
+	msg.u.create_trace_chunk.credentials.gid = chunk_credentials.gid;
+
+	DBG("Sending consumer create trace chunk command: relayd_id = %" PRId64
+			", session_id = %" PRIu64 ", chunk_id = %s"
+			", creation_timestamp = %s",
+			relayd_id, session_id, chunk_id_str,
+			creation_timestamp_str);
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	health_code_update();
+	if (ret < 0) {
+		ERR("Trace chunk creation error on consumer");
+		ret = -LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+	if (chunk_has_local_output) {
+		DBG("Sending trace chunk directory fd to consumer");
+		health_code_update();
+		ret = consumer_send_fds(socket, &chunk_dirfd, 1);
+		health_code_update();
+		if (ret < 0) {
+			ERR("Trace chunk creation error on consumer");
+			ret = -LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+			goto error;
+		}
+	}
+error:
 	return ret;
 }

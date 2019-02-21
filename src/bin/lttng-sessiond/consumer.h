@@ -315,4 +315,8 @@ int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
 		const struct consumer_output *output, const char *path,
 		uid_t uid, gid_t gid);
 
+int consumer_create_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		const struct lttng_trace_chunk *chunk);
+
 #endif /* _CONSUMER_H */

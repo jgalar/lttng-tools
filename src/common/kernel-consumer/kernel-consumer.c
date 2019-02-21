@@ -43,6 +43,7 @@
 #include <common/consumer/consumer-stream.h>
 #include <common/index/index.h>
 #include <common/consumer/consumer-timer.h>
+#include <common/optional.h>
 
 #include "kernel-consumer.h"
 
@@ -1253,6 +1254,82 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
+	case LTTNG_CONSUMER_CREATE_TRACE_CHUNK:
+	{
+		const struct lttng_credentials credentials = {
+			.uid = msg.u.create_trace_chunk.credentials.uid,
+			.gid = msg.u.create_trace_chunk.credentials.gid,
+		};
+		const bool is_local_trace =
+				!msg.u.create_trace_chunk.relayd_id.is_set;
+		const uint64_t relayd_id =
+				msg.u.create_trace_chunk.relayd_id.value;
+		const char *chunk_override_name =
+				*msg.u.create_trace_chunk.override_name ?
+					msg.u.create_trace_chunk.override_name :
+					NULL;
+		LTTNG_OPTIONAL(struct lttng_directory_handle) chunk_directory_handle =
+				LTTNG_OPTIONAL_INIT;
+
+		/*
+		 * The session daemon will only provide a chunk directory file
+		 * descriptor for local traces.
+		 */
+		if (is_local_trace) {
+			int chunk_dirfd;
+
+			/* Acnowledge the reception of the command. */
+			ret = consumer_send_status_msg(sock,
+					LTTCOMM_CONSUMERD_SUCCESS);
+			if (ret < 0) {
+				/* Somehow, the session daemon is not responding anymore. */
+				goto end_nosignal;
+			}
+
+			ret = lttcomm_recv_fds_unix_sock(sock, &chunk_dirfd, 1);
+			if (ret != sizeof(chunk_dirfd)) {
+				ERR("Failed to receive trace chunk directory file descriptor");
+				goto error_fatal;
+			}
+
+			DBG("Received trace chunk directory fd (%d)",
+					chunk_dirfd);
+			ret = lttng_directory_handle_init_from_dirfd(
+					&chunk_directory_handle.value,
+					chunk_dirfd);
+			if (ret) {
+				ERR("Failed to initialize chunk directory handle from directory file descriptor");
+				if (close(chunk_dirfd)) {
+					PERROR("Failed to close chunk directory file descriptor");
+				}
+				goto error_fatal;
+			}
+			chunk_directory_handle.is_set = true;
+		}
+
+		ret_code = lttng_consumer_create_trace_chunk(
+				!is_local_trace ? &relayd_id : NULL,
+				msg.u.create_trace_chunk.session_id,
+				msg.u.create_trace_chunk.chunk_id,
+				(time_t) msg.u.create_trace_chunk.creation_timestamp,
+				chunk_override_name,
+				&credentials,
+				chunk_directory_handle.is_set ?
+						&chunk_directory_handle.value :
+						NULL);
+
+		if (chunk_directory_handle.is_set) {
+			lttng_directory_handle_fini(
+					&chunk_directory_handle.value);
+		}
+		health_code_update();
 		ret = consumer_send_status_msg(sock, ret_code);
 		if (ret < 0) {
 			/* Somehow, the session daemon is not responding anymore. */

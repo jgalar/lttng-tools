@@ -35,6 +35,7 @@
 #include <common/pipe.h>
 #include <common/index/ctf-index.h>
 #include <common/trace-chunk-registry.h>
+#include <common/credentials.h>
 
 /* Commands for consumer */
 enum lttng_consumer_command {
@@ -69,6 +70,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_CHECK_ROTATION_PENDING_LOCAL,
 	LTTNG_CONSUMER_CHECK_ROTATION_PENDING_RELAY,
 	LTTNG_CONSUMER_MKDIR,
+	LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
 };
 
 /* State of each fd in consumer */
@@ -121,6 +123,8 @@ struct lttng_consumer_channel {
 	int refcount;
 	/* Tracing session id on the session daemon side. */
 	uint64_t session_id;
+	/* Current trace chunk of the session in which this channel exists. */
+	struct lttng_trace_chunk *trace_chunk;
 	/*
 	 * Session id when requesting metadata to the session daemon for
 	 * a session with per-PID buffers.
@@ -257,6 +261,12 @@ struct lttng_consumer_stream {
 	struct lttng_ht_node_u64 node_session_id;
 	/* Pointer to associated channel. */
 	struct lttng_consumer_channel *chan;
+	/*
+	 * Current trace chunk. Holds a reference to the trace chunk.
+	 * `chunk` can be NULL when a stream is not associated to a chunk, e.g.
+	 * when it was created in the context of a no-output session.
+	 */
+	struct lttng_trace_chunk *trace_chunk;
 
 	/* Key by which the stream is indexed for 'node'. */
 	uint64_t key;
@@ -862,6 +872,13 @@ int lttng_consumer_check_rotation_pending_relay(uint64_t session_id,
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream);
 int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,
 		uint64_t relayd_id);
+enum lttcomm_return_code lttng_consumer_create_trace_chunk(
+		const uint64_t *relayd_id, uint64_t session_id,
+		uint64_t chunk_id,
+		time_t chunk_creation_timestamp,
+		const char *chunk_override_name,
+		const struct lttng_credentials *credentials,
+		struct lttng_directory_handle *chunk_directory_handle);
 void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
 
 #endif /* LIB_CONSUMER_H */
