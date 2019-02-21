@@ -226,7 +226,7 @@ int rename_completed_chunk(struct ltt_session *session, time_t end_ts)
 	ret = snprintf(new_path, sizeof(new_path), "%s/archives/%s-%s-%" PRIu64,
 			session_get_base_path(session),
 			start_datetime, end_datetime,
-			session->current_archive_id);
+			session->most_recent_chunk_id.value);
 	if (ret < 0 || ret >= sizeof(new_path)) {
 		ERR("Failed to format new chunk path while renaming chunk of session \"%s\"",
 				session->name);
@@ -234,7 +234,7 @@ int rename_completed_chunk(struct ltt_session *session, time_t end_ts)
 		goto error;
 	}
 
-	if (session->current_archive_id == 1) {
+	if (session->most_recent_chunk_id.value == 1) {
 		/*
 		 * On the first rotation, the current_rotate_path is the
 		 * session_root_path, so we need to create the chunk folder
@@ -311,7 +311,8 @@ int rename_active_chunk(struct ltt_session *session)
 {
 	int ret;
 
-	session->current_archive_id++;
+	assert(session->most_recent_chunk_id.is_set);
+	session->most_recent_chunk_id.value++;
 
 	/*
 	 * The currently active tracing path is now the folder we
@@ -344,7 +345,7 @@ int rename_active_chunk(struct ltt_session *session)
 		goto end;
 	}
 end:
-	session->current_archive_id--;
+	session->most_recent_chunk_id.value--;
 	return ret;
 }
 

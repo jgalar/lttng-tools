@@ -147,20 +147,6 @@ struct ltt_session {
 	 */
 	struct lttng_ht_node_u64 node;
 	/*
-	 * The current archive id corresponds to the number of session rotations
-	 * that have occurred for this session. The archive id
-	 * is used to tag the "generation" of a stream. This tag allows the
-	 * consumer and relay daemons to track when a given stream was created
-	 * during the lifetime of a session.
-	 *
-	 * For instance, if a stream is created after a session rotation was
-	 * launched, the consumer and relay daemons must not check its position
-	 * to determine if that specific session rotation was completed. It is
-	 * implicitly "completed" since the stream appeared _after_ the session
-	 * rotation was initiated.
-	 */
-	uint64_t current_archive_id;
-	/*
 	 * Rotation is considered pending between the time it is launched up
 	 * until the moment when the data has been writen at the destination
 	 * and the trace archive has been renamed.
@@ -226,7 +212,7 @@ struct ltt_session {
 	 */
 	struct lttng_condition *rotate_condition;
 	struct lttng_trigger *rotate_trigger;
-	LTTNG_OPTIONAL(uint64_t) last_trace_chunk_id;
+	LTTNG_OPTIONAL(uint64_t) most_recent_chunk_id;
 	struct lttng_trace_chunk *current_trace_chunk;
 };
 

@@ -361,22 +361,23 @@ int check_session_rotation_pending_local_on_consumer(
 	DBG("[rotation-thread] Checking for locally pending rotation on the %s consumer for session %s",
 			lttng_consumer_type_str(socket->type),
 			session->name);
+	assert(session->most_recent_chunk_id.is_set);
 	ret = consumer_check_rotation_pending_local(socket,
 			session->id,
-			session->current_archive_id - 1);
+			session->most_recent_chunk_id.value - 1);
 	pthread_mutex_unlock(socket->lock);
 
 	if (ret == 0) {
 		/* Rotation was completed on this consumer. */
 		DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" was completed on the %s consumer",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name,
 				lttng_consumer_type_str(socket->type));
 		*rotation_completed = true;
 	} else if (ret == 1) {
 		/* Rotation pending on this consumer. */
 		DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the %s consumer",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name,
 				lttng_consumer_type_str(socket->type));
 		*rotation_completed = false;
@@ -384,7 +385,7 @@ int check_session_rotation_pending_local_on_consumer(
 	} else {
 		/* Not a fatal error. */
 		ERR("[rotation-thread] Encountered an error when checking if local rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the %s consumer",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name,
 				lttng_consumer_type_str(socket->type));
 		*rotation_completed = false;
@@ -405,7 +406,7 @@ int check_session_rotation_pending_local(struct ltt_session *session)
 	 * user space, 64-bit user space, and kernel).
 	 */
 	DBG("[rotation-thread] Checking for pending local rotation on session \"%s\", trace archive %" PRIu64,
-			session->name, session->current_archive_id - 1);
+			session->name, session->most_recent_chunk_id.value - 1);
 
 	rcu_read_lock();
 	if (!session->ust_session) {
@@ -438,7 +439,7 @@ end:
 
 	if (rotation_completed) {
 		DBG("[rotation-thread] Local rotation of trace archive %" PRIu64 " of session \"%s\" is complete on all consumers",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name);
 		session->rotation_pending_local = false;
 	}
@@ -484,29 +485,29 @@ int check_session_rotation_pending_relay(struct ltt_session *session)
 
 	pthread_mutex_lock(socket->lock);
 	DBG("[rotation-thread] Checking for pending relay rotation on session \"%s\", trace archive %" PRIu64 " through the %s consumer",
-			session->name, session->current_archive_id - 1,
+			session->name, session->most_recent_chunk_id.value - 1,
 			lttng_consumer_type_str(socket->type));
 	ret = consumer_check_rotation_pending_relay(socket,
 			output,
 			session->id,
-			session->current_archive_id - 1);
+			session->most_recent_chunk_id.value - 1);
 	pthread_mutex_unlock(socket->lock);
 
 	if (ret == 0) {
 		/* Rotation was completed on the relay. */
 		DBG("[rotation-thread] Relay rotation of trace archive %" PRIu64 " of session \"%s\" was completed",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name);
 	} else if (ret == 1) {
 		/* Rotation pending on relay. */
 		DBG("[rotation-thread] Relay rotation of trace archive %" PRIu64 " of session \"%s\" is pending",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name);
 		rotation_completed = false;
 	} else {
 		/* Not a fatal error. */
 		ERR("[rotation-thread] Encountered an error when checking if rotation of trace archive %" PRIu64 " of session \"%s\" is pending on the relay",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name);
 		ret = session_reset_rotation_state(session,
 				LTTNG_ROTATION_STATE_ERROR);
@@ -521,7 +522,7 @@ int check_session_rotation_pending_relay(struct ltt_session *session)
 
 	if (rotation_completed) {
 		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " of session \"%s\" is complete on the relay",
-				session->current_archive_id - 1,
+				session->most_recent_chunk_id.value - 1,
 				session->name);
 		session->rotation_pending_relay = false;
 	}
@@ -540,7 +541,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 	time_t now;
 
 	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
-			session->name, session->current_archive_id - 1);
+			session->name, session->most_recent_chunk_id.value - 1);
 
 	/*
 	 * The rotation-pending check timer of a session is launched in
@@ -584,7 +585,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 	}
 
 	DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " completed for "
-			"session %s", session->current_archive_id - 1,
+			"session %s", session->most_recent_chunk_id.value - 1,
 			session->name);
 
 	/* Rename the completed trace archive's location. */
@@ -620,7 +621,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 			session->name,
 			session->uid,
 			session->gid,
-			session->current_archive_id,
+			session->most_recent_chunk_id.value,
 			location);
 	if (ret != LTTNG_OK) {
 		ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
@@ -638,7 +639,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 				session->name,
 				session->uid,
 				session->gid,
-				session->current_archive_id);
+				session->most_recent_chunk_id.value);
 		if (ret != LTTNG_OK) {
 			ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
 					session->name);
@@ -657,7 +658,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 				session->name,
 				session->uid,
 				session->gid,
-				session->current_archive_id,
+				session->most_recent_chunk_id.value,
 				location);
 		if (ret != LTTNG_OK) {
 			ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
@@ -669,7 +670,8 @@ int check_session_rotation_pending(struct ltt_session *session,
 end:
 	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
 		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " is still pending for session %s",
-				session->current_archive_id - 1, session->name);
+				session->most_recent_chunk_id.value - 1,
+				session->name);
 		ret = timer_session_rotation_pending_check_start(session,
 				DEFAULT_ROTATE_PENDING_TIMER);
 		if (ret) {

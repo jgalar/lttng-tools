@@ -206,6 +206,7 @@ struct ust_app_session {
 	 * ust_sessions_objd hash table in the ust_app object.
 	 */
 	struct lttng_ht_node_ulong ust_objd_node;
+	/* Starts with 'ust'; no leading slash. */
 	char path[PATH_MAX];
 	/* UID/GID of the application owning the session */
 	uid_t uid;

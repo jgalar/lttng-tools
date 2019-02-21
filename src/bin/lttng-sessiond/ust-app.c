@@ -2462,7 +2462,7 @@ static int do_consumer_create_channel(struct ltt_ust_session *usess,
 	 * stream we have to expect.
 	 */
 	ret = ust_consumer_ask_channel(ua_sess, ua_chan, usess->consumer, socket,
-			registry, trace_archive_id);
+			registry, usess->current_trace_chunk);
 	if (ret < 0) {
 		goto error_ask;
 	}
@@ -2845,7 +2845,7 @@ static int create_channel_per_uid(struct ust_app *app,
 	 */
 	ret = do_consumer_create_channel(usess, ua_sess, ua_chan,
 			app->bits_per_long, reg_uid->registry->reg.ust,
-			session->current_archive_id);
+			session->most_recent_chunk_id.value);
 	if (ret < 0) {
 		ERR("Error creating UST channel \"%s\" on the consumer daemon",
 				ua_chan->name);
@@ -2959,7 +2959,7 @@ static int create_channel_per_pid(struct ust_app *app,
 	/* Create and get channel on the consumer side. */
 	ret = do_consumer_create_channel(usess, ua_sess, ua_chan,
 			app->bits_per_long, registry,
-			session->current_archive_id);
+			session->most_recent_chunk_id.value);
 	if (ret < 0) {
 		ERR("Error creating UST channel \"%s\" on the consumer daemon",
 			ua_chan->name);
@@ -3236,7 +3236,7 @@ static int create_ust_app_metadata(struct ust_app_session *ua_sess,
 	 * consumer.
 	 */
 	ret = ust_consumer_ask_channel(ua_sess, metadata, consumer, socket,
-			registry, session->current_archive_id);
+			registry, session->current_trace_chunk);
 	if (ret < 0) {
 		/* Nullify the metadata key so we don't try to close it later on. */
 		registry->metadata_key = 0;
@@ -5884,19 +5884,12 @@ enum lttng_error_code ust_app_snapshot_record(
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	char pathname[PATH_MAX];
-	struct ltt_session *session = NULL;
-	uint64_t trace_archive_id;
+	enum lttng_trace_chunk_status chunk_status;
 
 	assert(usess);
 	assert(output);
 
 	rcu_read_lock();
-
-	session = session_find_by_id(usess->id);
-	assert(session);
-	assert(pthread_mutex_trylock(&session->lock));
-	assert(session_trylock_list());
-	trace_archive_id = session->current_archive_id;
 
 	switch (usess->buffer_type) {
 	case LTTNG_BUFFER_PER_UID:
@@ -5921,12 +5914,23 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 
 			memset(pathname, 0, sizeof(pathname));
+			/*
+			 * DEFAULT_UST_TRACE_UID_PATH already contains a path
+			 * separator.
+			 */
 			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH,
+					DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH,
 					reg->uid, reg->bits_per_long);
 			if (ret < 0) {
 				PERROR("snprintf snapshot path");
 				status = LTTNG_ERR_INVALID;
+				goto error;
+			}
+
+			chunk_status = lttng_trace_chunk_create_subdirectory(
+					usess->current_trace_chunk, pathname);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				status = LTTNG_ERR_CREATE_DIR_FAIL;
 				goto error;
 			}
 
@@ -5937,16 +5941,14 @@ enum lttng_error_code ust_app_snapshot_record(
 						reg_chan->consumer_key,
 						output, 0, usess->uid,
 						usess->gid, pathname, wait,
-						nb_packets_per_stream,
-						trace_archive_id);
+						nb_packets_per_stream);
 				if (status != LTTNG_OK) {
 					goto error;
 				}
 			}
 			status = consumer_snapshot_channel(socket,
 					reg->registry->reg.ust->metadata_key, output, 1,
-					usess->uid, usess->gid, pathname, wait, 0,
-					trace_archive_id);
+					usess->uid, usess->gid, pathname, wait, 0);
 			if (status != LTTNG_OK) {
 				goto error;
 			}
@@ -5978,11 +5980,18 @@ enum lttng_error_code ust_app_snapshot_record(
 
 			/* Add the UST default trace dir to path. */
 			memset(pathname, 0, sizeof(pathname));
-			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "/%s",
+			ret = snprintf(pathname, sizeof(pathname), DEFAULT_UST_TRACE_DIR "%s",
 					ua_sess->path);
 			if (ret < 0) {
 				status = LTTNG_ERR_INVALID;
 				PERROR("snprintf snapshot path");
+				goto error;
+			}
+
+			chunk_status = lttng_trace_chunk_create_subdirectory(
+					usess->current_trace_chunk, pathname);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				status = LTTNG_ERR_CREATE_DIR_FAIL;
 				goto error;
 			}
 
@@ -5992,8 +6001,7 @@ enum lttng_error_code ust_app_snapshot_record(
 						ua_chan->key, output,
 						0, ua_sess->euid, ua_sess->egid,
 						pathname, wait,
-						nb_packets_per_stream,
-						trace_archive_id);
+						nb_packets_per_stream);
 				switch (status) {
 				case LTTNG_OK:
 					break;
@@ -6012,8 +6020,7 @@ enum lttng_error_code ust_app_snapshot_record(
 			status = consumer_snapshot_channel(socket,
 					registry->metadata_key, output,
 					1, ua_sess->euid, ua_sess->egid,
-					pathname, wait, 0,
-					trace_archive_id);
+					pathname, wait, 0);
 			switch (status) {
 			case LTTNG_OK:
 				break;
@@ -6032,9 +6039,6 @@ enum lttng_error_code ust_app_snapshot_record(
 
 error:
 	rcu_read_unlock();
-	if (session) {
-		session_put(session);
-	}
 	return status;
 }
 
@@ -6321,7 +6325,7 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 						usess->uid, usess->gid,
 						usess->consumer, pathname,
 						/* is_metadata_channel */ false,
-						session->current_archive_id);
+						session->most_recent_chunk_id.value);
 				if (ret < 0) {
 					cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
 					goto error;
@@ -6335,7 +6339,7 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 					usess->uid, usess->gid,
 					usess->consumer, pathname,
 					/* is_metadata_channel */ true,
-					session->current_archive_id);
+					session->most_recent_chunk_id.value);
 			if (ret < 0) {
 				cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
 				goto error;
@@ -6388,7 +6392,7 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 						ua_sess->euid, ua_sess->egid,
 						ua_sess->consumer, pathname,
 						/* is_metadata_channel */ false,
-						session->current_archive_id);
+						session->most_recent_chunk_id.value);
 				if (ret < 0) {
 					/* Per-PID buffer and application going away. */
 					if (ret == -LTTNG_ERR_CHAN_NOT_FOUND)
@@ -6404,7 +6408,7 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 					ua_sess->euid, ua_sess->egid,
 					ua_sess->consumer, pathname,
 					/* is_metadata_channel */ true,
-					session->current_archive_id);
+					session->most_recent_chunk_id.value);
 			if (ret < 0) {
 				/* Per-PID buffer and application going away. */
 				if (ret == -LTTNG_ERR_CHAN_NOT_FOUND)

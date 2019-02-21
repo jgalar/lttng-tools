@@ -424,15 +424,33 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	struct cds_lfht_iter iter;
 	struct consumer_socket *socket;
 	bool close_error_occured = false;
+	enum lttng_trace_chunk_status chunk_status;
+
+	if (session->current_trace_chunk) {
+		time_t chunk_close_timestamp = time(NULL);
+
+		if (chunk_close_timestamp == (time_t) -1) {
+			PERROR("Failed to sample trace chunk close timestamp");
+			goto error;
+		}
+
+		chunk_status = lttng_trace_chunk_set_close_timestamp(
+				session->current_trace_chunk,
+				chunk_close_timestamp);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Failed to set the close timestamp of the current trace chunk of session \"%s\"",
+					session->name);
+			goto error;
+		}
+	}
 
 	if (new_trace_chunk) {
 		uint64_t chunk_id;
-		enum lttng_trace_chunk_status chunk_status =
-				lttng_trace_chunk_get_id(new_trace_chunk,
+		chunk_status = lttng_trace_chunk_get_id(new_trace_chunk,
 					&chunk_id);
 
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
-		LTTNG_OPTIONAL_SET(&session->last_trace_chunk_id, chunk_id)
+		LTTNG_OPTIONAL_SET(&session->most_recent_chunk_id, chunk_id)
 	}
 
 	if (new_trace_chunk) {
@@ -645,8 +663,8 @@ enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session,
 	if (!output_supports_chunks(session)) {
 		goto end;
 	}
-	next_chunk_id = session->last_trace_chunk_id.is_set ?
-			session->last_trace_chunk_id.value + 1 : 0;
+	next_chunk_id = session->most_recent_chunk_id.is_set ?
+			session->most_recent_chunk_id.value + 1 : 0;
 
 	trace_chunk = lttng_trace_chunk_create(next_chunk_id, timestamp_begin);
 	if (!trace_chunk) {
