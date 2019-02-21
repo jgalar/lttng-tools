@@ -1236,6 +1236,8 @@ void lttng_consumer_cleanup(void)
 	 * it.
 	 */
 	lttng_ht_destroy(consumer_data.stream_list_ht);
+
+	lttng_trace_chunk_registry_destroy(consumer_data.chunk_registry);
 }
 
 /*
@@ -3455,6 +3457,11 @@ int lttng_consumer_init(void)
 
 	metadata_ht = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
 	if (!metadata_ht) {
+		goto error;
+	}
+
+	consumer_data.chunk_registry = lttng_trace_chunk_registry_create();
+	if (!consumer_data.chunk_registry) {
 		goto error;
 	}
 
