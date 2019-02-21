@@ -147,61 +147,6 @@ struct ltt_session {
 	 */
 	struct lttng_ht_node_u64 node;
 	/*
-	 * The current archive id corresponds to the number of session rotations
-	 * that have occurred for this session. The archive id
-	 * is used to tag the "generation" of a stream. This tag allows the
-	 * consumer and relay daemons to track when a given stream was created
-	 * during the lifetime of a session.
-	 *
-	 * For instance, if a stream is created after a session rotation was
-	 * launched, the consumer and relay daemons must not check its position
-	 * to determine if that specific session rotation was completed. It is
-	 * implicitly "completed" since the stream appeared _after_ the session
-	 * rotation was initiated.
-	 */
-	uint64_t current_archive_id;
-	/*
-	 * Rotation is considered pending between the time it is launched up
-	 * until the moment when the data has been writen at the destination
-	 * and the trace archive has been renamed.
-	 *
-	 * When tracing locally, only 'rotation_pending_local' is used since
-	 * no remote checks are needed. However, when tracing to a relay daemon,
-	 * a second check is needed to ensure that the data has been
-	 * commited at the remote destination.
-	 */
-	bool rotation_pending_local;
-	bool rotation_pending_relay;
-	/* Current state of a rotation. */
-	enum lttng_rotation_state rotation_state;
-	struct {
-		/*
-		 * When the rotation is in progress, the temporary path name is
-		 * stored here. When the rotation is complete, the final path name
-		 * is here and can be queried with the rotate_pending call.
-		 */
-		char current_rotate_path[LTTNG_PATH_MAX];
-		/*
-		 * The path where the consumer is currently writing after the first
-		 * session rotation.
-		 */
-		char active_tracing_path[LTTNG_PATH_MAX];
-	} rotation_chunk;
-	/*
-	 * The timestamp of the beginning of the previous chunk. For the
-	 * first chunk, this is the "lttng start" timestamp. For the
-	 * subsequent ones, this copies the current_chunk_start_ts value when
-	 * a new rotation starts. This value is used to set the name of a
-	 * complete chunk directory, ex: "last_chunk_start_ts-now()".
-	 */
-	time_t last_chunk_start_ts;
-	/*
-	 * This is the timestamp when a new chunk starts. When a new rotation
-	 * starts, we copy this value to last_chunk_start_ts and replace it
-	 * with the current timestamp.
-	 */
-	time_t current_chunk_start_ts;
-	/*
 	 * Timer to check periodically if a relay and/or consumer has completed
 	 * the last rotation.
 	 */
@@ -226,8 +171,13 @@ struct ltt_session {
 	 */
 	struct lttng_condition *rotate_condition;
 	struct lttng_trigger *rotate_trigger;
-	LTTNG_OPTIONAL(uint64_t) last_trace_chunk_id;
+	LTTNG_OPTIONAL(uint64_t) most_recent_chunk_id;
 	struct lttng_trace_chunk *current_trace_chunk;
+	struct lttng_trace_chunk *chunk_being_archived;
+	/* Current state of a rotation. */
+	enum lttng_rotation_state rotation_state;
+	char *last_archived_chunk_name;
+	LTTNG_OPTIONAL(uint64_t) last_archived_chunk_id;
 };
 
 /* Prototypes */
