@@ -254,16 +254,25 @@ void session_get_net_consumer_ports(const struct ltt_session *session,
 struct lttng_trace_archive_location *session_get_trace_archive_location(
 		struct ltt_session *session)
 {
+	int ret;
 	struct lttng_trace_archive_location *location = NULL;
+	char *chunk_path = NULL;
 
 	if (session->rotation_state != LTTNG_ROTATION_STATE_COMPLETED) {
+		goto end;
+	}
+
+	ret = asprintf(&chunk_path, "%s/" DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY "/%s",
+			session_get_base_path(session),
+			session->last_archived_chunk_name);
+	if (ret == -1) {
 		goto end;
 	}
 
 	switch (session_get_consumer_destination_type(session)) {
 	case CONSUMER_DST_LOCAL:
 		location = lttng_trace_archive_location_local_create(
-				session->rotation_chunk.current_rotate_path);
+				chunk_path);
 		break;
 	case CONSUMER_DST_NET:
 	{
@@ -277,14 +286,14 @@ struct lttng_trace_archive_location *session_get_trace_archive_location(
 		location = lttng_trace_archive_location_relay_create(
 				hostname,
 				LTTNG_TRACE_ARCHIVE_LOCATION_RELAY_PROTOCOL_TYPE_TCP,
-				control_port, data_port,
-				session->rotation_chunk.current_rotate_path);
+				control_port, data_port, chunk_path);
 		break;
 	}
 	default:
 		abort();
 	}
 end:
+	free(chunk_path);
 	return location;
 }
 
@@ -424,15 +433,33 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	struct cds_lfht_iter iter;
 	struct consumer_socket *socket;
 	bool close_error_occured = false;
+	enum lttng_trace_chunk_status chunk_status;
+
+	if (session->current_trace_chunk) {
+		time_t chunk_close_timestamp = time(NULL);
+
+		if (chunk_close_timestamp == (time_t) -1) {
+			PERROR("Failed to sample trace chunk close timestamp");
+			goto error;
+		}
+
+		chunk_status = lttng_trace_chunk_set_close_timestamp(
+				session->current_trace_chunk,
+				chunk_close_timestamp);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			ERR("Failed to set the close timestamp of the current trace chunk of session \"%s\"",
+					session->name);
+			goto error;
+		}
+	}
 
 	if (new_trace_chunk) {
 		uint64_t chunk_id;
-		enum lttng_trace_chunk_status chunk_status =
-				lttng_trace_chunk_get_id(new_trace_chunk,
+		chunk_status = lttng_trace_chunk_get_id(new_trace_chunk,
 					&chunk_id);
 
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
-		LTTNG_OPTIONAL_SET(&session->last_trace_chunk_id, chunk_id)
+		LTTNG_OPTIONAL_SET(&session->most_recent_chunk_id, chunk_id)
 	}
 
 	if (new_trace_chunk) {
@@ -640,13 +667,12 @@ enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session,
 		ret_code = LTTNG_ERR_FATAL;
 		goto error;
 	}
-	session->current_chunk_start_ts = timestamp_begin;
 
 	if (!output_supports_chunks(session)) {
 		goto end;
 	}
-	next_chunk_id = session->last_trace_chunk_id.is_set ?
-			session->last_trace_chunk_id.value + 1 : 0;
+	next_chunk_id = session->most_recent_chunk_id.is_set ?
+			session->most_recent_chunk_id.value + 1 : 0;
 
 	trace_chunk = lttng_trace_chunk_create(next_chunk_id, timestamp_begin);
 	if (!trace_chunk) {
@@ -739,6 +765,8 @@ void session_release(struct urcu_ref *ref)
 	struct ltt_kernel_session *ksess;
 	struct ltt_session *session = container_of(ref, typeof(*session), ref);
 
+	assert(!session->chunk_being_archived);
+
 	usess = session->ust_session;
 	ksess = session->kernel_session;
 	(void) _session_set_trace_chunk_no_lock_check(session, NULL);
@@ -785,6 +813,7 @@ void session_release(struct urcu_ref *ref)
 		del_session_ht(session);
 		pthread_cond_broadcast(&ltt_session_list.removal_cond);
 	}
+	free(session->last_archived_chunk_name);
 	free(session);
 }
 

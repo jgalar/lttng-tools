@@ -1250,8 +1250,7 @@ enum lttng_error_code kernel_snapshot_record(
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_metadata *saved_metadata;
-	struct ltt_session *session = NULL;
-	uint64_t trace_archive_id;
+	enum lttng_trace_chunk_status chunk_status;
 
 	assert(ksess);
 	assert(ksess->consumer);
@@ -1259,15 +1258,16 @@ enum lttng_error_code kernel_snapshot_record(
 
 	DBG("Kernel snapshot record started");
 
-	session = session_find_by_id(ksess->id);
-	assert(session);
-	assert(pthread_mutex_trylock(&session->lock));
-	assert(session_trylock_list());
-	trace_archive_id = session->current_archive_id;
-
 	/* Save current metadata since the following calls will change it. */
 	saved_metadata = ksess->metadata;
 	saved_metadata_fd = ksess->metadata_stream_fd;
+
+	chunk_status = lttng_trace_chunk_create_subdirectory(
+			ksess->current_trace_chunk, DEFAULT_KERNEL_TRACE_DIR);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		status = LTTNG_ERR_CREATE_DIR_FAIL;
+		goto error;
+	}
 
 	rcu_read_lock();
 
@@ -1312,8 +1312,7 @@ enum lttng_error_code kernel_snapshot_record(
 			status = consumer_snapshot_channel(socket, chan->key, output, 0,
 					ksess->uid, ksess->gid,
 					DEFAULT_KERNEL_TRACE_DIR, wait,
-					nb_packets_per_stream,
-					trace_archive_id);
+					nb_packets_per_stream);
 			if (status != LTTNG_OK) {
 				(void) kernel_consumer_destroy_metadata(socket,
 						ksess->metadata);
@@ -1324,8 +1323,7 @@ enum lttng_error_code kernel_snapshot_record(
 		/* Snapshot metadata, */
 		status = consumer_snapshot_channel(socket, ksess->metadata->key, output,
 				1, ksess->uid, ksess->gid,
-				DEFAULT_KERNEL_TRACE_DIR, wait, 0,
-				trace_archive_id);
+				DEFAULT_KERNEL_TRACE_DIR, wait, 0);
 		if (status != LTTNG_OK) {
 			goto error_consumer;
 		}
@@ -1350,9 +1348,6 @@ error:
 	/* Restore metadata state.*/
 	ksess->metadata = saved_metadata;
 	ksess->metadata_stream_fd = saved_metadata_fd;
-	if (session) {
-		session_put(session);
-	}
 	rcu_read_unlock();
 	return status;
 }
@@ -1424,6 +1419,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 
 	rcu_read_lock();
 
+	assert(session->current_trace_chunk);
 	/*
 	 * Note that this loop will end after one iteration given that there is
 	 * only one kernel consumer.
@@ -1431,6 +1427,15 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
 			socket, node.node) {
 		struct ltt_kernel_channel *chan;
+		enum lttng_trace_chunk_status chunk_status;
+
+		chunk_status = lttng_trace_chunk_create_subdirectory(
+				ksess->current_trace_chunk,
+				DEFAULT_KERNEL_TRACE_DIR);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			status = LTTNG_ERR_CREATE_DIR_FAIL;
+			goto error;
+		}
 
 		/* For each channel, ask the consumer to rotate it. */
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
@@ -1438,9 +1443,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 					chan->key, session->name);
 			ret = consumer_rotate_channel(socket, chan->key,
 					ksess->uid, ksess->gid, ksess->consumer,
-					ksess->consumer->domain_subdir,
-					/* is_metadata_channel */ false,
-					session->current_archive_id);
+					/* is_metadata_channel */ false);
 			if (ret < 0) {
 				status = LTTNG_ERR_KERN_CONSUMER_FAIL;
 				goto error;
@@ -1452,9 +1455,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 		 */
 		ret = consumer_rotate_channel(socket, ksess->metadata->key,
 				ksess->uid, ksess->gid, ksess->consumer,
-				ksess->consumer->domain_subdir,
-				/* is_metadata_channel */ true,
-				session->current_archive_id);
+				/* is_metadata_channel */ true);
 		if (ret < 0) {
 			status = LTTNG_ERR_KERN_CONSUMER_FAIL;
 			goto error;
