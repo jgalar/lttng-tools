@@ -175,6 +175,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_SNAPSHOT_FAILED,          /* snapshot has failed. */
 	LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED,/* Trace chunk creation failed. */
 	LTTCOMM_CONSUMERD_INVALID_PARAMETERS,       /* Invalid parameters. */
+	LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK,      /* Unknown trace chunk. */
 
 	/* MUST be last element */
 	LTTCOMM_NR,						/* Last element */
@@ -663,6 +664,15 @@ struct lttcomm_consumer_msg {
 				uint32_t gid;
 			} LTTNG_PACKED credentials;
 		} LTTNG_PACKED create_trace_chunk;
+		struct {
+			/* Relayd id, if applicable (remote). */
+			uint64_t relayd_id;
+			uint64_t session_id;
+			LTTNG_OPTIONAL(uint64_t) LTTNG_PACKED chunk_id;
+		} LTTNG_PACKED close_trace_chunk;
+		struct {
+			lttng_uuid sessiond_uuid;
+		} LTTNG_PACKED init;
 	} u;
 } LTTNG_PACKED;
 

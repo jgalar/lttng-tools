@@ -4630,3 +4630,66 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 end:
 	return ret_code;
 }
+
+enum lttcomm_return_code lttng_consumer_close_trace_chunk(
+		const uint64_t *relayd_id, uint64_t session_id,
+		uint64_t chunk_id)
+{
+	enum lttcomm_return_code ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+	struct lttng_trace_chunk *chunk;
+	char chunk_id_buffer[MAX_INT_DEC_LEN(chunk_id)];
+	const char *chunk_id_str = "(anonymous)";
+	struct lttng_ht_iter iter;
+	struct lttng_consumer_channel *channel;
+
+	if (chunk_id) {
+		/* Only used for logging purposes. */
+		int ret = snprintf(chunk_id_buffer, sizeof(chunk_id_buffer),
+				"%" PRIu64, chunk_id);
+		if (ret > 0 && ret < sizeof(chunk_id_buffer)) {
+			chunk_id_str = chunk_id_buffer;
+		} else {
+			chunk_id_str = "(formatting error)";
+		}
+	}
+
+	DBG("Consumer close trace chunk command: session_id = %" PRIu64
+			", chunk_id = %s", session_id, chunk_id_str);
+
+	chunk = lttng_trace_chunk_registry_find_chunk(
+			consumer_data.chunk_registry, session_id,
+			chunk_id);
+        if (!chunk) {
+		ret_code = LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK;
+		goto end;
+	}
+	/*
+	 * Release the reference returned by the "find" operation and
+	 * the session daemon's implicit reference to the chunk.
+	 */
+	lttng_trace_chunk_put(chunk);
+	lttng_trace_chunk_put(chunk);
+
+	/*
+	 * chunk is now invalid to access as we no longer hold a reference to
+	 * it; it is only kept around to compare it (by address) to the
+	 * current chunk found in the session's channels.
+	 */
+	rcu_read_lock();
+	cds_lfht_for_each_entry(consumer_data.channel_ht->ht, &iter.iter,
+			channel, node.node) {
+		pthread_mutex_lock(&channel->lock);
+		/*
+		 * Invalid state; the channel's trace chunk should have been
+		 * created before it is closed. The current chunk of a channel
+		 * is either set by the CREATE_CHUNK command or on its creation.
+		 */
+		assert(channel->trace_chunk == chunk);
+		lttng_trace_chunk_put(channel->trace_chunk);
+		channel->trace_chunk = NULL;
+		pthread_mutex_unlock(&channel->lock);
+	}
+	rcu_read_unlock();
+end:
+	return ret_code;
+}

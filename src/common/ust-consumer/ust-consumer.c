@@ -2185,6 +2185,25 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
+	case LTTNG_CONSUMER_CLOSE_TRACE_CHUNK:
+	{
+		const uint64_t relayd_id =
+				msg.u.close_trace_chunk.relayd_id.value;
+
+		ret_code = lttng_consumer_close_trace_chunk(
+				msg.u.close_trace_chunk.relayd_id.is_set ?
+						&relayd_id : NULL,
+				msg.u.close_trace_chunk.session_id,
+				msg.u.close_trace_chunk.chunk_id);
+
+		health_code_update();
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
 	default:
 		break;
 	}

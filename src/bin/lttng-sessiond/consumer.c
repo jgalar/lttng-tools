@@ -2049,3 +2049,70 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 error:
 	return ret;
 }
+
+/*
+ * Ask the consumer to close a trace chunk for a given session.
+ *
+ * Called with the consumer socket lock held.
+ */
+int consumer_close_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		const struct lttng_trace_chunk *chunk)
+{
+	int ret;
+	enum lttng_trace_chunk_status chunk_status;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_CLOSE_TRACE_CHUNK,
+		.u.close_trace_chunk.session_id = session_id,
+	};
+	uint64_t chunk_id;
+	char chunk_id_buffer[MAX_INT_DEC_LEN(chunk_id)];
+	const char *chunk_id_str;
+
+	assert(socket);
+
+	if (relayd_id != -1ULL) {
+		LTTNG_OPTIONAL_SET(&msg.u.close_trace_chunk.relayd_id,
+				relayd_id);
+	}
+
+	chunk_status = lttng_trace_chunk_get_id(chunk, &chunk_id);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * Anonymous trace chunks should never be transmitted
+		 * to remote peers (consumerd and relayd). They are used
+		 * internally for backward-compatibility purposes.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+	msg.u.close_trace_chunk.chunk_id = chunk_id;
+	/* Only used for logging purposes. */
+	ret = snprintf(chunk_id_buffer, sizeof(chunk_id_buffer),
+			"%" PRIu64, chunk_id);
+	if (ret > 0 && ret < sizeof(chunk_id_buffer)) {
+		/*
+		 * Anonymous trace chunks should never be transmitted
+		 * to remote peers (consumerd and relayd). They are used
+		 * internally for backward-compatibility purposes.
+		 */
+		chunk_id_str = chunk_id_buffer;
+	} else {
+		chunk_id_str = "(formatting error)";
+	}
+
+	DBG("Sending consumer close trace chunk command: relayd_id = %" PRId64
+			", session_id = %" PRIu64
+			", chunk_id = %s", relayd_id, session_id, chunk_id_str);
+
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+error:
+	health_code_update();
+	return ret;
+}
