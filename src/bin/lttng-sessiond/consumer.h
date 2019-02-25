@@ -320,4 +320,8 @@ int consumer_create_trace_chunk(struct consumer_socket *socket,
 		const struct lttng_trace_chunk *chunk,
 		const char *session_output_directory_path);
 
+int consumer_release_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		const struct lttng_trace_chunk *chunk);
+
 #endif /* _CONSUMER_H */

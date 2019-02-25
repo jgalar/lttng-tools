@@ -1970,3 +1970,51 @@ error:
 	health_code_update();
 	return ret;
 }
+
+/*
+ * Ask the consumer to release a trace chunk for a given session.
+ *
+ * Called with the consumer socket lock held.
+ */
+int consumer_release_trace_chunk(struct consumer_socket *socket,
+		uint64_t relayd_id, uint64_t session_id,
+		const struct lttng_trace_chunk *chunk)
+{
+	int ret;
+	enum lttng_trace_chunk_status status;
+	struct lttcomm_consumer_msg msg = {
+		.cmd_type = LTTNG_CONSUMER_RELEASE_TRACE_CHUNK,
+		.u.release_trace_chunk.relayd_id = relayd_id,
+		.u.release_trace_chunk.session_id = session_id,
+	};
+
+	assert(socket);
+	status = lttng_trace_chunk_get_id(chunk,
+			&msg.u.release_trace_chunk.chunk_id);
+	if (status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		/*
+		 * The sessiond makes no use of anonymous chunks, this is
+		 * unexpected.
+		 */
+		ret = -LTTNG_ERR_FATAL;
+		goto error;
+	}
+
+	DBG("Sending consumer release trace chunk command: relayd_id = %" PRId64
+			", session_id = %" PRIu64
+			", chunk_id = %" PRIu64,
+			msg.u.release_trace_chunk.relayd_id,
+			msg.u.release_trace_chunk.session_id,
+			msg.u.release_trace_chunk.chunk_id);
+
+	health_code_update();
+	ret = consumer_send_msg(socket, &msg);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_RELEASE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+error:
+	health_code_update();
+	return ret;
+}

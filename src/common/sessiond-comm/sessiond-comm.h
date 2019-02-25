@@ -657,6 +657,12 @@ struct lttcomm_consumer_msg {
 			 */
 			char absolute_session_output_path[LTTNG_PATH_MAX];
 		} LTTNG_PACKED create_trace_chunk;
+		struct {
+			/* Relayd id, if applicable (remote). */
+			uint64_t relayd_id;
+			uint64_t session_id;
+			uint64_t chunk_id;
+		} LTTNG_PACKED release_trace_chunk;
 	} u;
 } LTTNG_PACKED;
 
