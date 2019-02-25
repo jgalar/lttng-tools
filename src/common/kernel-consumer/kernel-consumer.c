@@ -1260,6 +1260,28 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
+	case LTTNG_CONSUMER_CREATE_TRACE_CHUNK:
+	{
+		const struct lttng_credentials credentials = {
+			.uid = msg.u.create_trace_chunk.credentials.uid,
+			.gid = msg.u.create_trace_chunk.credentials.gid,
+		};
+
+		ret_code = lttng_consumer_create_trace_chunk(
+				msg.u.create_trace_chunk.relayd_id,
+				msg.u.create_trace_chunk.session_id,
+				msg.u.create_trace_chunk.chunk_id,
+				&credentials,
+				msg.u.create_trace_chunk.creation_timestamp,
+				msg.u.create_trace_chunk.absolute_session_output_path);
+		health_code_update();
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
 	default:
 		goto end_nosignal;
 	}

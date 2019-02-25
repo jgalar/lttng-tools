@@ -35,6 +35,7 @@
 #include <common/pipe.h>
 #include <common/index/ctf-index.h>
 #include <common/trace-chunk-registry.h>
+#include <common/credentials.h>
 
 /* Commands for consumer */
 enum lttng_consumer_command {
@@ -859,6 +860,11 @@ int lttng_consumer_check_rotation_pending_relay(uint64_t session_id,
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream);
 int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,
 		uint64_t relayd_id);
+enum lttcomm_return_code lttng_consumer_create_trace_chunk(
+		uint64_t relayd_id, uint64_t session_id, uint64_t chunk_id,
+		const struct lttng_credentials *credentials,
+		time_t chunk_creation_timestamp,
+		const char *absolute_session_output_path);
 void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
 
 #endif /* LIB_CONSUMER_H */

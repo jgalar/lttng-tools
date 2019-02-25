@@ -48,6 +48,7 @@
 #include <common/consumer/consumer-testpoint.h>
 #include <common/align.h>
 #include <common/consumer/consumer-metadata-cache.h>
+#include <common/trace-chunk.h>
 
 struct lttng_consumer_global_data consumer_data = {
 	.stream_count = 0,
@@ -4479,4 +4480,59 @@ int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,
 	} else {
 		return mkdir_local(path, uid, gid);
 	}
+}
+
+enum lttcomm_return_code lttng_consumer_create_trace_chunk(
+		uint64_t relayd_id, uint64_t session_id, uint64_t chunk_id,
+		const struct lttng_credentials *credentials,
+		time_t chunk_creation_timestamp,
+		const char *absolute_session_output_path)
+{
+	enum lttcomm_return_code ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+	struct lttng_trace_chunk *created_chunk, *published_chunk;
+
+	DBG("Consumer create trace chunk command: relay_id = %" PRId64
+			", session_id = %" PRIu64 ", chunk_id = %" PRIu64
+			", chunk_creation_timestamp = %" PRIu64
+			", absolute_session_output_path = %s",
+			(int64_t) relayd_id, session_id, chunk_id,
+			chunk_creation_timestamp,
+			*absolute_session_output_path ?
+				absolute_session_output_path : "None");
+
+	/*
+	 * The consumer daeon has no ownership of directories.
+	 *
+	 * The trace chunk registry, as used by the consumer daemon, implicitly
+	 * owns the trace chunks. This is only needed in the consumer since
+	 * the consumer has no notion of a session beyond session IDs being
+	 * used to identify other objects.
+	 *
+	 * The lttng_trace_chunk_registry_publish() call below provides a
+	 * reference which is not released; it implicitly becomes the session
+	 * daemon's reference to the chunk in the consumer daemon.
+	 *
+	 * The lifetime of trace chunks in the consumer daemon is managed by
+	 * the session daemon through the LTTNG_CONSUMER_CREATE_TRACE_CHUNK
+	 * and LTTNG_CONSUMER_DESTROY_TRACE_CHUNK commands.
+	 */
+	created_chunk = lttng_trace_chunk_create(chunk_id,
+			chunk_creation_timestamp);
+	if (!created_chunk) {
+		ERR("Failed to create trace chunk");
+		ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+		goto end;
+	}
+
+	published_chunk = lttng_trace_chunk_registry_publish_chunk(
+			consumer_data.chunk_registry, session_id,
+			created_chunk);
+	lttng_trace_chunk_put(created_chunk);
+	if (!published_chunk) {
+		ERR("Failed to publish trace chunk");
+		ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+		goto end;
+	}
+end:
+	return ret_code;
 }
