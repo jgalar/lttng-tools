@@ -24,6 +24,7 @@
 #include <inttypes.h>
 
 #include <common/common.h>
+#include <common/trace-chunk.h>
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <common/kernel-ctl/kernel-ioctl.h>
 #include <common/sessiond-comm/sessiond-comm.h>
@@ -1198,6 +1199,7 @@ void kernel_destroy_session(struct ltt_kernel_session *ksess)
 	consumer_output_send_destroy_relayd(ksess->consumer);
 
 	trace_kernel_destroy_session(ksess);
+	lttng_trace_chunk_put(ksess->current_trace_chunk);
 }
 
 /*

@@ -32,6 +32,7 @@
 #include <common/kernel-ctl/kernel-ctl.h>
 #include <common/dynamic-buffer.h>
 #include <common/buffer-view.h>
+#include <common/trace-chunk.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition.h>
 #include <lttng/action/action.h>
@@ -2607,6 +2608,33 @@ end:
 	return ret;
 }
 
+static
+bool output_supports_chunks(const struct ltt_session *session)
+{
+	struct consumer_output *output;
+
+	if (session->consumer->type == CONSUMER_DST_LOCAL) {
+		return true;
+	} else {
+		if (session->ust_session) {
+			output = session->ust_session->consumer;
+		} else if (session->kernel_session) {
+			output = session->kernel_session->consumer;
+		} else {
+			abort();
+		}
+
+		if (output->relay_major_version > 2) {
+			return true;
+		} else if (output->relay_major_version == 2 &&
+				output->relay_minor_version >= 11) {
+			return true;
+		}
+
+		return false;
+	}
+}
+
 /*
  * Command LTTNG_START_TRACE processed by the client thread.
  *
@@ -2651,18 +2679,74 @@ int cmd_start_trace(struct ltt_session *session)
 	 * an eventual session rotation call.
 	 */
 	if (!session->has_been_started) {
-		session->current_chunk_start_ts = time(NULL);
-		if (session->current_chunk_start_ts == (time_t) -1) {
+		time_t timestamp_begin = time(NULL);
+
+		if (timestamp_begin == (time_t) -1) {
 			PERROR("Failed to retrieve the \"%s\" session's start time",
 					session->name);
 			ret = LTTNG_ERR_FATAL;
 			goto error;
 		}
+		session->current_chunk_start_ts = timestamp_begin;
 		if (!session->snapshot_mode && session->output_traces) {
+			/* FIXME Should not be needed following chunk creation. */
 			ret = session_mkdir(session);
 			if (ret) {
 				ERR("Failed to create the session directories");
 				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+		}
+
+		if (session->output_traces) {
+			struct lttng_trace_chunk *initial_trace_chunk;
+			bool create_anonymous_chunk;
+			bool local_trace = session->consumer->type == CONSUMER_DST_LOCAL;
+			const char *base_path = NULL;
+			const char *host_path_element = NULL;
+			const char *session_path_element = NULL;
+			/* TODO We need a custom path element in case of override */
+
+			create_anonymous_chunk = !output_supports_chunks(session);
+
+			/*
+			 * Create the trace chunk as directory-owning when
+			 * tracing locally since the session daemon is
+			 * responsible of managing the output directory
+			 * hierarchy in that case.
+			 */
+			if (!create_anonymous_chunk) {
+				initial_trace_chunk = lttng_trace_chunk_create(
+						session->id, 0,
+						timestamp_begin,
+						LTTNG_TRACE_CHUNK_PATH_FORMAT_OUTPUT_SESSION_CHUNK,
+						local_trace ?
+							session->consumer->dst.session_root_path :
+							NULL,
+						session->hostname,
+						local_trace ? NULL :
+							session->consumer->dst.net.control.subdir,
+						session->uid, session->gid,
+						local_trace);
+			} else {
+				initial_trace_chunk = lttng_trace_chunk_create_anonymous(
+						session->id,
+						local_trace ?
+							session->consumer->dst.session_root_path :
+							NULL,
+						session->uid, session->gid,
+						local_trace);
+			}
+			if (!initial_trace_chunk) {
+				ret = LTTNG_ERR_FATAL;
+				goto error;
+			}
+
+			ret = session_set_trace_chunk(session,
+					initial_trace_chunk);
+			lttng_trace_chunk_put(initial_trace_chunk);
+			if (ret) {
+				ret = LTTNG_ERR_FATAL;
 				goto error;
 			}
 		}

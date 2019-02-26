@@ -28,6 +28,7 @@
 #include <pthread.h>
 
 #include <common/common.h>
+#include <common/trace-chunk.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <lttng/location-internal.h>
 #include "lttng-sessiond.h"
@@ -64,6 +65,13 @@ static const char *forbidden_name_chars = "/";
 
 /* Global hash table to keep the sessions, indexed by id. */
 static struct lttng_ht *ltt_sessions_ht_by_id = NULL;
+
+struct consumer_create_chunk_transaction {
+	struct consumer_socket *socket;
+	struct lttng_trace_chunk *new_chunk;
+	struct lttng_trace_chunk *previous_chunk;
+	bool new_chunk_created;
+};
 
 /*
  * Validate the session name for forbidden characters.
@@ -401,6 +409,184 @@ void session_unlock(struct ltt_session *session)
 }
 
 static
+int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
+		struct lttng_trace_chunk *new_trace_chunk)
+{
+	int ret;
+	unsigned int i, refs_to_acquire = 0, refs_acquired, refs_to_release;
+	unsigned int consumer_count = 0;
+	/*
+	 * The maximum amount of consumers to reach is 3
+	 * (32/64 userspace + kernel).
+	 */
+	struct consumer_create_chunk_transaction transactions[3] = {};
+	struct cds_lfht_iter iter;
+	struct consumer_socket *socket;
+	bool release_error_occured = false;
+
+	ASSERT_LOCKED(session->lock);
+
+	if (new_trace_chunk) {
+		refs_to_acquire = 1;
+		refs_to_acquire += !!session->ust_session;
+		refs_to_acquire += !!session->kernel_session;
+	}
+
+	/*
+	 * Build a list of consumers to reach to announce the new trace chunk.
+	 *
+	 * Rolling back the annoucement in case of an error is important since
+	 * not doing so would result in a leak; the chunk will not be
+	 * "reclaimed" by the consumer(s) since they have no concept of the
+	 * lifetime of a session.
+	 */
+	if (new_trace_chunk && session->ust_session) {
+		cds_lfht_for_each_entry(
+				session->ust_session->consumer->socks->ht,
+				&iter, socket, node.node) {
+			transactions[consumer_count].socket = socket;
+			transactions[consumer_count].new_chunk = new_trace_chunk;
+			transactions[consumer_count].previous_chunk =
+					session->current_trace_chunk;
+			consumer_count++;
+			assert(consumer_count <= 3);
+		}
+	}
+	if (new_trace_chunk && session->kernel_session) {
+		cds_lfht_for_each_entry(
+				session->kernel_session->consumer->socks->ht,
+				&iter, socket, node.node) {
+			transactions[consumer_count].socket = socket;
+			transactions[consumer_count].new_chunk = new_trace_chunk;
+			transactions[consumer_count].previous_chunk =
+					session->current_trace_chunk;
+			consumer_count++;
+			assert(consumer_count <= 3);
+		}
+	}
+	for (refs_acquired = 0; refs_acquired < refs_to_acquire; refs_acquired++) {
+		if (new_trace_chunk && !lttng_trace_chunk_get(new_trace_chunk)) {
+			ERR("Failed to acquire reference to new current trace chunk of session \"%s\"",
+					session->name);
+			goto error;
+		}
+	}
+
+	/* Create the new chunk on remote peers (consumers and relayd) */
+	if (new_trace_chunk) {
+		for (i = 0; i < consumer_count; i++) {
+			pthread_mutex_lock(transactions[i].socket->lock);
+			ret = consumer_create_trace_chunk(transactions[i].socket,
+					transactions[i].new_chunk,
+					session->consumer->net_seq_index);
+			pthread_mutex_unlock(transactions[i].socket->lock);
+			if (ret) {
+				ERR("Failed to create trace chunk on consumer");
+				goto error;
+			}
+			/* This will have to be rolled-back on error. */
+			transactions[i].new_chunk_created = true;
+		}
+	}
+
+	/*
+	 * Release the previous chunk from remote peers (consumers and relayd).
+	 */
+	for (i = 0; i < consumer_count; i++) {
+		pthread_mutex_lock(transactions[i].socket->lock);
+		ret = consumer_release_trace_chunk(transactions[i].socket,
+				transactions[i].previous_chunk);
+		pthread_mutex_unlock(transactions[i].socket->lock);
+		if (ret) {
+			ERR("Failed to release trace chunk on consumer");
+			release_error_occured = true;
+		}
+	}
+
+	lttng_trace_chunk_put(session->current_trace_chunk);
+	session->current_trace_chunk = NULL;
+	if (session->ust_session) {
+		lttng_trace_chunk_put(
+				session->ust_session->current_trace_chunk);
+		session->ust_session->current_trace_chunk = NULL;
+	}
+	if (session->kernel_session) {
+		lttng_trace_chunk_put(
+				session->kernel_session->current_trace_chunk);
+		session->kernel_session->current_trace_chunk = NULL;
+	}
+
+	if (release_error_occured) {
+		/*
+		 * Failed to release the current chunk. An attempt is made
+		 * to "rollback" the creation of the new chunk on the various
+		 * peers. The session's current chunk is left NULL to indicate
+		 * an inconsistent state and to prevent the double-release
+		 * of a chunk on the consumers where the release has succeeded.
+		 */
+		goto error;
+	}
+
+	/*
+	 * Update local current trace chunk state last, only if all remote
+	 * annoucements succeeded.
+	 */
+	session->current_trace_chunk = new_trace_chunk;
+	if (session->ust_session) {
+		session->ust_session->current_trace_chunk = new_trace_chunk;
+	}
+	if (session->kernel_session) {
+		session->kernel_session->current_trace_chunk =
+				new_trace_chunk;
+	}
+
+	return 0;
+error:
+	/*
+	 * Release references taken in the case where all references could not
+	 * be acquired.
+	 */
+	refs_to_release = refs_to_acquire - refs_acquired;
+	for (i = 0; i < refs_to_release; i++) {
+		lttng_trace_chunk_put(new_trace_chunk);
+	}
+
+	/*
+	 * Release the newly-created chunk from remote peers (consumers and
+	 * relayd).
+	 */
+	DBG("Rolling back the creation of the new trace chunk on consumers");
+	for (i = 0; i < consumer_count; i++) {
+		if (!transactions[i].new_chunk_created) {
+			continue;
+		}
+
+		pthread_mutex_lock(transactions[i].socket->lock);
+		ret = consumer_release_trace_chunk(transactions[i].socket,
+				transactions[i].new_chunk);
+		pthread_mutex_unlock(transactions[i].socket->lock);
+		if (ret) {
+			ERR("Failed to release trace chunk on consumer");
+			release_error_occured = true;
+		}
+	}
+
+	return -1;
+}
+
+/*
+ * Set a session's current trace chunk.
+ *
+ * Must be called with the session lock held.
+ */
+int session_set_trace_chunk(struct ltt_session *session,
+		struct lttng_trace_chunk *new_trace_chunk)
+{
+	ASSERT_LOCKED(session->lock);
+	return _session_set_trace_chunk_no_lock_check(session, new_trace_chunk);
+}
+
+static
 void session_release(struct urcu_ref *ref)
 {
 	int ret;
@@ -439,10 +625,14 @@ void session_release(struct urcu_ref *ref)
 	}
 
 	DBG("Destroying session %s (id %" PRIu64 ")", session->name, session->id);
-	pthread_mutex_destroy(&session->lock);
 
 	consumer_output_put(session->consumer);
 	snapshot_destroy(&session->snapshot);
+
+	session_lock(session);
+	(void) _session_set_trace_chunk_no_lock_check(session, NULL);
+	session_unlock(session);
+	pthread_mutex_destroy(&session->lock);
 
 	if (session->published) {
 		ASSERT_LOCKED(ltt_session_list.lock);
