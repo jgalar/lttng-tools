@@ -49,6 +49,7 @@
 #include <common/align.h>
 #include <common/consumer/consumer-metadata-cache.h>
 #include <common/trace-chunk.h>
+#include <common/trace-chunk-registry.h>
 
 struct lttng_consumer_global_data consumer_data = {
 	.stream_count = 0,
@@ -4534,5 +4535,32 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 		goto end;
 	}
 end:
+	return ret_code;
+}
+
+enum lttcomm_return_code lttng_consumer_release_trace_chunk(uint64_t session_id,
+		uint64_t chunk_id)
+{
+	enum lttcomm_return_code ret_code = LTTCOMM_CONSUMERD_SUCCESS;
+	struct lttng_trace_chunk *chunk;
+
+	DBG("Consumer release trace chunk command: session_id = %" PRIu64
+			", chunk_id = %" PRIu64, session_id, chunk_id);
+
+	rcu_read_lock();
+	chunk = lttng_trace_chunk_registry_find_chunk(
+			consumer_data.chunk_registry, session_id, chunk_id);
+	if (!chunk) {
+		ret_code = LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK;
+		goto end;
+	}
+	/*
+	 * Release the reference returned by the "find" operation and
+	 * the session daemon's implicit reference to the chunk.
+	 */
+	lttng_trace_chunk_put(chunk);
+	lttng_trace_chunk_put(chunk);
+end:
+	rcu_read_unlock();
 	return ret_code;
 }

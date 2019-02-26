@@ -1282,6 +1282,20 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 		}
 		break;
 	}
+	case LTTNG_CONSUMER_RELEASE_TRACE_CHUNK:
+	{
+		ret_code = lttng_consumer_release_trace_chunk(
+				msg.u.create_trace_chunk.session_id,
+				msg.u.create_trace_chunk.chunk_id);
+
+		health_code_update();
+		ret = consumer_send_status_msg(sock, ret_code);
+		if (ret < 0) {
+			/* Somehow, the session daemon is not responding anymore. */
+			goto end_nosignal;
+		}
+		break;
+	}
 	default:
 		goto end_nosignal;
 	}

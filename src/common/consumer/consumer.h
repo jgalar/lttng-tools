@@ -71,6 +71,7 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_CHECK_ROTATION_PENDING_RELAY,
 	LTTNG_CONSUMER_MKDIR,
 	LTTNG_CONSUMER_CREATE_TRACE_CHUNK,
+	LTTNG_CONSUMER_RELEASE_TRACE_CHUNK,
 };
 
 /* State of each fd in consumer */
@@ -865,6 +866,8 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 		const struct lttng_credentials *credentials,
 		time_t chunk_creation_timestamp,
 		const char *absolute_session_output_path);
+enum lttcomm_return_code lttng_consumer_release_trace_chunk(
+		uint64_t session_id, uint64_t chunk_id);
 void lttng_consumer_cleanup_relayd(struct consumer_relayd_sock_pair *relayd);
 
 #endif /* LIB_CONSUMER_H */
