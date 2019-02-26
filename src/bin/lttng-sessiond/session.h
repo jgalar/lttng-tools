@@ -25,6 +25,7 @@
 #include <common/hashtable/hashtable.h>
 #include <lttng/rotation.h>
 #include <lttng/location.h>
+#include <lttng/lttng-error.h>
 
 #include "snapshot.h"
 #include "trace-kernel.h"
@@ -225,6 +226,7 @@ struct ltt_session {
 	 */
 	struct lttng_condition *rotate_condition;
 	struct lttng_trigger *rotate_trigger;
+	struct lttng_trace_chunk *current_trace_chunk;
 };
 
 /* Prototypes */
@@ -261,5 +263,9 @@ int session_access_ok(struct ltt_session *session, uid_t uid, gid_t gid);
 
 int session_reset_rotation_state(struct ltt_session *session,
 		enum lttng_rotation_state result);
+
+enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session);
+int session_set_trace_chunk(struct ltt_session *session,
+		struct lttng_trace_chunk *current_trace_chunk);
 
 #endif /* _LTT_SESSION_H */
