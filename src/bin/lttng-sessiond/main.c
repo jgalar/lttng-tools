@@ -1023,7 +1023,10 @@ static int set_permissions(char *rundir)
 	int ret;
 	gid_t gid;
 
-	gid = utils_get_group_id(config.tracing_group_name.value);
+	ret = utils_get_group_id(config.tracing_group_name.value, true, &gid);
+	if (ret) {
+		gid = 0; /* Default to root group */
+	}
 
 	/* Set lttng run dir */
 	ret = chown(rundir, 0, gid);
@@ -1134,7 +1137,14 @@ static int set_consumer_sockets(struct consumer_data *consumer_data)
 		goto error;
 	}
 	if (is_root) {
-		ret = chown(path, 0, utils_get_group_id(config.tracing_group_name.value));
+		gid_t gid;
+
+		ret = utils_get_group_id(config.tracing_group_name.value, true, &gid);
+		if (ret) {
+			gid = 0; /* Default to root group */
+		}
+
+		ret = chown(path, 0, gid);
 		if (ret < 0) {
 			ERR("Unable to set group on %s", path);
 			PERROR("chown");

@@ -239,8 +239,14 @@ int notification_channel_socket_create(void)
 	}
 
 	if (getuid() == 0) {
-		ret = chown(sock_path, 0,
-				utils_get_group_id(config.tracing_group_name.value));
+		gid_t gid;
+
+		ret =  utils_get_group_id(config.tracing_group_name.value, true, &gid);
+		if (ret) {
+			gid = 0; /* Default to root group. */
+		}
+
+		ret = chown(sock_path, 0, gid);
 		if (ret) {
 			ERR("Failed to set the notification channel socket's group");
 			ret = -1;
