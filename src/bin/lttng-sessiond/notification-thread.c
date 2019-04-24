@@ -241,9 +241,11 @@ int notification_channel_socket_create(void)
 	if (getuid() == 0) {
 		gid_t gid;
 
-		ret =  utils_get_group_id(config.tracing_group_name.value, true, &gid);
+		ret =  utils_get_group_id(config.tracing_group_name.value, true,
+				&gid);
 		if (ret) {
-			gid = 0; /* Default to root group. */
+			/* Default to root group. */
+			gid = 0;
 		}
 
 		ret = chown(sock_path, 0, gid);

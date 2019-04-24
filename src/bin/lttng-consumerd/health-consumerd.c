@@ -188,7 +188,8 @@ void *thread_manage_health(void *data)
 
 		ret = utils_get_group_id(tracing_group_name, true, &gid);
 		if (ret) {
-			gid = 0; /* Default to root group. */
+			/* Default to root group. */
+			gid = 0;
 		}
 
 		ret = chown(health_unix_sock_path, 0, gid);

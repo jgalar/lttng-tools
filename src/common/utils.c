@@ -39,6 +39,7 @@
 #include <common/compat/string.h>
 #include <common/compat/dirent.h>
 #include <common/compat/directory-handle.h>
+#include <common/dynamic-buffer.h>
 #include <lttng/constant.h>
 
 #include "utils.h"
@@ -1381,15 +1382,14 @@ LTTNG_HIDDEN
 int utils_get_group_id(const char *name, bool warn, gid_t *gid)
 {
 	static volatile int warn_once;
-
 	int ret;
 	long sys_len;
 	size_t len;
 	struct group grp;
 	struct group *result;
-	char *buffer = NULL;
+	struct lttng_dynamic_buffer buffer;
 
-	/* Get the system limit if it exists */
+	/* Get the system limit, if it exists. */
 	sys_len = sysconf(_SC_GETGR_R_SIZE_MAX);
 	if (sys_len == -1) {
 		len = 1024;
@@ -1397,34 +1397,35 @@ int utils_get_group_id(const char *name, bool warn, gid_t *gid)
 		len = (size_t) sys_len;
 	}
 
-	buffer = malloc(len);
-	if (!buffer) {
-		PERROR("getgrnam_r malloc");
+	lttng_dynamic_buffer_init(&buffer);
+	ret = lttng_dynamic_buffer_set_size(&buffer, len);
+	if (ret) {
+		ERR("Failed to allocate group info buffer");
 		ret = -1;
 		goto error;
 	}
 
-	while ((ret = getgrnam_r(name, &grp, buffer, len, &result)) == ERANGE)
-	{
+	while ((ret = getgrnam_r(name, &grp, buffer.data, buffer.size, &result)) == ERANGE) {
+		const size_t new_len = 2 * buffer.size;
+
 		/* Buffer is not big enough, increase its size. */
-		size_t new_len = 2 * len;
-		char *new_buffer = NULL;
-		if (new_len < len) {
-			ERR("getgrnam_r buffer size overflow");
+		if (new_len < buffer.size) {
+			ERR("Group info buffer size overflow");
 			ret = -1;
 			goto error;
 		}
-		len = new_len;
-		new_buffer = realloc(buffer, len);
-		if (!new_buffer) {
-			PERROR("getgrnam_r realloc");
+
+		ret = lttng_dynamic_buffer_set_size(&buffer, new_len);
+		if (ret) {
+			ERR("Failed to grow group info buffer to %zu bytes",
+					new_len);
 			ret = -1;
 			goto error;
 		}
-		buffer = new_buffer;
 	}
-	if (ret != 0) {
-		PERROR("getgrnam_r");
+	if (ret) {
+		PERROR("Failed to get group file entry for group name \"%s\"",
+				name);
 		ret = -1;
 		goto error;
 	}
@@ -1439,11 +1440,11 @@ int utils_get_group_id(const char *name, bool warn, gid_t *gid)
 	ret = 0;
 
 error:
-	free(buffer);
 	if (ret && warn && !warn_once) {
 		WARN("No tracing group detected");
 		warn_once = 1;
 	}
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 
