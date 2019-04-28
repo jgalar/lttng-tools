@@ -135,6 +135,7 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 			channel->channel->name);
 
 	if (monitor) {
+		/* FIXME: path creation.. */
 		pathname = create_channel_path(consumer, ksession->uid,
 				ksession->gid);
 	} else {

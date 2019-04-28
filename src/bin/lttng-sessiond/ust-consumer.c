@@ -133,6 +133,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 
 	/* Get and create full trace path of session. */
 	if (ua_sess->output_traces) {
+		/* FIXME: path creation. */
 		pathname = setup_trace_path(consumer, ua_sess);
 		if (!pathname) {
 			ret = -1;
