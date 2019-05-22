@@ -148,7 +148,7 @@ struct consumer_output {
 
 	/*
 	 * Subdirectory path name used for both local and network
-	 * consumer ("/kernel", "/ust", or empty).
+	 * consumer ("kernel", "ust", or empty).
 	 */
 	char domain_subdir[max(sizeof(DEFAULT_KERNEL_TRACE_DIR),
 			sizeof(DEFAULT_UST_TRACE_DIR))];
@@ -237,8 +237,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t session_id,
 		const char *pathname,
 		const char *name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		uint64_t key,
 		unsigned char *uuid,
@@ -251,12 +249,11 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		int64_t blocking_timeout,
 		const char *root_shm_path,
 		const char *shm_path,
-		uint64_t trace_archive_id);
+		const struct lttng_trace_chunk *trace_chunk);
 void consumer_init_add_stream_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t stream_key,
-		int32_t cpu,
-		uint64_t trace_archive_id);
+		int32_t cpu);
 void consumer_init_streams_sent_comm_msg(struct lttcomm_consumer_msg *msg,
 		enum lttng_consumer_command cmd,
 		uint64_t channel_key, uint64_t net_seq_idx);
@@ -296,7 +293,7 @@ int consumer_get_lost_packets(uint64_t session_id, uint64_t channel_key,
 enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 		uint64_t key, struct snapshot_output *output, int metadata,
 		uid_t uid, gid_t gid, const char *session_path, int wait,
-		uint64_t nb_packets_per_stream, uint64_t trace_archive_id);
+		uint64_t nb_packets_per_stream);
 
 /* Rotation commands. */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,

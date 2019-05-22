@@ -564,15 +564,13 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 		uint64_t stream_key,
 		enum lttng_consumer_stream_state state,
 		const char *channel_name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		uint64_t session_id,
+		struct lttng_trace_chunk *trace_chunk,
 		int cpu,
 		int *alloc_ret,
 		enum consumer_channel_type type,
-		unsigned int monitor,
-		uint64_t trace_archive_id)
+		unsigned int monitor)
 {
 	int ret;
 	struct lttng_consumer_stream *stream;
@@ -584,22 +582,25 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 		goto end;
 	}
 
-	rcu_read_lock();
+	if (trace_chunk && !lttng_trace_chunk_get(trace_chunk)) {
+		ERR("Failed to acquire trace chunk reference during the creation of a stream");
+		ret = -1;
+		goto error;
+	}
 
+	rcu_read_lock();
 	stream->key = stream_key;
+	stream->trace_chunk = trace_chunk;
 	stream->out_fd = -1;
 	stream->out_fd_offset = 0;
 	stream->output_written = 0;
 	stream->state = state;
-	stream->uid = uid;
-	stream->gid = gid;
 	stream->net_seq_idx = relayd_id;
 	stream->session_id = session_id;
 	stream->monitor = monitor;
 	stream->endpoint_status = CONSUMER_ENDPOINT_ACTIVE;
 	stream->index_file = NULL;
 	stream->last_sequence_number = -1ULL;
-	stream->trace_archive_id = trace_archive_id;
 	pthread_mutex_init(&stream->lock, NULL);
 	pthread_mutex_init(&stream->metadata_timer_lock, NULL);
 
@@ -640,6 +641,7 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 
 error:
 	rcu_read_unlock();
+	lttng_trace_chunk_put(stream->trace_chunk);
 	free(stream);
 end:
 	if (alloc_ret) {
@@ -817,8 +819,9 @@ int consumer_send_relayd_stream(struct lttng_consumer_stream *stream,
 		pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 		ret = relayd_add_stream(&relayd->control_sock, stream->name,
 				path, &stream->relayd_stream_id,
-				stream->chan->tracefile_size, stream->chan->tracefile_count,
-				stream->trace_archive_id);
+				stream->chan->tracefile_size,
+				stream->chan->tracefile_count,
+				stream->trace_chunk);
 		pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 		if (ret < 0) {
 			ERR("Relayd add stream failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
@@ -967,10 +970,9 @@ error:
  */
 struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 		uint64_t session_id,
+		const uint64_t *chunk_id,
 		const char *pathname,
 		const char *name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		enum lttng_event_output output,
 		uint64_t tracefile_size,
@@ -981,7 +983,26 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 		const char *root_shm_path,
 		const char *shm_path)
 {
-	struct lttng_consumer_channel *channel;
+	struct lttng_consumer_channel *channel = NULL;
+	struct lttng_trace_chunk *trace_chunk = NULL;
+
+	if (chunk_id) {
+		enum lttng_trace_chunk_status chunk_status;
+
+		trace_chunk = lttng_trace_chunk_registry_find_chunk(
+				consumer_data.chunk_registry, session_id,
+				*chunk_id);
+		if (!trace_chunk) {
+			ERR("Failed to find trace chunk reference during creation of channel");
+			goto end;
+		}
+
+		chunk_status = lttng_trace_chunk_create_subdirectory(
+				trace_chunk, pathname);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			goto end;
+		}
+	}
 
 	channel = zmalloc(sizeof(*channel));
 	if (channel == NULL) {
@@ -992,9 +1013,8 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 	channel->key = key;
 	channel->refcount = 0;
 	channel->session_id = session_id;
+	channel->trace_chunk = trace_chunk;
 	channel->session_id_per_pid = session_id_per_pid;
-	channel->uid = uid;
-	channel->gid = gid;
 	channel->relayd_id = relayd_id;
 	channel->tracefile_size = tracefile_size;
 	channel->tracefile_count = tracefile_count;
@@ -1536,7 +1556,7 @@ end:
  * core function for writing trace buffers to either the local filesystem or
  * the network.
  *
- * It must be called with the stream lock held.
+ * It must be called with the stream and the channel lock held.
  *
  * Careful review MUST be put if any changes occur!
  *
@@ -1658,32 +1678,11 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 		if (stream->chan->tracefile_size > 0 &&
 				(stream->tracefile_size_current + len) >
 				stream->chan->tracefile_size) {
-			ret = utils_rotate_stream_file(stream->chan->pathname,
-					stream->name, stream->chan->tracefile_size,
-					stream->chan->tracefile_count, stream->uid, stream->gid,
-					stream->out_fd, &(stream->tracefile_count_current),
-					&stream->out_fd);
-			if (ret < 0) {
-				ERR("Rotating output file");
+			ret = consumer_stream_rotate_output_files(stream);
+			if (ret) {
 				goto end;
 			}
 			outfd = stream->out_fd;
-
-			if (stream->index_file) {
-				lttng_index_file_put(stream->index_file);
-				stream->index_file = lttng_index_file_create(stream->chan->pathname,
-						stream->name, stream->uid, stream->gid,
-						stream->chan->tracefile_size,
-						stream->tracefile_count_current,
-						CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
-				if (!stream->index_file) {
-					goto end;
-				}
-			}
-
-			/* Reset current size because we just perform a rotation. */
-			stream->tracefile_size_current = 0;
-			stream->out_fd_offset = 0;
 			orig_offset = 0;
 		}
 		stream->tracefile_size_current += len;
@@ -1860,33 +1859,12 @@ ssize_t lttng_consumer_on_read_subbuffer_splice(
 		if (stream->chan->tracefile_size > 0 &&
 				(stream->tracefile_size_current + len) >
 				stream->chan->tracefile_size) {
-			ret = utils_rotate_stream_file(stream->chan->pathname,
-					stream->name, stream->chan->tracefile_size,
-					stream->chan->tracefile_count, stream->uid, stream->gid,
-					stream->out_fd, &(stream->tracefile_count_current),
-					&stream->out_fd);
+			ret = consumer_stream_rotate_output_files(stream);
 			if (ret < 0) {
 				written = ret;
-				ERR("Rotating output file");
 				goto end;
 			}
 			outfd = stream->out_fd;
-
-			if (stream->index_file) {
-				lttng_index_file_put(stream->index_file);
-				stream->index_file = lttng_index_file_create(stream->chan->pathname,
-						stream->name, stream->uid, stream->gid,
-						stream->chan->tracefile_size,
-						stream->tracefile_count_current,
-						CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
-				if (!stream->index_file) {
-					goto end;
-				}
-			}
-
-			/* Reset current size because we just perform a rotation. */
-			stream->tracefile_size_current = 0;
-			stream->out_fd_offset = 0;
 			orig_offset = 0;
 		}
 		stream->tracefile_size_current += len;
@@ -2177,6 +2155,8 @@ void consumer_del_metadata_stream(struct lttng_consumer_stream *stream,
 		consumer_del_channel(free_chan);
 	}
 
+	lttng_trace_chunk_put(stream->trace_chunk);
+	stream->trace_chunk = NULL;
 	consumer_stream_free(stream);
 }
 
@@ -3380,6 +3360,7 @@ ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	int rotate_ret;
 	bool rotated = false;
 
+	pthread_mutex_lock(&stream->chan->lock);
 	pthread_mutex_lock(&stream->lock);
 	if (stream->metadata_flag) {
 		pthread_mutex_lock(&stream->metadata_rdv_lock);
@@ -3405,6 +3386,7 @@ ssize_t lttng_consumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		pthread_mutex_unlock(&stream->metadata_rdv_lock);
 	}
 	pthread_mutex_unlock(&stream->lock);
+	pthread_mutex_unlock(&stream->chan->lock);
 	if (rotated) {
 		rotate_ret = consumer_post_rotation(stream, ctx);
 		if (rotate_ret < 0) {
@@ -3946,22 +3928,6 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		goto end_unlock_channel;
 	}
 
-	if (relayd_id == -1ULL) {
-		/*
-		 * The domain path (/ust or /kernel) has been created before, we
-		 * now need to create the last part of the path: the application/user
-		 * specific section (uid/1000/64-bit).
-		 */
-		ret = utils_mkdir_recursive(channel->pathname, S_IRWXU | S_IRWXG,
-				channel->uid, channel->gid);
-		if (ret < 0) {
-			ERR("Failed to create trace directory at %s during rotation",
-					channel->pathname);
-			ret = -1;
-			goto end_unlock_channel;
-		}
-	}
-
 	cds_lfht_for_each_entry_duplicate(ht->ht,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
 			ht->match_fct, &channel->key, &iter.iter,
@@ -4099,46 +4065,10 @@ int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 		PERROR("Closing trace file (fd %d), stream %" PRIu64,
 				stream->out_fd, stream->key);
 		assert(0);
-		goto error;
+		goto end;
 	}
 
-	ret = utils_create_stream_file(
-			stream->channel_read_only_attributes.path,
-			stream->name,
-			stream->channel_read_only_attributes.tracefile_size,
-			stream->tracefile_count_current,
-			stream->uid, stream->gid, NULL);
-	if (ret < 0) {
-		ERR("Rotate create stream file");
-		goto error;
-	}
-	stream->out_fd = ret;
-	stream->tracefile_size_current = 0;
-
-	if (!stream->metadata_flag) {
-		struct lttng_index_file *index_file;
-
-		lttng_index_file_put(stream->index_file);
-
-		index_file = lttng_index_file_create(
-				stream->channel_read_only_attributes.path,
-				stream->name, stream->uid, stream->gid,
-				stream->channel_read_only_attributes.tracefile_size,
-				stream->tracefile_count_current,
-				CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
-		if (!index_file) {
-			ERR("Create index file during rotation");
-			goto error;
-		}
-		stream->index_file = index_file;
-		stream->out_fd_offset = 0;
-	}
-
-	ret = 0;
-	goto end;
-
-error:
-	ret = -1;
+	ret = consumer_stream_rotate_output_files(stream);
 end:
 	return ret;
 
@@ -4182,7 +4112,7 @@ end:
 
 /*
  * Performs the stream rotation for the rotate session feature if needed.
- * It must be called with the stream lock held.
+ * It must be called with the channel and stream locks held.
  *
  * Return 0 on success, a negative number of error.
  */
@@ -4193,12 +4123,24 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 
 	DBG("Consumer rotate stream %" PRIu64, stream->key);
 
+	/*
+	 * Update the stream's 'current' chunk to the session's (channel)
+	 * now-current chunk.
+	 */
+	lttng_trace_chunk_put(stream->trace_chunk);
+	if (stream->chan->trace_chunk &&
+			!lttng_trace_chunk_get(stream->chan->trace_chunk)) {
+		ERR("Failed to acquire a reference to channel's trace chunk during stream rotation");
+		ret = -1;
+		goto error;
+	}
+	stream->trace_chunk = stream->chan->trace_chunk;
+
 	if (stream->net_seq_idx != (uint64_t) -1ULL) {
 		ret = rotate_relay_stream(ctx, stream);
 	} else {
 		ret = rotate_local_stream(ctx, stream);
 	}
-	stream->trace_archive_id++;
 	if (ret < 0) {
 		ERR("Failed to rotate stream, ret = %i", ret);
 		goto error;
@@ -4359,7 +4301,7 @@ int lttng_consumer_rotate_rename(const char *old_path, const char *new_path,
 	}
 }
 
-/* Stream lock must be acquired by the caller. */
+/* Stream and channel lock must be acquired by the caller. */
 static
 bool check_stream_rotation_pending(const struct lttng_consumer_stream *stream,
 		uint64_t session_id, uint64_t chunk_id)
@@ -4372,12 +4314,13 @@ bool check_stream_rotation_pending(const struct lttng_consumer_stream *stream,
 	}
 
 	/*
-	 * If the stream's archive_id belongs to the chunk being rotated (or an
+	 * If the stream's chunk belongs to the chunk being rotated (or an
 	 * even older one), it means that the consumer has not consumed all the
 	 * buffers that belong to the chunk being rotated. Therefore, the
 	 * rotation is considered as ongoing/pending.
 	 */
-	pending = stream->trace_archive_id <= chunk_id;
+	ASSERT_LOCKED(stream->chan->lock);
+	pending = stream->trace_chunk != stream->chan->trace_chunk;
 end:
 	return pending;
 }

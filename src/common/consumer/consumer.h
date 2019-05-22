@@ -137,9 +137,6 @@ struct lttng_consumer_channel {
 	char pathname[PATH_MAX];
 	/* Channel name. */
 	char name[LTTNG_SYMBOL_NAME_LEN];
-	/* UID and GID of the session owning this channel. */
-	uid_t uid;
-	gid_t gid;
 	/* Relayd id of the channel. -1ULL if it does not apply. */
 	uint64_t relayd_id;
 	/*
@@ -236,6 +233,8 @@ struct lttng_consumer_channel {
 	int nr_stream_fds;
 	char root_shm_path[PATH_MAX];
 	char shm_path[PATH_MAX];
+	/* Only set for UST channels. */
+	LTTNG_OPTIONAL(struct lttng_credentials) buffer_credentials;
 	/* Total number of discarded events for that channel. */
 	uint64_t discarded_events;
 	/* Total number of missed packets due to overwriting (overwrite). */
@@ -334,9 +333,6 @@ struct lttng_consumer_stream {
 	/* For UST */
 
 	int wait_fd;
-	/* UID/GID of the user owning the session to which stream belongs */
-	uid_t uid;
-	gid_t gid;
 	/* Network sequence number. Indicating on which relayd socket it goes. */
 	uint64_t net_seq_idx;
 	/*
@@ -426,12 +422,6 @@ struct lttng_consumer_stream {
 	uint64_t last_discarded_events;
 	/* Copy of the sequence number of the last packet extracted. */
 	uint64_t last_sequence_number;
-	/*
-	 * A stream is created with a trace_archive_id matching the session's
-	 * current trace archive id at the time of the creation of the stream.
-	 * It is incremented when the rotate_position is reached.
-	 */
-	uint64_t trace_archive_id;
 	/*
 	 * Index file object of the index file for this stream.
 	 */
@@ -759,21 +749,18 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 		uint64_t stream_key,
 		enum lttng_consumer_stream_state state,
 		const char *channel_name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		uint64_t session_id,
+		struct lttng_trace_chunk *trace_chunk,
 		int cpu,
 		int *alloc_ret,
 		enum consumer_channel_type type,
-		unsigned int monitor,
-		uint64_t trace_archive_id);
+		unsigned int monitor);
 struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 		uint64_t session_id,
+		const uint64_t *chunk_id,
 		const char *pathname,
 		const char *name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		enum lttng_event_output output,
 		uint64_t tracefile_size,

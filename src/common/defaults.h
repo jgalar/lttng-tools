@@ -55,8 +55,8 @@
 #define DEFAULT_TRACE_OUTPUT                    DEFAULT_HOME_DIR "/lttng"
 
 /* Default directory where the trace are written in per domain */
-#define DEFAULT_KERNEL_TRACE_DIR                "/kernel"
-#define DEFAULT_UST_TRACE_DIR                   "/ust"
+#define DEFAULT_KERNEL_TRACE_DIR                "kernel"
+#define DEFAULT_UST_TRACE_DIR                   "ust"
 
 /* Subpath for per PID or UID sessions. */
 #define DEFAULT_UST_TRACE_PID_PATH               "/pid"

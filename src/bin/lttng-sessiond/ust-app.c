@@ -2462,7 +2462,7 @@ static int do_consumer_create_channel(struct ltt_ust_session *usess,
 	 * stream we have to expect.
 	 */
 	ret = ust_consumer_ask_channel(ua_sess, ua_chan, usess->consumer, socket,
-			registry, trace_archive_id);
+			registry, usess->current_trace_chunk);
 	if (ret < 0) {
 		goto error_ask;
 	}
@@ -3236,7 +3236,7 @@ static int create_ust_app_metadata(struct ust_app_session *ua_sess,
 	 * consumer.
 	 */
 	ret = ust_consumer_ask_channel(ua_sess, metadata, consumer, socket,
-			registry, session->current_archive_id);
+			registry, session->current_trace_chunk);
 	if (ret < 0) {
 		/* Nullify the metadata key so we don't try to close it later on. */
 		registry->metadata_key = 0;
@@ -5883,19 +5883,11 @@ enum lttng_error_code ust_app_snapshot_record(struct ltt_ust_session *usess,
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	char pathname[PATH_MAX];
-	struct ltt_session *session = NULL;
-	uint64_t trace_archive_id;
 
 	assert(usess);
 	assert(output);
 
 	rcu_read_lock();
-
-	session = session_find_by_id(usess->id);
-	assert(session);
-	assert(pthread_mutex_trylock(&session->lock));
-	assert(session_trylock_list());
-	trace_archive_id = session->current_archive_id;
 
 	switch (usess->buffer_type) {
 	case LTTNG_BUFFER_PER_UID:
@@ -5936,16 +5928,14 @@ enum lttng_error_code ust_app_snapshot_record(struct ltt_ust_session *usess,
 						reg_chan->consumer_key,
 						output, 0, usess->uid,
 						usess->gid, pathname, wait,
-						nb_packets_per_stream,
-						trace_archive_id);
+						nb_packets_per_stream);
 				if (status != LTTNG_OK) {
 					goto error;
 				}
 			}
 			status = consumer_snapshot_channel(socket,
 					reg->registry->reg.ust->metadata_key, output, 1,
-					usess->uid, usess->gid, pathname, wait, 0,
-					trace_archive_id);
+					usess->uid, usess->gid, pathname, wait, 0);
 			if (status != LTTNG_OK) {
 				goto error;
 			}
@@ -5991,8 +5981,7 @@ enum lttng_error_code ust_app_snapshot_record(struct ltt_ust_session *usess,
 						ua_chan->key, output,
 						0, ua_sess->euid, ua_sess->egid,
 						pathname, wait,
-						nb_packets_per_stream,
-						trace_archive_id);
+						nb_packets_per_stream);
 				switch (status) {
 				case LTTNG_OK:
 					break;
@@ -6011,8 +6000,7 @@ enum lttng_error_code ust_app_snapshot_record(struct ltt_ust_session *usess,
 			status = consumer_snapshot_channel(socket,
 					registry->metadata_key, output,
 					1, ua_sess->euid, ua_sess->egid,
-					pathname, wait, 0,
-					trace_archive_id);
+					pathname, wait, 0);
 			switch (status) {
 			case LTTNG_OK:
 				break;
@@ -6031,9 +6019,6 @@ enum lttng_error_code ust_app_snapshot_record(struct ltt_ust_session *usess,
 
 error:
 	rcu_read_unlock();
-	if (session) {
-		session_put(session);
-	}
 	return status;
 }
 

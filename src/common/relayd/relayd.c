@@ -29,6 +29,7 @@
 #include <common/compat/string.h>
 #include <common/sessiond-comm/relayd.h>
 #include <common/index/ctf-index.h>
+#include <common/trace-chunk.h>
 
 #include "relayd.h"
 
@@ -414,7 +415,7 @@ error:
 int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_name,
 		const char *pathname, uint64_t *stream_id,
 		uint64_t tracefile_size, uint64_t tracefile_count,
-		uint64_t trace_archive_id)
+		const struct lttng_trace_chunk *trace_chunk)
 {
 	int ret;
 	struct lttcomm_relayd_status_stream reply;
@@ -429,17 +430,27 @@ int relayd_add_stream(struct lttcomm_relayd_sock *rsock, const char *channel_nam
 	/* Compat with relayd 2.1 */
 	if (rsock->minor == 1) {
 		/* For 2.1 */
+		assert(!trace_chunk);
 		ret = relayd_add_stream_2_1(rsock, channel_name, pathname);
 	
 	} else if (rsock->minor > 1 && rsock->minor < 11) {
 		/* From 2.2 to 2.10 */
+		assert(!trace_chunk);
 		ret = relayd_add_stream_2_2(rsock, channel_name, pathname,
 				tracefile_size, tracefile_count);
 	} else {
+		enum lttng_trace_chunk_status chunk_status;
+		uint64_t chunk_id;
+
+		assert(trace_chunk);
+		chunk_status = lttng_trace_chunk_get_id(trace_chunk,
+				&chunk_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+
 		/* From 2.11 to ...*/
 		ret = relayd_add_stream_2_11(rsock, channel_name, pathname,
 				tracefile_size, tracefile_count,
-				trace_archive_id);
+				chunk_id);
 	}
 
 	if (ret) {

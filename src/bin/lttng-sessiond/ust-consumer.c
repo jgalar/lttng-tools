@@ -65,34 +65,24 @@ static char *setup_trace_path(struct consumer_output *consumer,
 	/* Get correct path name destination */
 	if (consumer->type == CONSUMER_DST_LOCAL) {
 		/* Set application path to the destination path */
-		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s/%s%s/%s",
-				consumer->dst.session_root_path,
-				consumer->chunk_path,
+		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s",
 				consumer->domain_subdir, ua_sess->path);
-		if (ret < 0) {
-			PERROR("snprintf channel path");
-			goto error;
-		}
-
-		/* Create directory. Ignore if exist. */
-		ret = run_as_mkdir_recursive(pathname, S_IRWXU | S_IRWXG,
-				ua_sess->euid, ua_sess->egid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				ERR("Trace directory creation error");
-				goto error;
-			}
-		}
+		DBG3("Userspace local consumer trace path relative to current trace chunk: \"%s\"",
+				pathname);
 	} else {
 		ret = snprintf(pathname, LTTNG_PATH_MAX, "%s%s/%s%s",
 				consumer->dst.net.base_dir,
 				consumer->chunk_path,
 				consumer->domain_subdir,
 				ua_sess->path);
-		if (ret < 0) {
-			PERROR("snprintf channel path");
-			goto error;
-		}
+	}
+	if (ret < 0) {
+		PERROR("Failed to format channel path");
+		goto error;
+	} else if (ret >= LTTNG_PATH_MAX) {
+		ERR("Truncation occurred while formatting channel path");
+		ret = -1;
+		goto error;
 	}
 
 	return pathname;
@@ -112,7 +102,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 		struct consumer_output *consumer,
 		struct consumer_socket *socket,
 		struct ust_registry_session *registry,
-		uint64_t trace_archive_id)
+		const struct lttng_trace_chunk *trace_chunk)
 {
 	int ret, output;
 	uint32_t chan_id;
@@ -192,8 +182,6 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			ua_sess->tracing_id,
 			pathname,
 			ua_chan->name,
-			ua_sess->euid,
-			ua_sess->egid,
 			consumer->net_seq_index,
 			ua_chan->key,
 			registry->uuid,
@@ -205,7 +193,7 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 			ua_sess->uid,
 			ua_chan->attr.blocking_timeout,
 			root_shm_path, shm_path,
-			trace_archive_id);
+			trace_chunk);
 
 	health_code_update();
 
@@ -247,7 +235,7 @@ int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
 		struct consumer_output *consumer,
 		struct consumer_socket *socket,
 		struct ust_registry_session *registry,
-		uint64_t trace_archive_id)
+		const struct lttng_trace_chunk * trace_chunk)
 {
 	int ret;
 
@@ -265,7 +253,7 @@ int ust_consumer_ask_channel(struct ust_app_session *ua_sess,
 
 	pthread_mutex_lock(socket->lock);
 	ret = ask_channel_creation(ua_sess, ua_chan, consumer, socket, registry,
-			trace_archive_id);
+			trace_chunk);
 	pthread_mutex_unlock(socket->lock);
 	if (ret < 0) {
 		ERR("ask_channel_creation consumer command failed");

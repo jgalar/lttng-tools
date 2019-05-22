@@ -871,8 +871,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t session_id,
 		const char *pathname,
 		const char *name,
-		uid_t uid,
-		gid_t gid,
 		uint64_t relayd_id,
 		uint64_t key,
 		unsigned char *uuid,
@@ -885,12 +883,21 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		int64_t blocking_timeout,
 		const char *root_shm_path,
 		const char *shm_path,
-		uint64_t trace_archive_id)
+		const struct lttng_trace_chunk *trace_chunk)
 {
 	assert(msg);
 
-	/* Zeroed structure */
+        /* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
+
+        if (trace_chunk) {
+		uint64_t chunk_id;
+		enum lttng_trace_chunk_status chunk_status;
+
+		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+		LTTNG_OPTIONAL_SET(&msg->u.ask_channel.chunk_id, chunk_id);
+        }
 
 	msg->cmd_type = LTTNG_CONSUMER_ASK_CHANNEL_CREATION;
 	msg->u.ask_channel.subbuf_size = subbuf_size;
@@ -904,8 +911,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.ask_channel.type = type;
 	msg->u.ask_channel.session_id = session_id;
 	msg->u.ask_channel.session_id_per_pid = session_id_per_pid;
-	msg->u.ask_channel.uid = uid;
-	msg->u.ask_channel.gid = gid;
 	msg->u.ask_channel.relayd_id = relayd_id;
 	msg->u.ask_channel.key = key;
 	msg->u.ask_channel.chan_id = chan_id;
@@ -914,7 +919,6 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.ask_channel.monitor = monitor;
 	msg->u.ask_channel.ust_app_uid = ust_app_uid;
 	msg->u.ask_channel.blocking_timeout = blocking_timeout;
-	msg->u.ask_channel.trace_archive_id = trace_archive_id;
 
 	memcpy(msg->u.ask_channel.uuid, uuid, sizeof(msg->u.ask_channel.uuid));
 
@@ -968,8 +972,6 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->cmd_type = LTTNG_CONSUMER_ADD_CHANNEL;
 	msg->u.channel.channel_key = channel_key;
 	msg->u.channel.session_id = session_id;
-	msg->u.channel.uid = uid;
-	msg->u.channel.gid = gid;
 	msg->u.channel.relayd_id = relayd_id;
 	msg->u.channel.nb_init_streams = nb_init_streams;
 	msg->u.channel.output = output;
@@ -994,8 +996,7 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 void consumer_init_add_stream_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t stream_key,
-		int32_t cpu,
-		uint64_t trace_archive_id)
+		int32_t cpu)
 {
 	assert(msg);
 
@@ -1005,7 +1006,6 @@ void consumer_init_add_stream_comm_msg(struct lttcomm_consumer_msg *msg,
 	msg->u.stream.channel_key = channel_key;
 	msg->u.stream.stream_key = stream_key;
 	msg->u.stream.cpu = cpu;
-	msg->u.stream.trace_archive_id = trace_archive_id;
 }
 
 void consumer_init_streams_sent_comm_msg(struct lttcomm_consumer_msg *msg,
@@ -1421,7 +1421,7 @@ end:
 enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 		uint64_t key, struct snapshot_output *output, int metadata,
 		uid_t uid, gid_t gid, const char *session_path, int wait,
-		uint64_t nb_packets_per_stream, uint64_t trace_archive_id)
+		uint64_t nb_packets_per_stream)
 {
 	int ret;
 	enum lttng_error_code status = LTTNG_OK;
@@ -1438,7 +1438,6 @@ enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 	msg.u.snapshot_channel.key = key;
 	msg.u.snapshot_channel.nb_packets_per_stream = nb_packets_per_stream;
 	msg.u.snapshot_channel.metadata = metadata;
-	msg.u.snapshot_channel.trace_archive_id = trace_archive_id;
 
 	if (output->consumer->type == CONSUMER_DST_NET) {
 		msg.u.snapshot_channel.relayd_id = output->consumer->net_seq_index;
@@ -1487,17 +1486,6 @@ enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 		}
 
 		msg.u.snapshot_channel.relayd_id = (uint64_t) -1ULL;
-
-		/* Create directory. Ignore if exist. */
-		ret = run_as_mkdir_recursive(msg.u.snapshot_channel.pathname,
-				S_IRWXU | S_IRWXG, uid, gid);
-		if (ret < 0) {
-			if (errno != EEXIST) {
-				status = LTTNG_ERR_CREATE_DIR_FAIL;
-				PERROR("Trace directory creation error");
-				goto error;
-			}
-		}
 	}
 
 	health_code_update();

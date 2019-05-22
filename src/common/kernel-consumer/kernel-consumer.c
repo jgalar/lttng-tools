@@ -174,20 +174,13 @@ static int lttng_kconsumer_snapshot_channel(
 				goto end_unlock;
 			}
 		} else {
-			ret = utils_create_stream_file(path, stream->name,
-					stream->chan->tracefile_size,
-					stream->tracefile_count_current,
-					stream->uid, stream->gid, NULL);
+			ret = consumer_stream_create_output_files(stream,
+					false);
 			if (ret < 0) {
-				ERR("utils_create_stream_file");
 				goto end_unlock;
 			}
-
-			stream->out_fd = ret;
-			stream->tracefile_size_current = 0;
-
-			DBG("Kernel consumer snapshot stream %s/%s (%" PRIu64 ")",
-					path, stream->name, stream->key);
+			DBG("Kernel consumer snapshot stream (%" PRIu64 ")",
+					stream->key);
 		}
 
 		ret = kernctl_buffer_flush_empty(stream->wait_fd);
@@ -332,11 +325,12 @@ end:
 /*
  * Read the whole metadata available for a snapshot.
  * RCU read-side lock must be held across this function to ensure existence of
- * metadata_channel.
+ * metadata_channel. The channel lock must be held by the caller.
  *
  * Returns 0 on success, < 0 on error
  */
-static int lttng_kconsumer_snapshot_metadata(struct lttng_consumer_channel *metadata_channel,
+static int lttng_kconsumer_snapshot_metadata(
+		struct lttng_consumer_channel *metadata_channel,
 		uint64_t key, char *path, uint64_t relayd_id,
 		struct lttng_consumer_local_data *ctx)
 {
@@ -366,14 +360,11 @@ static int lttng_kconsumer_snapshot_metadata(struct lttng_consumer_channel *meta
 			goto error_snapshot;
 		}
 	} else {
-		ret = utils_create_stream_file(path, metadata_stream->name,
-				metadata_stream->chan->tracefile_size,
-				metadata_stream->tracefile_count_current,
-				metadata_stream->uid, metadata_stream->gid, NULL);
+		ret = consumer_stream_create_output_files(metadata_stream,
+			        false);
 		if (ret < 0) {
 			goto error_snapshot;
 		}
-		metadata_stream->out_fd = ret;
 	}
 
 	do {
@@ -466,6 +457,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 	{
 		struct lttng_consumer_channel *new_channel;
 		int ret_recv;
+		const uint64_t chunk_id = msg.u.channel.chunk_id.value;
 
 		health_code_update();
 
@@ -480,8 +472,11 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		DBG("consumer_add_channel %" PRIu64, msg.u.channel.channel_key);
 		new_channel = consumer_allocate_channel(msg.u.channel.channel_key,
-				msg.u.channel.session_id, msg.u.channel.pathname,
-				msg.u.channel.name, msg.u.channel.uid, msg.u.channel.gid,
+				msg.u.channel.session_id,
+				msg.u.channel.chunk_id.is_set ?
+						&chunk_id : NULL,
+				msg.u.channel.pathname,
+				msg.u.channel.name,
 				msg.u.channel.relayd_id, msg.u.channel.output,
 				msg.u.channel.tracefile_size,
 				msg.u.channel.tracefile_count, 0,
@@ -632,15 +627,13 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				fd,
 				LTTNG_CONSUMER_ACTIVE_STREAM,
 				channel->name,
-				channel->uid,
-				channel->gid,
 				channel->relayd_id,
 				channel->session_id,
+				channel->trace_chunk,
 				msg.u.stream.cpu,
 				&alloc_ret,
 				channel->type,
-				channel->monitor,
-				msg.u.stream.trace_archive_id);
+				channel->monitor);
 		if (new_stream == NULL) {
 			switch (alloc_ret) {
 			case -ENOMEM:
@@ -694,14 +687,15 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
+		pthread_mutex_lock(&channel->lock);
 		if (ctx->on_recv_stream) {
 			ret = ctx->on_recv_stream(new_stream);
 			if (ret < 0) {
 				consumer_stream_free(new_stream);
+				pthread_mutex_unlock(&channel->lock);
 				goto end_nosignal;
 			}
 		}
-
 		health_code_update();
 
 		if (new_stream->metadata_flag) {
@@ -739,6 +733,11 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				}
 			}
 		}
+		/*
+		 * Channel lock is released here since it is re-acquired during
+		 * the consumer_add_metadata/data_stream() calls below.
+		 */
+		pthread_mutex_unlock(&channel->lock);
 
 		/* Get the right pipe where the stream will be sent. */
 		if (new_stream->metadata_flag) {
@@ -900,6 +899,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			ERR("Channel %" PRIu64 " not found", key);
 			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
 		} else {
+			pthread_mutex_lock(&channel->lock);
 			if (msg.u.snapshot_channel.metadata == 1) {
 				ret = lttng_kconsumer_snapshot_metadata(channel, key,
 						msg.u.snapshot_channel.pathname,
@@ -919,6 +919,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 					ret_code = LTTCOMM_CONSUMERD_SNAPSHOT_FAILED;
 				}
 			}
+			pthread_mutex_unlock(&channel->lock);
 		}
 		health_code_update();
 
@@ -1606,6 +1607,7 @@ end:
 
 /*
  * Consume data on a file descriptor and write it on a trace file.
+ * The stream and channel locks must be held by the caller.
  */
 ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 		struct lttng_consumer_local_data *ctx, bool *rotated)
@@ -1875,28 +1877,9 @@ int lttng_kconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 	 * monitored.
 	 */
 	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor) {
-		ret = utils_create_stream_file(stream->chan->pathname, stream->name,
-				stream->chan->tracefile_size, stream->tracefile_count_current,
-				stream->uid, stream->gid, NULL);
-		if (ret < 0) {
+		ret = consumer_stream_create_output_files(stream, true);
+		if (ret) {
 			goto error;
-		}
-		stream->out_fd = ret;
-		stream->tracefile_size_current = 0;
-
-		if (!stream->metadata_flag) {
-			struct lttng_index_file *index_file;
-
-			index_file = lttng_index_file_create(stream->chan->pathname,
-					stream->name, stream->uid, stream->gid,
-					stream->chan->tracefile_size,
-					stream->tracefile_count_current,
-					CTF_INDEX_MAJOR, CTF_INDEX_MINOR);
-			if (!index_file) {
-				goto error;
-			}
-			assert(!stream->index_file);
-			stream->index_file = index_file;
 		}
 	}
 

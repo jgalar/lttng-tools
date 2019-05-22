@@ -1249,20 +1249,12 @@ enum lttng_error_code kernel_snapshot_record(struct ltt_kernel_session *ksess,
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_metadata *saved_metadata;
-	struct ltt_session *session = NULL;
-	uint64_t trace_archive_id;
 
 	assert(ksess);
 	assert(ksess->consumer);
 	assert(output);
 
 	DBG("Kernel snapshot record started");
-
-	session = session_find_by_id(ksess->id);
-	assert(session);
-	assert(pthread_mutex_trylock(&session->lock));
-	assert(session_trylock_list());
-	trace_archive_id = session->current_archive_id;
 
 	/* Save current metadata since the following calls will change it. */
 	saved_metadata = ksess->metadata;
@@ -1311,8 +1303,7 @@ enum lttng_error_code kernel_snapshot_record(struct ltt_kernel_session *ksess,
 			status = consumer_snapshot_channel(socket, chan->key, output, 0,
 					ksess->uid, ksess->gid,
 					DEFAULT_KERNEL_TRACE_DIR, wait,
-					nb_packets_per_stream,
-					trace_archive_id);
+					nb_packets_per_stream);
 			if (status != LTTNG_OK) {
 				(void) kernel_consumer_destroy_metadata(socket,
 						ksess->metadata);
@@ -1323,8 +1314,7 @@ enum lttng_error_code kernel_snapshot_record(struct ltt_kernel_session *ksess,
 		/* Snapshot metadata, */
 		status = consumer_snapshot_channel(socket, ksess->metadata->key, output,
 				1, ksess->uid, ksess->gid,
-				DEFAULT_KERNEL_TRACE_DIR, wait, 0,
-				trace_archive_id);
+				DEFAULT_KERNEL_TRACE_DIR, wait, 0);
 		if (status != LTTNG_OK) {
 			goto error_consumer;
 		}
@@ -1349,9 +1339,6 @@ error:
 	/* Restore metadata state.*/
 	ksess->metadata = saved_metadata;
 	ksess->metadata_stream_fd = saved_metadata_fd;
-	if (session) {
-		session_put(session);
-	}
 	rcu_read_unlock();
 	return status;
 }
