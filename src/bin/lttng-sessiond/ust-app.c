@@ -5913,8 +5913,12 @@ enum lttng_error_code ust_app_snapshot_record(
 			}
 
 			memset(pathname, 0, sizeof(pathname));
+			/*
+			 * DEFAULT_UST_TRACE_UID_PATH already contains a path
+			 * separator.
+			 */
 			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH,
+					DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH,
 					reg->uid, reg->bits_per_long);
 			if (ret < 0) {
 				PERROR("snprintf snapshot path");

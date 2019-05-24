@@ -2568,7 +2568,7 @@ end:
  */
 int cmd_start_trace(struct ltt_session *session)
 {
-	int ret;
+	enum lttng_error_code ret;
 	unsigned long nb_chan = 0;
 	struct ltt_kernel_session *ksession;
 	struct ltt_ust_session *usess;
@@ -2600,8 +2600,8 @@ int cmd_start_trace(struct ltt_session *session)
 		goto error;
 	}
 
-	if (!session->has_been_started) {
-		ret = session_switch_trace_chunk(session);
+	if (!session->has_been_started && session->output_traces) {
+		ret = session_switch_trace_chunk(session, NULL, NULL);
 		if (ret != LTTNG_OK) {
 			goto error;
 		}
@@ -2618,8 +2618,9 @@ int cmd_start_trace(struct ltt_session *session)
 
 	/* Flag session that trace should start automatically */
 	if (usess) {
-		ret = ust_app_start_trace_all(usess);
-		if (ret < 0) {
+		int int_ret = ust_app_start_trace_all(usess);
+
+		if (int_ret < 0) {
 			ret = LTTNG_ERR_UST_START_FAIL;
 			goto error;
 		}
@@ -2636,9 +2637,10 @@ int cmd_start_trace(struct ltt_session *session)
 	session->rotated_after_last_stop = false;
 
 	if (session->rotate_timer_period) {
-		ret = timer_session_rotation_schedule_timer_start(session,
-				session->rotate_timer_period);
-		if (ret < 0) {
+		int int_ret = timer_session_rotation_schedule_timer_start(
+				session, session->rotate_timer_period);
+
+		if (int_ret < 0) {
 			ERR("Failed to enable rotate timer");
 			ret = LTTNG_ERR_UNK;
 			goto error;
@@ -4329,11 +4331,33 @@ int64_t get_session_nb_packets_per_stream(const struct ltt_session *session,
 }
 
 static
-enum lttng_error_code snapshot_record(const struct ltt_session *session,
+enum lttng_error_code snapshot_record(struct ltt_session *session,
 		const struct snapshot_output *snapshot_output, int wait)
 {
+	int fmt_ret;
 	int64_t nb_packets_per_stream;
+	char snapshot_chunk_name[LTTNG_NAME_MAX];
 	enum lttng_error_code ret = LTTNG_OK;
+
+	fmt_ret = snprintf(snapshot_chunk_name, sizeof(snapshot_chunk_name),
+			"%s-%s-%" PRIu32,
+			snapshot_output->name,
+			snapshot_output->datetime,
+			snapshot_output->id);
+	if (fmt_ret < 0 || fmt_ret >= sizeof(snapshot_chunk_name)) {
+		ERR("Failed to format snapshot name");
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+	DBG("Recording snapshot \"%s\" for session \"%s\" with chunk name \"%s\"",
+			snapshot_output->name, session->name,
+			snapshot_chunk_name);
+	ret = session_switch_trace_chunk(session,
+			snapshot_output_get_base_path(snapshot_output),
+			snapshot_chunk_name);
+	if (ret != LTTNG_OK) {
+		goto end;
+	}
 
 	nb_packets_per_stream = get_session_nb_packets_per_stream(session,
 			snapshot_output->max_size);
@@ -4358,6 +4382,11 @@ enum lttng_error_code snapshot_record(const struct ltt_session *session,
 		if (ret != LTTNG_OK) {
 			goto end;
 		}
+	}
+
+	if (session_set_trace_chunk(session, NULL)) {
+		ERR("Failed to close the current trace chunk of session \"%s\"",
+				session->name);
 	}
 end:
 	return ret;

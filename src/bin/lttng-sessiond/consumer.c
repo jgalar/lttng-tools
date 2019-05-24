@@ -961,12 +961,22 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t tracefile_count,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
-		unsigned int monitor_timer_interval)
+		unsigned int monitor_timer_interval,
+		const struct lttng_trace_chunk *trace_chunk)
 {
 	assert(msg);
 
 	/* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
+
+        if (trace_chunk) {
+		uint64_t chunk_id;
+		enum lttng_trace_chunk_status chunk_status;
+
+		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+		LTTNG_OPTIONAL_SET(&msg->u.channel.chunk_id, chunk_id);
+        }
 
 	/* Send channel */
 	msg->cmd_type = LTTNG_CONSUMER_ADD_CHANNEL;
@@ -1421,7 +1431,7 @@ end:
  */
 enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 		uint64_t key, const struct snapshot_output *output,
-		int metadata, uid_t uid, gid_t gid, const char *session_path,
+		int metadata, uid_t uid, gid_t gid, const char *channel_path,
 		int wait, uint64_t nb_packets_per_stream)
 {
 	int ret;
@@ -1441,52 +1451,22 @@ enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 	msg.u.snapshot_channel.metadata = metadata;
 
 	if (output->consumer->type == CONSUMER_DST_NET) {
-		msg.u.snapshot_channel.relayd_id = output->consumer->net_seq_index;
+		msg.u.snapshot_channel.relayd_id =
+				output->consumer->net_seq_index;
 		msg.u.snapshot_channel.use_relayd = 1;
-		ret = snprintf(msg.u.snapshot_channel.pathname,
-				sizeof(msg.u.snapshot_channel.pathname),
-				"%s/%s/%s-%s-%" PRIu64 "%s",
-				output->consumer->dst.net.base_dir,
-				output->consumer->domain_subdir,
-				output->name, output->datetime,
-				output->nb_snapshot,
-				session_path);
-		if (ret < 0) {
-			status = LTTNG_ERR_INVALID;
-			goto error;
-		} else if (ret >= sizeof(msg.u.snapshot_channel.pathname)) {
-			ERR("Snapshot path exceeds the maximal allowed length of %zu bytes (%i bytes required) with path \"%s/%s/%s-%s-%" PRIu64 "%s\"",
-					sizeof(msg.u.snapshot_channel.pathname),
-					ret, output->consumer->dst.net.base_dir,
-					output->consumer->domain_subdir,
-					output->name, output->datetime,
-					output->nb_snapshot,
-					session_path);
-			status = LTTNG_ERR_SNAPSHOT_FAIL;
-			goto error;
-		}
 	} else {
-		ret = snprintf(msg.u.snapshot_channel.pathname,
-				sizeof(msg.u.snapshot_channel.pathname),
-				"%s/%s-%s-%" PRIu64 "%s",
-				output->consumer->dst.session_root_path,
-				output->name, output->datetime,
-				output->nb_snapshot,
-				session_path);
-		if (ret < 0) {
-			status = LTTNG_ERR_NOMEM;
-			goto error;
-		} else if (ret >= sizeof(msg.u.snapshot_channel.pathname)) {
-			ERR("Snapshot path exceeds the maximal allowed length of %zu bytes (%i bytes required) with path \"%s/%s-%s-%" PRIu64 "%s\"",
-					sizeof(msg.u.snapshot_channel.pathname),
-					ret, output->consumer->dst.session_root_path,
-					output->name, output->datetime, output->nb_snapshot,
-					session_path);
-			status = LTTNG_ERR_SNAPSHOT_FAIL;
-			goto error;
-		}
-
 		msg.u.snapshot_channel.relayd_id = (uint64_t) -1ULL;
+	}
+	ret = lttng_strncpy(msg.u.snapshot_channel.pathname,
+			channel_path,
+			sizeof(msg.u.snapshot_channel.pathname));
+	if (ret < 0) {
+		ERR("Snapshot path exceeds the maximal allowed length of %zu bytes (%zu bytes required) with path \"%s\"",
+				sizeof(msg.u.snapshot_channel.pathname),
+				strlen(channel_path),
+				channel_path);
+		status = LTTNG_ERR_SNAPSHOT_FAIL;
+		goto error;
 	}
 
 	health_code_update();

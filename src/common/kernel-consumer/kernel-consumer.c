@@ -126,7 +126,7 @@ int lttng_kconsumer_get_consumed_snapshot(struct lttng_consumer_stream *stream,
 /*
  * Take a snapshot of all the stream of a channel
  * RCU read-side lock must be held across this function to ensure existence of
- * channel.
+ * channel. The channel lock must be held by the caller.
  *
  * Returns 0 on success, < 0 on error
  */
@@ -160,6 +160,19 @@ static int lttng_kconsumer_snapshot_channel(
 		 * Lock stream because we are about to change its state.
 		 */
 		pthread_mutex_lock(&stream->lock);
+
+		assert(channel->trace_chunk);
+		if (!lttng_trace_chunk_get(channel->trace_chunk)) {
+			/*
+			 * Can't happen barring an internal error as the channel
+			 * holds a reference to the trace chunk.
+			 */
+			ERR("Failed to acquire reference to channel's trace chunk");
+			ret = -1;
+			goto end_unlock;
+		}
+		assert(!stream->trace_chunk);
+		stream->trace_chunk = channel->trace_chunk;
 
 		/*
 		 * Assign the received relayd ID so we can use it for streaming. The streams
@@ -303,6 +316,8 @@ static int lttng_kconsumer_snapshot_channel(
 			close_relayd_stream(stream);
 			stream->net_seq_idx = (uint64_t) -1ULL;
 		}
+		lttng_trace_chunk_put(stream->trace_chunk);
+		stream->trace_chunk = NULL;
 		pthread_mutex_unlock(&stream->lock);
 	}
 
@@ -347,7 +362,10 @@ static int lttng_kconsumer_snapshot_metadata(
 
 	metadata_stream = metadata_channel->metadata_stream;
 	assert(metadata_stream);
+
 	pthread_mutex_lock(&metadata_stream->lock);
+	assert(metadata_channel->trace_chunk);
+	assert(metadata_stream->trace_chunk);
 
 	/* Flag once that we have a valid relayd for the stream. */
 	if (relayd_id != (uint64_t) -1ULL) {
@@ -397,6 +415,8 @@ static int lttng_kconsumer_snapshot_metadata(
 				 */
 			}
 			metadata_stream->out_fd = -1;
+			lttng_trace_chunk_put(metadata_stream->trace_chunk);
+			metadata_stream->trace_chunk = NULL;
 		}
 	}
 
@@ -623,6 +643,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
+		pthread_mutex_lock(&channel->lock);
 		new_stream = consumer_allocate_stream(channel->key,
 				fd,
 				LTTNG_CONSUMER_ACTIVE_STREAM,
@@ -642,6 +663,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_OUTFD_ERROR);
 				break;
 			}
+			pthread_mutex_unlock(&channel->lock);
 			goto end_nosignal;
 		}
 
@@ -654,6 +676,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			new_stream->output = LTTNG_EVENT_SPLICE;
 			ret = utils_create_pipe(new_stream->splice_pipe);
 			if (ret < 0) {
+				pthread_mutex_unlock(&channel->lock);
 				goto end_nosignal;
 			}
 			break;
@@ -662,6 +685,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			break;
 		default:
 			ERR("Stream output unknown %d", channel->output);
+			pthread_mutex_unlock(&channel->lock);
 			goto end_nosignal;
 		}
 
@@ -687,12 +711,13 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
-		pthread_mutex_lock(&channel->lock);
+		pthread_mutex_lock(&new_stream->lock);
 		if (ctx->on_recv_stream) {
 			ret = ctx->on_recv_stream(new_stream);
 			if (ret < 0) {
-				consumer_stream_free(new_stream);
+				pthread_mutex_unlock(&new_stream->lock);
 				pthread_mutex_unlock(&channel->lock);
+				consumer_stream_free(new_stream);
 				goto end_nosignal;
 			}
 		}
@@ -708,6 +733,8 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 					"relayd id %" PRIu64, new_stream->name,
 					new_stream->net_seq_idx);
 			cds_list_add(&new_stream->send_node, &channel->streams.head);
+			pthread_mutex_unlock(&new_stream->lock);
+			pthread_mutex_unlock(&channel->lock);
 			break;
 		}
 
@@ -716,6 +743,8 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			ret = consumer_send_relayd_stream(new_stream,
 					new_stream->chan->pathname);
 			if (ret < 0) {
+				pthread_mutex_unlock(&new_stream->lock);
+				pthread_mutex_unlock(&channel->lock);
 				consumer_stream_free(new_stream);
 				goto end_nosignal;
 			}
@@ -729,14 +758,13 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				ret = consumer_send_relayd_streams_sent(
 						new_stream->net_seq_idx);
 				if (ret < 0) {
+					pthread_mutex_unlock(&new_stream->lock);
+					pthread_mutex_unlock(&channel->lock);
 					goto end_nosignal;
 				}
 			}
 		}
-		/*
-		 * Channel lock is released here since it is re-acquired during
-		 * the consumer_add_metadata/data_stream() calls below.
-		 */
+		pthread_mutex_unlock(&new_stream->lock);
 		pthread_mutex_unlock(&channel->lock);
 
 		/* Get the right pipe where the stream will be sent. */

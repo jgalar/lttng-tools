@@ -110,19 +110,17 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 	DBG("Kernel consumer adding channel %s to kernel consumer",
 			channel->channel->name);
 
-	if (monitor) {
-		pathname = create_channel_path(consumer);
-		if (!pathname) {
-			ret = -1;
-			goto error;
-		}
+	pathname = create_channel_path(consumer);
+	if (!pathname) {
+		ret = -1;
+		goto error;
 	}
 
 	/* Prep channel message structure */
 	consumer_init_add_channel_comm_msg(&lkm,
 			channel->key,
 			ksession->id,
-			pathname ? : "",
+			pathname,
 			ksession->uid,
 			ksession->gid,
 			consumer->net_seq_index,
@@ -134,7 +132,8 @@ int kernel_consumer_add_channel(struct consumer_socket *sock,
 			channel->channel->attr.tracefile_count,
 			monitor,
 			channel->channel->attr.live_timer_interval,
-			channel_attr_extended->monitor_timer_interval);
+			channel_attr_extended->monitor_timer_interval,
+			ksession->current_trace_chunk);
 
 	health_code_update();
 
@@ -181,7 +180,6 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 		struct ltt_kernel_session *ksession, unsigned int monitor)
 {
 	int ret;
-	char *pathname = NULL;
 	struct lttcomm_consumer_msg lkm;
 	struct consumer_output *consumer;
 
@@ -198,19 +196,11 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 	/* Get consumer output pointer */
 	consumer = ksession->consumer;
 
-	if (monitor) {
-		pathname = create_channel_path(consumer);
-		if (!pathname) {
-			ret = -1;
-			goto error;
-		}
-	}
-
 	/* Prep channel message structure */
 	consumer_init_add_channel_comm_msg(&lkm,
 			ksession->metadata->key,
 			ksession->id,
-			pathname ? : "",
+			DEFAULT_KERNEL_TRACE_DIR,
 			ksession->uid,
 			ksession->gid,
 			consumer->net_seq_index,
@@ -219,7 +209,7 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 			DEFAULT_KERNEL_CHANNEL_OUTPUT,
 			CONSUMER_CHANNEL_TYPE_METADATA,
 			0, 0,
-			monitor, 0, 0);
+			monitor, 0, 0, ksession->current_trace_chunk);
 
 	health_code_update();
 
@@ -249,7 +239,6 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 
 error:
 	rcu_read_unlock();
-	free(pathname);
 	return ret;
 }
 

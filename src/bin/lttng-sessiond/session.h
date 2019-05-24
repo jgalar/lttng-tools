@@ -226,6 +226,7 @@ struct ltt_session {
 	 */
 	struct lttng_condition *rotate_condition;
 	struct lttng_trigger *rotate_trigger;
+	LTTNG_OPTIONAL(uint64_t) last_trace_chunk_id;
 	struct lttng_trace_chunk *current_trace_chunk;
 };
 
@@ -264,7 +265,9 @@ int session_access_ok(struct ltt_session *session, uid_t uid, gid_t gid);
 int session_reset_rotation_state(struct ltt_session *session,
 		enum lttng_rotation_state result);
 
-enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session);
+enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session,
+		const char *session_base_path_override,
+		const char *chunk_name_override);
 int session_set_trace_chunk(struct ltt_session *session,
 		struct lttng_trace_chunk *current_trace_chunk);
 

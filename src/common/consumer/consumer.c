@@ -362,7 +362,6 @@ void consumer_destroy_relayd(struct consumer_relayd_sock_pair *relayd)
  */
 void consumer_del_channel(struct lttng_consumer_channel *channel)
 {
-	int ret;
 	struct lttng_ht_iter iter;
 
 	DBG("Consumer delete channel key %" PRIu64, channel->key);
@@ -396,17 +395,22 @@ void consumer_del_channel(struct lttng_consumer_channel *channel)
 	lttng_trace_chunk_put(channel->trace_chunk);
 	channel->trace_chunk = NULL;
 
-	rcu_read_lock();
-	iter.iter.node = &channel->node.node;
-	ret = lttng_ht_del(consumer_data.channel_ht, &iter);
-	assert(!ret);
+        if (channel->is_published) {
+		int ret;
 
-	iter.iter.node = &channel->channels_by_session_id_ht_node.node;
-	ret = lttng_ht_del(consumer_data.channels_by_session_id_ht, &iter);
-	assert(!ret);
-	rcu_read_unlock();
+		rcu_read_lock();
+		iter.iter.node = &channel->node.node;
+		ret = lttng_ht_del(consumer_data.channel_ht, &iter);
+		assert(!ret);
 
-	call_rcu(&channel->node.head, free_channel_rcu);
+		iter.iter.node = &channel->channels_by_session_id_ht_node.node;
+		ret = lttng_ht_del(consumer_data.channels_by_session_id_ht,
+				&iter);
+		assert(!ret);
+		rcu_read_unlock();
+        }
+
+        call_rcu(&channel->node.head, free_channel_rcu);
 end:
 	pthread_mutex_unlock(&channel->lock);
 	pthread_mutex_unlock(&consumer_data.lock);
@@ -962,6 +966,60 @@ error:
 	return outfd;
 }
 
+static
+int lttng_consumer_channel_set_trace_chunk(
+		struct lttng_consumer_channel *channel,
+		struct lttng_trace_chunk *new_trace_chunk)
+{
+	int ret = 0;
+	enum lttng_trace_chunk_status chunk_status;
+	const bool is_local_trace = channel->relayd_id == -1ULL;
+
+	/*
+	 * The acquisition of the reference cannot fail (barring
+	 * a severe internal error) since a reference to the published
+	 * chunk is already held by the caller.
+	 */
+	if (new_trace_chunk) {
+		const bool acquired_reference = lttng_trace_chunk_get(
+				new_trace_chunk);
+
+		assert(acquired_reference);
+	}
+
+	pthread_mutex_lock(&channel->lock);
+	if (new_trace_chunk && channel->trace_chunk) {
+		/*
+		 * Invalid state; the channel's trace chunk should have been
+		 * closed before a new chunk is created.
+		 */
+		ERR("Invalid state encountered while setting trace chunk of channel: previous chunk was not closed (channel name = \"%s\", session_id = %" PRIu64 ")",
+				channel->name, channel->session_id);
+		lttng_trace_chunk_put(new_trace_chunk);
+		ret = -1;
+		goto end;
+	}
+
+	lttng_trace_chunk_put(channel->trace_chunk);
+	channel->trace_chunk = new_trace_chunk;
+	if (!is_local_trace || !new_trace_chunk) {
+		/* Not an error. */
+		goto end;
+	}
+
+	chunk_status = lttng_trace_chunk_create_subdirectory(
+			new_trace_chunk, channel->pathname);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ERR("Failed to create channel directory \"%s\" of channel \"%s\"",
+				channel->pathname, channel->name);
+		ret = -1;
+		goto end;
+	}
+end:
+	pthread_mutex_unlock(&channel->lock);
+	return ret;
+}
+
 /*
  * Allocate and return a new lttng_consumer_channel object using the given key
  * to initialize the hash table node.
@@ -987,19 +1045,11 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 	struct lttng_trace_chunk *trace_chunk = NULL;
 
 	if (chunk_id) {
-		enum lttng_trace_chunk_status chunk_status;
-
 		trace_chunk = lttng_trace_chunk_registry_find_chunk(
 				consumer_data.chunk_registry, session_id,
 				*chunk_id);
 		if (!trace_chunk) {
 			ERR("Failed to find trace chunk reference during creation of channel");
-			goto end;
-		}
-
-		chunk_status = lttng_trace_chunk_create_subdirectory(
-				trace_chunk, pathname);
-		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
 			goto end;
 		}
 	}
@@ -1013,7 +1063,6 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 	channel->key = key;
 	channel->refcount = 0;
 	channel->session_id = session_id;
-	channel->trace_chunk = trace_chunk;
 	channel->session_id_per_pid = session_id_per_pid;
 	channel->relayd_id = relayd_id;
 	channel->tracefile_size = tracefile_size;
@@ -1070,13 +1119,25 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 			channel->session_id);
 
 	channel->wait_fd = -1;
+        CDS_INIT_LIST_HEAD(&channel->streams.head);
 
-	CDS_INIT_LIST_HEAD(&channel->streams.head);
+        if (trace_chunk) {
+		int ret = lttng_consumer_channel_set_trace_chunk(channel,
+				trace_chunk);
+		if (ret) {
+			goto error;
+		}
+        }
 
 	DBG("Allocated channel (key %" PRIu64 ")", channel->key);
 
 end:
+	lttng_trace_chunk_put(trace_chunk);
 	return channel;
+error:
+	consumer_del_channel(channel);
+	channel = NULL;
+	goto end;
 }
 
 /*
@@ -1103,6 +1164,7 @@ int consumer_add_channel(struct lttng_consumer_channel *channel,
 	lttng_ht_add_u64(consumer_data.channels_by_session_id_ht,
 			&channel->channels_by_session_id_ht_node);
 	rcu_read_unlock();
+	channel->is_published = true;
 
 	pthread_mutex_unlock(&channel->timer_lock);
 	pthread_mutex_unlock(&channel->lock);
@@ -4451,7 +4513,7 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 	char relayd_id_buffer[MAX_INT_DEC_LEN(*relayd_id)];
 	char creation_timestamp_buffer[ISO8601_STR_LEN];
 	const char *relayd_id_str = "(none)";
-	const char *creation_timestamp_str = "(none)";
+	const char *creation_timestamp_str;
 	struct lttng_ht_iter iter;
 	struct lttng_consumer_channel *channel;
 
@@ -4546,28 +4608,40 @@ enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 	}
 
 	rcu_read_lock();
-	cds_lfht_for_each_entry(consumer_data.channel_ht->ht, &iter.iter,
-			channel, node.node) {
-		const bool acquired_reference =
-				lttng_trace_chunk_get(published_chunk);
+	cds_lfht_for_each_entry_duplicate(consumer_data.channels_by_session_id_ht->ht,
+			consumer_data.channels_by_session_id_ht->hash_fct(
+					&session_id, lttng_ht_seed),
+			consumer_data.channels_by_session_id_ht->match_fct,
+			&session_id, &iter.iter, channel,
+			channels_by_session_id_ht_node.node) {
+		ret = lttng_consumer_channel_set_trace_chunk(channel,
+				published_chunk);
+		if (ret) {
+			/*
+			 * Roll-back the creation of this chunk.
+			 *
+			 * This is important since the session daemon will
+			 * assume that the creation of this chunk failed and
+			 * will never ask for it to be closed, resulting
+			 * in a leak and an inconsistent state for some
+			 * channels.
+			 */
+			enum lttcomm_return_code close_ret;
 
-		/*
-		 * The acquisition of the reference cannot fail (barring
-		 * a severe internal error) since a reference to the published
-		 * chunk is already held (the "publish" operation implicitly
-		 * acquired a reference on our behalf).
-		 */
-		assert(acquired_reference);
-		pthread_mutex_lock(&channel->lock);
-		/*
-		 * Invalid state; the channel's trace chunk should have been
-		 * closed before a new chunk is created.
-		 */
-		assert(!channel->trace_chunk);
-		channel->trace_chunk = published_chunk;
-		pthread_mutex_unlock(&channel->lock);
+			DBG("Failed to set new trace chunk on existing channels, rolling back");
+			close_ret = lttng_consumer_close_trace_chunk(relayd_id,
+					session_id, chunk_id);
+			if (close_ret != LTTCOMM_CONSUMERD_SUCCESS) {
+				ERR("Failed to roll-back the creation of new chunk: session_id = %" PRIu64 ", chunk_id = %" PRIu64,
+						session_id, chunk_id);
+			}
+
+			ret_code = LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED;
+			break;
+		}
 	}
 	rcu_read_unlock();
+
 	/* Release the reference returned by the "publish" operation. */
 	lttng_trace_chunk_put(published_chunk);
 end:
@@ -4580,29 +4654,35 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 {
 	enum lttcomm_return_code ret_code = LTTCOMM_CONSUMERD_SUCCESS;
 	struct lttng_trace_chunk *chunk;
-	char chunk_id_buffer[MAX_INT_DEC_LEN(chunk_id)];
-	const char *chunk_id_str = "(anonymous)";
+	char relayd_id_buffer[MAX_INT_DEC_LEN(*relayd_id)];
+	const char *relayd_id_str = "(none)";
 	struct lttng_ht_iter iter;
 	struct lttng_consumer_channel *channel;
 
-	if (chunk_id) {
+	if (relayd_id) {
+		int ret;
+
 		/* Only used for logging purposes. */
-		int ret = snprintf(chunk_id_buffer, sizeof(chunk_id_buffer),
-				"%" PRIu64, chunk_id);
-		if (ret > 0 && ret < sizeof(chunk_id_buffer)) {
-			chunk_id_str = chunk_id_buffer;
+		ret = snprintf(relayd_id_buffer, sizeof(relayd_id_buffer),
+				"%" PRIu64, *relayd_id);
+		if (ret > 0 && ret < sizeof(relayd_id_buffer)) {
+			relayd_id_str = relayd_id_buffer;
 		} else {
-			chunk_id_str = "(formatting error)";
+			relayd_id_str = "(formatting error)";
 		}
-	}
+        }
 
-	DBG("Consumer close trace chunk command: session_id = %" PRIu64
-			", chunk_id = %s", session_id, chunk_id_str);
-
+	DBG("Consumer close trace chunk command: relayd_id = %s"
+			", session_id = %" PRIu64
+			", chunk_id = %" PRIu64, relayd_id_str,
+			session_id, chunk_id);
 	chunk = lttng_trace_chunk_registry_find_chunk(
 			consumer_data.chunk_registry, session_id,
 			chunk_id);
         if (!chunk) {
+		ERR("Failed to find chunk: session_id = %" PRIu64
+				", chunk_id = %" PRIu64,
+				session_id, chunk_id);
 		ret_code = LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK;
 		goto end;
 	}
@@ -4621,16 +4701,16 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 	rcu_read_lock();
 	cds_lfht_for_each_entry(consumer_data.channel_ht->ht, &iter.iter,
 			channel, node.node) {
-		pthread_mutex_lock(&channel->lock);
-		/*
-		 * Invalid state; the channel's trace chunk should have been
-		 * created before it is closed. The current chunk of a channel
-		 * is either set by the CREATE_CHUNK command or on its creation.
-		 */
-		assert(channel->trace_chunk == chunk);
-		lttng_trace_chunk_put(channel->trace_chunk);
-		channel->trace_chunk = NULL;
-		pthread_mutex_unlock(&channel->lock);
+		int ret;
+
+		ret = lttng_consumer_channel_set_trace_chunk(channel, NULL);
+		if (ret) {
+			/*
+			 * Attempt to close the chunk on as many channels as
+			 * possible.
+			 */
+			ret_code = LTTCOMM_CONSUMERD_CLOSE_TRACE_CHUNK_FAILED;
+		}
 	}
 	rcu_read_unlock();
 end:

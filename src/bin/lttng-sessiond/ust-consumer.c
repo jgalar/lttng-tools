@@ -36,13 +36,12 @@
 
 /*
  * Return allocated full pathname of the session using the consumer trace path
- * and subdir if available. On a successful allocation, the directory of the
- * trace is created with the session credentials.
+ * and subdir if available.
  *
  * The caller can safely free(3) the returned value. On error, NULL is
  * returned.
  */
-static char *setup_trace_path(struct consumer_output *consumer,
+static char *setup_channel_trace_path(struct consumer_output *consumer,
 		struct ust_app_session *ua_sess)
 {
 	int ret;
@@ -121,13 +120,11 @@ static int ask_channel_creation(struct ust_app_session *ua_sess,
 
 	DBG2("Asking UST consumer for channel");
 
-	/* Get and create full trace path of session. */
-	if (ua_sess->output_traces) {
-		pathname = setup_trace_path(consumer, ua_sess);
-		if (!pathname) {
-			ret = -1;
-			goto error;
-		}
+	/* Format the channel's path (relative to the current trace chunk). */
+	pathname = setup_channel_trace_path(consumer, ua_sess);
+	if (!pathname) {
+		ret = -1;
+		goto error;
 	}
 
 	/* Depending on the buffer type, a different channel key is used. */

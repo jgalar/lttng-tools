@@ -273,7 +273,8 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t tracefile_count,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
-		unsigned int monitor_timer_interval);
+		unsigned int monitor_timer_interval,
+		const struct lttng_trace_chunk *trace_chunk);
 int consumer_is_data_pending(uint64_t session_id,
 		struct consumer_output *consumer);
 int consumer_close_metadata(struct consumer_socket *socket,
@@ -293,7 +294,7 @@ int consumer_get_lost_packets(uint64_t session_id, uint64_t channel_key,
 /* Snapshot command. */
 enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 		uint64_t key, const struct snapshot_output *output, int metadata,
-		uid_t uid, gid_t gid, const char *session_path, int wait,
+		uid_t uid, gid_t gid, const char *channel_path, int wait,
 		uint64_t nb_packets_per_stream);
 
 /* Rotation commands. */

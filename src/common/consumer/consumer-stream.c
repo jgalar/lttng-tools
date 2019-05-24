@@ -164,6 +164,9 @@ void consumer_stream_close(struct lttng_consumer_stream *stream)
 		stream->index_file = NULL;
 	}
 
+	lttng_trace_chunk_put(stream->trace_chunk);
+	stream->trace_chunk = NULL;
+
 	/* Check and cleanup relayd if needed. */
 	rcu_read_lock();
 	relayd = consumer_find_relayd(stream->net_seq_idx);
@@ -569,6 +572,7 @@ int consumer_stream_create_output_files(struct lttng_consumer_stream *stream,
 	char stream_path[LTTNG_PATH_MAX];
 
 	ASSERT_LOCKED(stream->lock);
+	assert(stream->trace_chunk);
 
 	ret = utils_stream_file_path(stream->chan->pathname, stream->name,
 			stream->chan->tracefile_size,

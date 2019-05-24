@@ -174,6 +174,7 @@ enum lttcomm_return_code {
 	LTTCOMM_CONSUMERD_MKDIR_FAILED,             /* mkdir has failed. */
 	LTTCOMM_CONSUMERD_SNAPSHOT_FAILED,          /* snapshot has failed. */
 	LTTCOMM_CONSUMERD_CREATE_TRACE_CHUNK_FAILED,/* Trace chunk creation failed. */
+	LTTCOMM_CONSUMERD_CLOSE_TRACE_CHUNK_FAILED, /* Trace chunk creation failed. */
 	LTTCOMM_CONSUMERD_INVALID_PARAMETERS,       /* Invalid parameters. */
 	LTTCOMM_CONSUMERD_UNKNOWN_TRACE_CHUNK,      /* Unknown trace chunk. */
 

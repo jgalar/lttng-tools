@@ -414,7 +414,7 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 		struct lttng_trace_chunk *new_trace_chunk)
 {
 	int ret;
-	unsigned int i, refs_to_acquire = 0, refs_acquired, refs_to_release;
+	unsigned int i, refs_to_acquire = 0, refs_acquired = 0, refs_to_release = 0;
 	unsigned int consumer_count = 0;
 	/*
 	 * The maximum amount of consumers to reach is 3
@@ -424,6 +424,16 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 	struct cds_lfht_iter iter;
 	struct consumer_socket *socket;
 	bool close_error_occured = false;
+
+	if (new_trace_chunk) {
+		uint64_t chunk_id;
+		enum lttng_trace_chunk_status chunk_status =
+				lttng_trace_chunk_get_id(new_trace_chunk,
+					&chunk_id);
+
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+		LTTNG_OPTIONAL_SET(&session->last_trace_chunk_id, chunk_id)
+	}
 
 	if (new_trace_chunk) {
 		refs_to_acquire = 1;
@@ -471,24 +481,6 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 		}
 	}
 
-	/* Create the new chunk on remote peers (consumers and relayd) */
-	if (new_trace_chunk) {
-		for (i = 0; i < consumer_count; i++) {
-			pthread_mutex_lock(transactions[i].socket->lock);
-			ret = consumer_create_trace_chunk(transactions[i].socket,
-					session->consumer->net_seq_index,
-					session->id,
-					transactions[i].new_chunk);
-			pthread_mutex_unlock(transactions[i].socket->lock);
-			if (ret) {
-				ERR("Failed to create trace chunk on consumer");
-				goto error;
-			}
-			/* This will have to be rolled-back on error. */
-			transactions[i].new_chunk_created = true;
-		}
-	}
-
 	/*
 	 * Close the previous chunk on remote peers (consumers and relayd).
 	 */
@@ -508,6 +500,32 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 		}
 	}
 
+	if (close_error_occured) {
+		/*
+		 * Skip the creation of the new trace chunk and report the
+		 * error.
+		 */
+		goto error;
+	}
+
+	/* Create the new chunk on remote peers (consumers and relayd) */
+	if (new_trace_chunk) {
+		for (i = 0; i < consumer_count; i++) {
+			pthread_mutex_lock(transactions[i].socket->lock);
+			ret = consumer_create_trace_chunk(transactions[i].socket,
+					session->consumer->net_seq_index,
+					session->id,
+					transactions[i].new_chunk);
+			pthread_mutex_unlock(transactions[i].socket->lock);
+			if (ret) {
+				ERR("Failed to create trace chunk on consumer");
+				goto error;
+			}
+			/* This will have to be rolled-back on error. */
+			transactions[i].new_chunk_created = true;
+		}
+	}
+
 	lttng_trace_chunk_put(session->current_trace_chunk);
 	session->current_trace_chunk = NULL;
 	if (session->ust_session) {
@@ -519,17 +537,6 @@ int _session_set_trace_chunk_no_lock_check(struct ltt_session *session,
 		lttng_trace_chunk_put(
 				session->kernel_session->current_trace_chunk);
 		session->kernel_session->current_trace_chunk = NULL;
-	}
-
-	if (close_error_occured) {
-		/*
-		 * Failed to close the current chunk. An attempt is made
-		 * to "rollback" the creation of the new chunk on the various
-		 * peers. The session's current chunk is left NULL to indicate
-		 * an inconsistent state and to prevent the double-release
-		 * of a chunk on the consumers where the close has succeeded.
-		 */
-		goto error;
 	}
 
 	/*
@@ -607,7 +614,9 @@ bool output_supports_chunks(const struct ltt_session *session)
 	return false;
 }
 
-enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session)
+enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session,
+		const char *session_base_path_override,
+		const char *chunk_name_override)
 {
 	int ret;
 	enum lttng_error_code ret_code = LTTNG_OK;
@@ -616,12 +625,14 @@ enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session)
 	const time_t timestamp_begin = time(NULL);
 	const bool is_local_trace =
 			session->consumer->type == CONSUMER_DST_LOCAL;
-	const char *base_path = session_get_base_path(session);
+	const char *base_path = session_base_path_override ? :
+			session_get_base_path(session);
 	struct lttng_directory_handle session_output_directory;
 	const struct lttng_credentials session_credentials = {
 		.uid = session->uid,
 		.gid = session->gid,
 	};
+	uint64_t next_chunk_id;
 
 	if (timestamp_begin == (time_t) -1) {
 		PERROR("Failed to sample time while changing session \"%s\" trace chunk",
@@ -631,32 +642,37 @@ enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session)
 	}
 	session->current_chunk_start_ts = timestamp_begin;
 
-	if (output_supports_chunks(session) && session->output_traces) {
-		uint64_t next_chunk_id = 0;
-
-		if (session->current_trace_chunk) {
-			uint64_t current_chunk_id;
-
-			chunk_status = lttng_trace_chunk_get_id(
-					session->current_trace_chunk,
-					&current_chunk_id);
-			assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
-			next_chunk_id = current_chunk_id + 1;
-		}
-	        trace_chunk = lttng_trace_chunk_create(next_chunk_id,
-				timestamp_begin);
-	} else {
-		trace_chunk = lttng_trace_chunk_create_anonymous();
+	if (!output_supports_chunks(session)) {
+		goto end;
 	}
+	next_chunk_id = session->last_trace_chunk_id.is_set ?
+			session->last_trace_chunk_id.value + 1 : 0;
+
+	trace_chunk = lttng_trace_chunk_create(next_chunk_id, timestamp_begin);
 	if (!trace_chunk) {
 		ret_code = LTTNG_ERR_FATAL;
 		goto error;
 	}
 
-	if (!is_local_trace || !session->output_traces) {
+	if (chunk_name_override) {
+		chunk_status = lttng_trace_chunk_override_name(trace_chunk,
+				chunk_name_override);
+		switch (chunk_status) {
+		case LTTNG_TRACE_CHUNK_STATUS_OK:
+			break;
+		case LTTNG_TRACE_CHUNK_STATUS_INVALID_ARGUMENT:
+			ret_code = LTTNG_ERR_INVALID;
+			goto error;
+		default:
+			ret_code = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+	}
+
+	if (!is_local_trace) {
 		/*
 		 * No need to set crendentials and output directory
-		 * for remote trace chunks or no-output/snapshot traces.
+		 * for remote trace chunks.
 		 */
 		goto publish;
 	}
@@ -669,7 +685,6 @@ enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session)
 	}
 
 	if (!session->current_trace_chunk) {
-		/* Only log once. */
 		DBG("Creating base output directory of session \"%s\" at %s",
 				session->name, base_path);
 	}
@@ -700,6 +715,7 @@ publish:
 	}
 error:
 	lttng_trace_chunk_put(trace_chunk);
+end:
 	return ret_code;
 }
 

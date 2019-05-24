@@ -177,11 +177,12 @@ int set_chunk_name(struct lttng_trace_chunk *chunk)
 	}
 	ret = snprintf(chunk->name, GENERATED_CHUNK_NAME_LEN, "%s%s-%" PRIu64,
 			start_datetime, end_datetime_suffix, chunk->id.value);
-	if (ret >= sizeof(chunk->name) || ret == -1) {
+	if (ret >= GENERATED_CHUNK_NAME_LEN || ret == -1) {
 		ERR("Failed to format trace chunk name");
 		ret = -1;
 		goto end;
 	}
+	ret = 0;
 end:
 	return ret;
 }
@@ -320,7 +321,7 @@ enum lttng_trace_chunk_status lttng_trace_chunk_override_name(
 	char *new_name;
 	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
 
-	if (!name || *name || strnlen(name, LTTNG_NAME_MAX) == LTTNG_NAME_MAX) {
+	if (!name || !*name || strnlen(name, LTTNG_NAME_MAX) == LTTNG_NAME_MAX) {
 		ERR("Attempted to set an invalid name on a trace chunk: name = %s",
 				name ? : "NULL");
 		status = LTTNG_TRACE_CHUNK_STATUS_INVALID_ARGUMENT;

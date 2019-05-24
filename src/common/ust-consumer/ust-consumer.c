@@ -997,7 +997,7 @@ end:
 
 /*
  * Snapshot the whole metadata.
- * RCU read-side lock and the channel lock must be held by the caller.
+ * RCU read-side lock must be held by the caller.
  *
  * Returns 0 on success, < 0 on error
  */
@@ -1043,18 +1043,17 @@ static int snapshot_metadata(struct lttng_consumer_channel *metadata_channel,
 	metadata_stream = metadata_channel->metadata_stream;
 	assert(metadata_stream);
 
+	pthread_mutex_lock(&metadata_stream->lock);
 	if (relayd_id != (uint64_t) -1ULL) {
 		metadata_stream->net_seq_idx = relayd_id;
 		ret = consumer_send_relayd_stream(metadata_stream, path);
-		if (ret < 0) {
-			goto error_stream;
-		}
 	} else {
 		ret = consumer_stream_create_output_files(metadata_stream,
 				false);
-		if (ret < 0) {
-			goto error_stream;
-		}
+	}
+	pthread_mutex_unlock(&metadata_stream->lock);
+	if (ret < 0) {
+		goto error_stream;
 	}
 
 	do {
@@ -1071,6 +1070,7 @@ error_stream:
 	 * Clean up the stream completly because the next snapshot will use a new
 	 * metadata stream.
 	 */
+	pthread_mutex_lock(&metadata_stream->lock);
 	consumer_stream_destroy(metadata_stream, NULL);
 	cds_list_del(&metadata_stream->send_node);
 	metadata_channel->metadata_stream = NULL;
@@ -1113,6 +1113,19 @@ static int snapshot_channel(struct lttng_consumer_channel *channel,
 
 		/* Lock stream because we are about to change its state. */
 		pthread_mutex_lock(&stream->lock);
+		assert(channel->trace_chunk);
+		if (!lttng_trace_chunk_get(channel->trace_chunk)) {
+			/*
+			 * Can't happen barring an internal error as the channel
+			 * holds a reference to the trace chunk.
+			 */
+			ERR("Failed to acquire reference to channel's trace chunk");
+			ret = -1;
+			goto error_unlock;
+		}
+		assert(!stream->trace_chunk);
+		stream->trace_chunk = channel->trace_chunk;
+
 		stream->net_seq_idx = relayd_id;
 
 		if (use_relayd) {
@@ -1757,7 +1770,6 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			DBG("UST snapshot channel not found for key %" PRIu64, key);
 			ret_code = LTTCOMM_CONSUMERD_CHAN_NOT_FOUND;
 		} else {
-			pthread_mutex_lock(&channel->lock);
 			if (msg.u.snapshot_channel.metadata) {
 				ret = snapshot_metadata(channel, key,
 						msg.u.snapshot_channel.pathname,
@@ -1778,7 +1790,6 @@ int lttng_ustconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 					ret_code = LTTCOMM_CONSUMERD_SNAPSHOT_FAILED;
 				}
 			}
-			pthread_mutex_unlock(&channel->lock);
 		}
 		health_code_update();
 		ret = consumer_send_status_msg(sock, ret_code);
