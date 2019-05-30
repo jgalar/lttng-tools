@@ -243,13 +243,6 @@ struct lttng_consumer_channel {
 	uint64_t lost_packets;
 
 	bool streams_sent_to_relayd;
-
-	/*
-	 * The chunk id where we currently write the data. This value is sent
-	 * to the relay when we add a stream and when a stream rotates. This
-	 * allows to keep track of where each stream on the relay is writing.
-	 */
-	uint64_t current_chunk_id;
 };
 
 /*
@@ -455,7 +448,6 @@ struct lttng_consumer_stream {
 	 * the stream objects when we introduce refcounting.
 	 */
 	struct {
-		char path[LTTNG_PATH_MAX];
 		uint64_t tracefile_size;
 	} channel_read_only_attributes;
 
@@ -848,23 +840,14 @@ void consumer_add_metadata_stream(struct lttng_consumer_stream *stream);
 void consumer_del_stream_for_metadata(struct lttng_consumer_stream *stream);
 int consumer_create_index_file(struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
-		uint64_t key, const char *path, uint64_t relayd_id,
-		uint32_t metadata, uint64_t new_chunk_id,
+		uint64_t key, uint64_t relayd_id, uint32_t metadata,
 		struct lttng_consumer_local_data *ctx);
 int lttng_consumer_stream_is_rotate_ready(struct lttng_consumer_stream *stream);
 int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream, bool *rotated);
 int lttng_consumer_rotate_ready_streams(struct lttng_consumer_channel *channel,
 		uint64_t key, struct lttng_consumer_local_data *ctx);
-int lttng_consumer_rotate_rename(const char *current_path, const char *new_path,
-		uid_t uid, gid_t gid, uint64_t relayd_id);
-int lttng_consumer_check_rotation_pending_local(uint64_t session_id,
-		uint64_t chunk_id);
-int lttng_consumer_check_rotation_pending_relay(uint64_t session_id,
-		uint64_t relayd_id, uint64_t chunk_id);
 void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stream);
-int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,
-		uint64_t relayd_id);
 enum lttcomm_return_code lttng_consumer_create_trace_chunk(
 		const uint64_t *relayd_id, uint64_t session_id,
 		uint64_t chunk_id,

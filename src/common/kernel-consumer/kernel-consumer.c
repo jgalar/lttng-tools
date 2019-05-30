@@ -1127,10 +1127,8 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			 * Sample the rotate position of all the streams in this channel.
 			 */
 			ret = lttng_consumer_rotate_channel(channel, key,
-					msg.u.rotate_channel.pathname,
 					msg.u.rotate_channel.relayd_id,
 					msg.u.rotate_channel.metadata,
-					msg.u.rotate_channel.new_chunk_id,
 					ctx);
 			if (ret < 0) {
 				ERR("Rotate channel failed");
@@ -1153,141 +1151,6 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			}
 		}
 
-		break;
-	}
-	case LTTNG_CONSUMER_ROTATE_RENAME:
-	{
-		DBG("Consumer rename session %" PRIu64 " after rotation, old path = \"%s\", new path = \"%s\"",
-				msg.u.rotate_rename.session_id,
-				msg.u.rotate_rename.old_path,
-				msg.u.rotate_rename.new_path);
-		ret = lttng_consumer_rotate_rename(msg.u.rotate_rename.old_path,
-				msg.u.rotate_rename.new_path,
-				msg.u.rotate_rename.uid,
-				msg.u.rotate_rename.gid,
-				msg.u.rotate_rename.relayd_id);
-		if (ret < 0) {
-			ERR("Rotate rename failed");
-			ret_code = LTTCOMM_CONSUMERD_ROTATE_RENAME_FAILED;
-		}
-
-		health_code_update();
-
-		ret = consumer_send_status_msg(sock, ret_code);
-		if (ret < 0) {
-			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
-		}
-		break;
-	}
-	case LTTNG_CONSUMER_CHECK_ROTATION_PENDING_LOCAL:
-	{
-		int pending;
-		uint32_t pending_reply;
-
-		DBG("Perform local check of pending rotation for session id %" PRIu64,
-				msg.u.check_rotation_pending_local.session_id);
-		pending = lttng_consumer_check_rotation_pending_local(
-				msg.u.check_rotation_pending_local.session_id,
-				msg.u.check_rotation_pending_local.chunk_id);
-		if (pending < 0) {
-			ERR("Local rotation pending check failed with code %i", pending);
-			ret_code = LTTCOMM_CONSUMERD_ROTATION_PENDING_LOCAL_FAILED;
-		} else {
-			pending_reply = !!pending;
-		}
-
-		health_code_update();
-
-		ret = consumer_send_status_msg(sock, ret_code);
-		if (ret < 0) {
-			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
-		}
-
-		if (pending < 0) {
-			/*
-			 * An error occurred while running the command;
-			 * don't send the 'pending' flag as the sessiond
-			 * will not read it.
-			 */
-			break;
-		}
-
-		/* Send back returned value to session daemon */
-		ret = lttcomm_send_unix_sock(sock, &pending_reply,
-				sizeof(pending_reply));
-		if (ret < 0) {
-			PERROR("Failed to send rotation pending return code");
-			goto error_fatal;
-		}
-		break;
-	}
-	case LTTNG_CONSUMER_CHECK_ROTATION_PENDING_RELAY:
-	{
-		int pending;
-		uint32_t pending_reply;
-
-		DBG("Perform relayd check of pending rotation for session id %" PRIu64,
-				msg.u.check_rotation_pending_relay.session_id);
-		pending = lttng_consumer_check_rotation_pending_relay(
-				msg.u.check_rotation_pending_relay.session_id,
-				msg.u.check_rotation_pending_relay.relayd_id,
-				msg.u.check_rotation_pending_relay.chunk_id);
-		if (pending < 0) {
-			ERR("Relayd rotation pending check failed with code %i", pending);
-			ret_code = LTTCOMM_CONSUMERD_ROTATION_PENDING_RELAY_FAILED;
-		} else {
-			pending_reply = !!pending;
-		}
-
-		health_code_update();
-
-		ret = consumer_send_status_msg(sock, ret_code);
-		if (ret < 0) {
-			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
-		}
-
-		if (pending < 0) {
-			/*
-			 * An error occurred while running the command;
-			 * don't send the 'pending' flag as the sessiond
-			 * will not read it.
-			 */
-			break;
-		}
-
-		/* Send back returned value to session daemon */
-		ret = lttcomm_send_unix_sock(sock, &pending_reply,
-				sizeof(pending_reply));
-		if (ret < 0) {
-			PERROR("Failed to send rotation pending return code");
-			goto error_fatal;
-		}
-		break;
-	}
-	case LTTNG_CONSUMER_MKDIR:
-	{
-		DBG("Consumer mkdir %s in session %" PRIu64,
-				msg.u.mkdir.path,
-				msg.u.mkdir.session_id);
-		ret = lttng_consumer_mkdir(msg.u.mkdir.path,
-				msg.u.mkdir.uid,
-				msg.u.mkdir.gid,
-				msg.u.mkdir.relayd_id);
-		if (ret < 0) {
-			ERR("consumer mkdir failed");
-			ret_code = LTTCOMM_CONSUMERD_MKDIR_FAILED;
-		}
-
-		health_code_update();
-
-		ret = consumer_send_status_msg(sock, ret_code);
-		if (ret < 0) {
-			/* Somehow, the session daemon is not responding anymore. */
-			goto end_nosignal;
-		}
 		break;
 	}
 	case LTTNG_CONSUMER_INIT:

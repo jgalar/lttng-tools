@@ -1419,6 +1419,7 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 
 	rcu_read_lock();
 
+	assert(session->current_trace_chunk);
 	/*
 	 * Note that this loop will end after one iteration given that there is
 	 * only one kernel consumer.
@@ -1426,18 +1427,23 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
 			socket, node.node) {
 		struct ltt_kernel_channel *chan;
+		enum lttng_trace_chunk_status chunk_status;
+
+		chunk_status = lttng_trace_chunk_create_subdirectory(
+				ksess->current_trace_chunk,
+				DEFAULT_KERNEL_TRACE_DIR);
+		if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+			status = LTTNG_ERR_CREATE_DIR_FAIL;
+			goto error;
+		}
 
 		/* For each channel, ask the consumer to rotate it. */
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
 			DBG("Rotate kernel channel %" PRIu64 ", session %s",
 					chan->key, session->name);
-			assert(session->current_trace_chunk);
-			assert(session->most_recent_chunk_id.is_set);
 			ret = consumer_rotate_channel(socket, chan->key,
 					ksess->uid, ksess->gid, ksess->consumer,
-					ksess->consumer->domain_subdir,
-					/* is_metadata_channel */ false,
-					session->most_recent_chunk_id.value);
+					/* is_metadata_channel */ false);
 			if (ret < 0) {
 				status = LTTNG_ERR_KERN_CONSUMER_FAIL;
 				goto error;
@@ -1447,13 +1453,9 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 		/*
 		 * Rotate the metadata channel.
 		 */
-		assert(session->current_trace_chunk);
-		assert(session->most_recent_chunk_id.is_set);
 		ret = consumer_rotate_channel(socket, ksess->metadata->key,
 				ksess->uid, ksess->gid, ksess->consumer,
-				ksess->consumer->domain_subdir,
-				/* is_metadata_channel */ true,
-				session->most_recent_chunk_id.value);
+				/* is_metadata_channel */ true);
 		if (ret < 0) {
 			status = LTTNG_ERR_KERN_CONSUMER_FAIL;
 			goto error;

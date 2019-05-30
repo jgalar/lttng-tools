@@ -6285,7 +6285,8 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	struct ltt_ust_session *usess = session->ust_session;
-	char pathname[LTTNG_PATH_MAX];
+	const bool is_local_trace =
+			session->consumer->type == CONSUMER_DST_LOCAL;
 
 	assert(usess);
 
@@ -6308,13 +6309,30 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 				goto error;
 			}
 
-			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR "/" DEFAULT_UST_TRACE_UID_PATH,
-					reg->uid, reg->bits_per_long);
-			if (ret < 0 || ret >= sizeof(pathname)) {
-				PERROR("Failed to format rotation path");
-				cmd_ret = LTTNG_ERR_INVALID;
-				goto error;
+			if (is_local_trace) {
+				enum lttng_trace_chunk_status chunk_status;
+				char *pathname_index;
+
+				ret = asprintf(&pathname_index,
+						DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
+						reg->uid, reg->bits_per_long);
+				if (ret < 0) {
+					ERR("Failed to format channel index directory");
+					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+					goto error;
+				}
+
+				/*
+				 * Create the index subdirectory which will take care
+				 * of implicitly creating the channel's path.
+				 */
+				chunk_status = lttng_trace_chunk_create_subdirectory(
+					session->current_trace_chunk, pathname_index);
+				free(pathname_index);
+				if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+					goto error;
+				}
 			}
 
 			/* Rotate the data channels. */
@@ -6323,9 +6341,8 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 				ret = consumer_rotate_channel(socket,
 						reg_chan->consumer_key,
 						usess->uid, usess->gid,
-						usess->consumer, pathname,
-						/* is_metadata_channel */ false,
-						session->most_recent_chunk_id.value);
+						usess->consumer,
+						/* is_metadata_channel */ false);
 				if (ret < 0) {
 					cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
 					goto error;
@@ -6337,9 +6354,8 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 			ret = consumer_rotate_channel(socket,
 					reg->registry->reg.ust->metadata_key,
 					usess->uid, usess->gid,
-					usess->consumer, pathname,
-					/* is_metadata_channel */ true,
-					session->most_recent_chunk_id.value);
+					usess->consumer,
+					/* is_metadata_channel */ true);
 			if (ret < 0) {
 				cmd_ret = LTTNG_ERR_ROTATION_FAIL_CONSUMER;
 				goto error;
@@ -6361,14 +6377,6 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 				/* Session not associated with this app. */
 				continue;
 			}
-			ret = snprintf(pathname, sizeof(pathname),
-					DEFAULT_UST_TRACE_DIR "/%s",
-					ua_sess->path);
-			if (ret < 0 || ret >= sizeof(pathname)) {
-				PERROR("Failed to format rotation path");
-				cmd_ret = LTTNG_ERR_INVALID;
-				goto error;
-			}
 
 			/* Get the right consumer socket for the application. */
 			socket = consumer_find_socket_by_bitness(app->bits_per_long,
@@ -6384,15 +6392,39 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 				continue;
 			}
 
+			if (is_local_trace) {
+				enum lttng_trace_chunk_status chunk_status;
+				char *pathname_index;
+
+				ret = asprintf(&pathname_index,
+						DEFAULT_UST_TRACE_DIR "%s/" DEFAULT_INDEX_DIR,
+						ua_sess->path);
+				if (ret < 0) {
+					ERR("Failed to format channel index directory");
+					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+					goto error;
+				}
+
+				/*
+				 * Create the index subdirectory which will take care
+				 * of implicitly creating the channel's path.
+				 */
+				chunk_status = lttng_trace_chunk_create_subdirectory(
+					session->current_trace_chunk, pathname_index);
+				free(pathname_index);
+				if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+					goto error;
+				}
+			}
 
 			/* Rotate the data channels. */
 			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
 					ua_chan, node.node) {
 				ret = consumer_rotate_channel(socket, ua_chan->key,
 						ua_sess->euid, ua_sess->egid,
-						ua_sess->consumer, pathname,
-						/* is_metadata_channel */ false,
-						session->most_recent_chunk_id.value);
+						ua_sess->consumer,
+						/* is_metadata_channel */ false);
 				if (ret < 0) {
 					/* Per-PID buffer and application going away. */
 					if (ret == -LTTNG_ERR_CHAN_NOT_FOUND)
@@ -6406,9 +6438,8 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 			(void) push_metadata(registry, usess->consumer);
 			ret = consumer_rotate_channel(socket, registry->metadata_key,
 					ua_sess->euid, ua_sess->egid,
-					ua_sess->consumer, pathname,
-					/* is_metadata_channel */ true,
-					session->most_recent_chunk_id.value);
+					ua_sess->consumer,
+					/* is_metadata_channel */ true);
 			if (ret < 0) {
 				/* Per-PID buffer and application going away. */
 				if (ret == -LTTNG_ERR_CHAN_NOT_FOUND)

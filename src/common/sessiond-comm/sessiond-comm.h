@@ -598,20 +598,10 @@ struct lttcomm_consumer_msg {
 			uint64_t session_id;
 		} LTTNG_PACKED regenerate_metadata;
 		struct {
-			char pathname[PATH_MAX];
 			uint32_t metadata; /* This is a metadata channel. */
 			uint64_t relayd_id; /* Relayd id if apply. */
 			uint64_t key;
-			uint64_t new_chunk_id;
 		} LTTNG_PACKED rotate_channel;
-		struct {
-			char old_path[LTTNG_PATH_MAX];
-			char new_path[LTTNG_PATH_MAX];
-			uint64_t relayd_id; /* Relayd id if apply. */
-			uint64_t session_id;
-			uint32_t uid;
-			uint32_t gid;
-		} LTTNG_PACKED rotate_rename;
 		struct {
 			uint64_t session_id;
 			uint64_t chunk_id;
@@ -621,13 +611,6 @@ struct lttcomm_consumer_msg {
 			uint64_t session_id;
 			uint64_t chunk_id;
 		} LTTNG_PACKED check_rotation_pending_relay;
-		struct {
-			char path[LTTNG_PATH_MAX];
-			uint64_t relayd_id; /* Relayd id if apply. */
-			uint64_t session_id;
-			uint32_t uid;
-			uint32_t gid;
-		} LTTNG_PACKED mkdir;
 		struct {
 			/*
 			 * Relayd id, if applicable (remote).

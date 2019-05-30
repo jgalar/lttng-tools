@@ -343,8 +343,12 @@
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_PROBE_INTERVAL"
 #define DEFAULT_LTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD_ENV "LTTNG_RELAYD_TCP_KEEP_ALIVE_ABORT_THRESHOLD"
 
-/* Name of the intermediate directory used to  */
+/*
+ * Name of the intermediate directory used to rename the trace chunk of a
+ * session's first rotation.
+ */
 #define DEFAULT_TEMPORARY_CHUNK_RENAME_DIRECTORY	".tmp_rename_chunk"
+#define DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY		"archives"
 
 /*
  * Default timer value in usec for the rotate pending polling check on the

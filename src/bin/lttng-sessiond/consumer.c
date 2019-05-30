@@ -883,7 +883,7 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		int64_t blocking_timeout,
 		const char *root_shm_path,
 		const char *shm_path,
-		const struct lttng_trace_chunk *trace_chunk)
+		struct lttng_trace_chunk *trace_chunk)
 {
 	assert(msg);
 
@@ -962,7 +962,7 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
 		unsigned int monitor_timer_interval,
-		const struct lttng_trace_chunk *trace_chunk)
+		struct lttng_trace_chunk *trace_chunk)
 {
 	assert(msg);
 
@@ -1615,8 +1615,7 @@ end:
  */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
-		const char *domain_path, bool is_metadata_channel,
-		uint64_t new_chunk_id)
+		bool is_metadata_channel)
 {
 	int ret;
 	struct lttcomm_consumer_msg msg;
@@ -1630,30 +1629,11 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	msg.cmd_type = LTTNG_CONSUMER_ROTATE_CHANNEL;
 	msg.u.rotate_channel.key = key;
 	msg.u.rotate_channel.metadata = !!is_metadata_channel;
-	msg.u.rotate_channel.new_chunk_id = new_chunk_id;
 
 	if (output->type == CONSUMER_DST_NET) {
 		msg.u.rotate_channel.relayd_id = output->net_seq_index;
-		ret = snprintf(msg.u.rotate_channel.pathname,
-				sizeof(msg.u.rotate_channel.pathname), "%s%s%s",
-				output->dst.net.base_dir,
-				output->chunk_path, domain_path);
-		if (ret < 0 || ret >= sizeof(msg.u.rotate_channel.pathname)) {
-			ERR("Failed to format channel path name when asking consumer to rotate channel");
-			ret = -LTTNG_ERR_INVALID;
-			goto error;
-		}
 	} else {
 		msg.u.rotate_channel.relayd_id = (uint64_t) -1ULL;
-		ret = snprintf(msg.u.rotate_channel.pathname,
-				sizeof(msg.u.rotate_channel.pathname), "%s/%s%s",
-				output->dst.session_root_path,
-				output->chunk_path, domain_path);
-		if (ret < 0 || ret >= sizeof(msg.u.rotate_channel.pathname)) {
-			ERR("Failed to format channel path name when asking consumer to rotate channel");
-			ret = -LTTNG_ERR_INVALID;
-			goto error;
-		}
 	}
 
 	health_code_update();
@@ -1671,198 +1651,6 @@ int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 	}
 error:
 	pthread_mutex_unlock(socket->lock);
-	health_code_update();
-	return ret;
-}
-
-int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
-		const struct consumer_output *output, const char *old_path,
-		const char *new_path, uid_t uid, gid_t gid)
-{
-	int ret;
-	struct lttcomm_consumer_msg msg;
-	size_t old_path_length, new_path_length;
-
-	assert(socket);
-	assert(old_path);
-	assert(new_path);
-
-	DBG("Consumer rotate rename session %" PRIu64 ", old path = \"%s\", new_path = \"%s\"",
-			session_id, old_path, new_path);
-
-	old_path_length = strlen(old_path);
-	if (old_path_length >= sizeof(msg.u.rotate_rename.old_path)) {
-		ERR("consumer_rotate_rename: old path length (%zu bytes) exceeds the maximal length allowed by the consumer protocol (%zu bytes)",
-				old_path_length + 1, sizeof(msg.u.rotate_rename.old_path));
-		ret = -LTTNG_ERR_INVALID;
-		goto error;
-	}
-
-	new_path_length = strlen(new_path);
-	if (new_path_length >= sizeof(msg.u.rotate_rename.new_path)) {
-		ERR("consumer_rotate_rename: new path length (%zu bytes) exceeds the maximal length allowed by the consumer protocol (%zu bytes)",
-				new_path_length + 1, sizeof(msg.u.rotate_rename.new_path));
-		ret = -LTTNG_ERR_INVALID;
-		goto error;
-	}
-
-	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_ROTATE_RENAME;
-	msg.u.rotate_rename.session_id = session_id;
-	msg.u.rotate_rename.uid = uid;
-	msg.u.rotate_rename.gid = gid;
-	strcpy(msg.u.rotate_rename.old_path, old_path);
-	strcpy(msg.u.rotate_rename.new_path, new_path);
-
-	if (output->type == CONSUMER_DST_NET) {
-		msg.u.rotate_rename.relayd_id = output->net_seq_index;
-	} else {
-		msg.u.rotate_rename.relayd_id = -1ULL;
-	}
-
-	health_code_update();
-	ret = consumer_send_msg(socket, &msg);
-	if (ret < 0) {
-		ret = -LTTNG_ERR_ROTATE_RENAME_FAIL_CONSUMER;
-		goto error;
-	}
-
-error:
-	health_code_update();
-	return ret;
-}
-
-/*
- * Ask the consumer if a rotation is locally pending. Must be called with the
- * socket lock held.
- *
- * Return 1 if the rotation is still pending, 0 if finished, a negative value
- * on error.
- */
-int consumer_check_rotation_pending_local(struct consumer_socket *socket,
-		uint64_t session_id, uint64_t chunk_id)
-{
-	int ret;
-	struct lttcomm_consumer_msg msg;
-	uint32_t pending = 0;
-
-	assert(socket);
-
-	DBG("Asking consumer to locally check for pending rotation for session %" PRIu64 ", chunk id %" PRIu64,
-			session_id, chunk_id);
-
-	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_CHECK_ROTATION_PENDING_LOCAL;
-	msg.u.check_rotation_pending_local.session_id = session_id;
-	msg.u.check_rotation_pending_local.chunk_id = chunk_id;
-
-	health_code_update();
-	ret = consumer_send_msg(socket, &msg);
-	if (ret < 0) {
-		ret = -LTTNG_ERR_ROTATION_PENDING_LOCAL_FAIL_CONSUMER;
-		goto error;
-	}
-
-	ret = consumer_socket_recv(socket, &pending, sizeof(pending));
-	if (ret < 0) {
-		goto error;
-	}
-
-	ret = pending;
-
-error:
-	health_code_update();
-	return ret;
-}
-
-/*
- * Ask the consumer if a rotation is pending on the relayd. Must be called with
- * the socket lock held.
- *
- * Return 1 if the rotation is still pending, 0 if finished, a negative value
- * on error.
- */
-int consumer_check_rotation_pending_relay(struct consumer_socket *socket,
-		const struct consumer_output *output, uint64_t session_id,
-		uint64_t chunk_id)
-{
-	int ret;
-	struct lttcomm_consumer_msg msg;
-	uint32_t pending = 0;
-
-	assert(socket);
-
-	DBG("Asking consumer to check for pending rotation on relay for session %" PRIu64 ", chunk id %" PRIu64,
-			session_id, chunk_id);
-	assert(output->type == CONSUMER_DST_NET);
-
-	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_CHECK_ROTATION_PENDING_RELAY;
-	msg.u.check_rotation_pending_relay.session_id = session_id;
-	msg.u.check_rotation_pending_relay.relayd_id = output->net_seq_index;
-	msg.u.check_rotation_pending_relay.chunk_id = chunk_id;
-
-	health_code_update();
-	ret = consumer_send_msg(socket, &msg);
-	if (ret < 0) {
-		ret = -LTTNG_ERR_ROTATION_PENDING_RELAY_FAIL_CONSUMER;
-		goto error;
-	}
-
-	ret = consumer_socket_recv(socket, &pending, sizeof(pending));
-	if (ret < 0) {
-		goto error;
-	}
-
-	ret = pending;
-
-error:
-	health_code_update();
-	return ret;
-}
-
-/*
- * Ask the consumer to create a directory.
- *
- * Called with the consumer socket lock held.
- */
-int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
-		const struct consumer_output *output, const char *path,
-		uid_t uid, gid_t gid)
-{
-	int ret;
-	struct lttcomm_consumer_msg msg;
-
-	assert(socket);
-
-	DBG("Consumer mkdir %s in session %" PRIu64, path, session_id);
-
-	memset(&msg, 0, sizeof(msg));
-	msg.cmd_type = LTTNG_CONSUMER_MKDIR;
-	msg.u.mkdir.session_id = session_id;
-	msg.u.mkdir.uid = uid;
-	msg.u.mkdir.gid = gid;
-	ret = snprintf(msg.u.mkdir.path, sizeof(msg.u.mkdir.path), "%s", path);
-	if (ret < 0 || ret >= sizeof(msg.u.mkdir.path)) {
-		ERR("Format path");
-		ret = -LTTNG_ERR_INVALID;
-		goto error;
-	}
-
-	if (output->type == CONSUMER_DST_NET) {
-		msg.u.mkdir.relayd_id = output->net_seq_index;
-	} else {
-		msg.u.mkdir.relayd_id = -1ULL;
-	}
-
-	health_code_update();
-	ret = consumer_send_msg(socket, &msg);
-	if (ret < 0) {
-		ret = -LTTNG_ERR_MKDIR_FAIL_CONSUMER;
-		goto error;
-	}
-
-error:
 	health_code_update();
 	return ret;
 }
@@ -1898,7 +1686,7 @@ error:
  */
 int consumer_create_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		const struct lttng_trace_chunk *chunk)
+		struct lttng_trace_chunk *chunk)
 {
 	int ret;
 	enum lttng_trace_chunk_status chunk_status;
@@ -2043,7 +1831,7 @@ error:
  */
 int consumer_close_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		const struct lttng_trace_chunk *chunk)
+		struct lttng_trace_chunk *chunk)
 {
 	int ret;
 	enum lttng_trace_chunk_status chunk_status;
@@ -2111,7 +1899,7 @@ error:
  */
 int consumer_trace_chunk_exists(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		const struct lttng_trace_chunk *chunk)
+		struct lttng_trace_chunk *chunk)
 {
 	int ret;
 	enum lttng_trace_chunk_status chunk_status;

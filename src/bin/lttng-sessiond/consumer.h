@@ -250,7 +250,7 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		int64_t blocking_timeout,
 		const char *root_shm_path,
 		const char *shm_path,
-		const struct lttng_trace_chunk *trace_chunk);
+	        struct lttng_trace_chunk *trace_chunk);
 void consumer_init_add_stream_comm_msg(struct lttcomm_consumer_msg *msg,
 		uint64_t channel_key,
 		uint64_t stream_key,
@@ -274,7 +274,7 @@ void consumer_init_add_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
 		unsigned int monitor_timer_interval,
-		const struct lttng_trace_chunk *trace_chunk);
+		struct lttng_trace_chunk *trace_chunk);
 int consumer_is_data_pending(uint64_t session_id,
 		struct consumer_output *consumer);
 int consumer_close_metadata(struct consumer_socket *socket,
@@ -300,30 +300,18 @@ enum lttng_error_code consumer_snapshot_channel(struct consumer_socket *socket,
 /* Rotation commands. */
 int consumer_rotate_channel(struct consumer_socket *socket, uint64_t key,
 		uid_t uid, gid_t gid, struct consumer_output *output,
-		const char *domain_path, bool is_metadata_channel,
-		uint64_t new_chunk_id);
-int consumer_rotate_rename(struct consumer_socket *socket, uint64_t session_id,
-		const struct consumer_output *output, const char *old_path,
-		const char *new_path, uid_t uid, gid_t gid);
-int consumer_check_rotation_pending_local(struct consumer_socket *socket,
-		uint64_t session_id, uint64_t chunk_id);
-int consumer_check_rotation_pending_relay(struct consumer_socket *socket,
-		const struct consumer_output *output, uint64_t session_id,
-		uint64_t chunk_id);
-int consumer_mkdir(struct consumer_socket *socket, uint64_t session_id,
-		const struct consumer_output *output, const char *path,
-		uid_t uid, gid_t gid);
+		bool is_metadata_channel);
 int consumer_init(struct consumer_socket *socket,
 		const lttng_uuid sessiond_uuid);
 
 int consumer_create_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		const struct lttng_trace_chunk *chunk);
+		struct lttng_trace_chunk *chunk);
 int consumer_close_trace_chunk(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		const struct lttng_trace_chunk *chunk);
+		struct lttng_trace_chunk *chunk);
 int consumer_trace_chunk_exists(struct consumer_socket *socket,
 		uint64_t relayd_id, uint64_t session_id,
-		const struct lttng_trace_chunk *chunk);
+		struct lttng_trace_chunk *chunk);
 
 #endif /* _CONSUMER_H */

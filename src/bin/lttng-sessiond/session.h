@@ -158,35 +158,6 @@ struct ltt_session {
 	 */
 	bool rotation_pending_local;
 	bool rotation_pending_relay;
-	/* Current state of a rotation. */
-	enum lttng_rotation_state rotation_state;
-	struct {
-		/*
-		 * When the rotation is in progress, the temporary path name is
-		 * stored here. When the rotation is complete, the final path name
-		 * is here and can be queried with the rotate_pending call.
-		 */
-		char current_rotate_path[LTTNG_PATH_MAX];
-		/*
-		 * The path where the consumer is currently writing after the first
-		 * session rotation.
-		 */
-		char active_tracing_path[LTTNG_PATH_MAX];
-	} rotation_chunk;
-	/*
-	 * The timestamp of the beginning of the previous chunk. For the
-	 * first chunk, this is the "lttng start" timestamp. For the
-	 * subsequent ones, this copies the current_chunk_start_ts value when
-	 * a new rotation starts. This value is used to set the name of a
-	 * complete chunk directory, ex: "last_chunk_start_ts-now()".
-	 */
-	time_t last_chunk_start_ts;
-	/*
-	 * This is the timestamp when a new chunk starts. When a new rotation
-	 * starts, we copy this value to last_chunk_start_ts and replace it
-	 * with the current timestamp.
-	 */
-	time_t current_chunk_start_ts;
 	/*
 	 * Timer to check periodically if a relay and/or consumer has completed
 	 * the last rotation.
@@ -214,6 +185,11 @@ struct ltt_session {
 	struct lttng_trigger *rotate_trigger;
 	LTTNG_OPTIONAL(uint64_t) most_recent_chunk_id;
 	struct lttng_trace_chunk *current_trace_chunk;
+	struct lttng_trace_chunk *chunk_being_archived;
+	/* Current state of a rotation. */
+	enum lttng_rotation_state rotation_state;
+	char *last_archived_chunk_name;
+	LTTNG_OPTIONAL(uint64_t) last_archived_chunk_id;
 };
 
 /* Prototypes */

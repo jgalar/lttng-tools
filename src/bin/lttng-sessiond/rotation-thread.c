@@ -362,9 +362,11 @@ int check_session_rotation_pending_local_on_consumer(
 			lttng_consumer_type_str(socket->type),
 			session->name);
 	assert(session->most_recent_chunk_id.is_set);
+	/*
 	ret = consumer_check_rotation_pending_local(socket,
 			session->id,
 			session->most_recent_chunk_id.value - 1);
+	*/
 	pthread_mutex_unlock(socket->lock);
 
 	if (ret == 0) {
@@ -487,10 +489,12 @@ int check_session_rotation_pending_relay(struct ltt_session *session)
 	DBG("[rotation-thread] Checking for pending relay rotation on session \"%s\", trace archive %" PRIu64 " through the %s consumer",
 			session->name, session->most_recent_chunk_id.value - 1,
 			lttng_consumer_type_str(socket->type));
+	/*
 	ret = consumer_check_rotation_pending_relay(socket,
 			output,
 			session->id,
 			session->most_recent_chunk_id.value - 1);
+	*/
 	pthread_mutex_unlock(socket->lock);
 
 	if (ret == 0) {
@@ -601,13 +605,6 @@ int check_session_rotation_pending(struct ltt_session *session,
 		goto end;
 	}
 
-	ret = rename_completed_chunk(session, now);
-	if (ret < 0) {
-		ERR("Failed to rename completed rotation chunk");
-		goto end;
-	}
-	session->last_chunk_start_ts = session->current_chunk_start_ts;
-
 	/*
 	 * Now we can clear the "ONGOING" state in the session. New
 	 * rotations can start now.
@@ -621,7 +618,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 			session->name,
 			session->uid,
 			session->gid,
-			session->most_recent_chunk_id.value,
+			session->last_archived_chunk_id.value,
 			location);
 	if (ret != LTTNG_OK) {
 		ERR("[rotation-thread] Failed to notify notification thread of completed rotation for session %s",
@@ -645,11 +642,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 					session->name);
 		}
 
-		ret = rename_active_chunk(session);
-		if (ret < 0) {
-			ERR("[rotation-thread] Failed to rename active rotation chunk");
-			goto end;
-		}
+		/* FIXME */
 
 		/* Ownership of location is transferred. */
 		location = session_get_trace_archive_location(session);

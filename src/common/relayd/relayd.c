@@ -1110,14 +1110,15 @@ error:
 }
 
 int relayd_rotate_stream(struct lttcomm_relayd_sock *rsock, uint64_t stream_id,
-		const char *new_pathname, uint64_t new_chunk_id,
-		uint64_t seq_num)
+		uint64_t new_chunk_id, uint64_t seq_num)
 {
 	int ret;
 	struct lttcomm_relayd_rotate_stream *msg = NULL;
 	struct lttcomm_relayd_generic_reply reply;
 	size_t len;
 	int msg_len;
+	/* FIXME */
+	char *new_pathname = NULL;
 
 	/* Code flow error. Safety net. */
 	assert(rsock);

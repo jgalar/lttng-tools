@@ -354,11 +354,6 @@ enum lttng_trace_chunk_status lttng_trace_chunk_set_close_timestamp(
 	enum lttng_trace_chunk_status status = LTTNG_TRACE_CHUNK_STATUS_OK;
 
 	pthread_mutex_lock(&chunk->lock);
-	if (chunk->timestamp_close.is_set) {
-		ERR("Failed to set trace chunk close timestamp: close timestamp is already set");
-		status = LTTNG_TRACE_CHUNK_STATUS_INVALID_OPERATION;
-		goto end;
-	}
 	if (!chunk->timestamp_creation.is_set) {
 		ERR("Failed to set trace chunk close timestamp: creation timestamp is unset");
 		status = LTTNG_TRACE_CHUNK_STATUS_INVALID_OPERATION;
@@ -880,18 +875,20 @@ void lttng_trace_chunk_move_to_completed(struct lttng_trace_chunk *trace_chunk)
 
 	ret = lttng_directory_handle_create_subdirectory_as_user(
 			&trace_chunk->session_output_directory.value,
-			"archives", DIR_CREATION_MODE,
+		        DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY,
+			DIR_CREATION_MODE,
 			!trace_chunk->credentials.value.use_current_user ?
 					&trace_chunk->credentials.value.user :
 					NULL);
 	if (ret) {
-		PERROR("Failed to create \"archives\" directory for archived trace chunks");
+		PERROR("Failed to create \"" DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY
+				"\" directory for archived trace chunks");
 		goto end;
 	}
 
 	ret = lttng_directory_handle_init_from_handle(
 			&archived_chunks_directory.value,
-			"archives",
+		        DEFAULT_ARCHIVED_TRACE_CHUNKS_DIRECTORY,
 			&trace_chunk->session_output_directory.value);
 	if (ret) {
 		PERROR("Failed to get handle to archived trace chunks directory");

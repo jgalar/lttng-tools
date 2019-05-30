@@ -560,8 +560,6 @@ void consumer_stream_update_channel_attributes(
 {
 	stream->channel_read_only_attributes.tracefile_size =
 			channel->tracefile_size;
-	memcpy(stream->channel_read_only_attributes.path, channel->pathname,
-			sizeof(stream->channel_read_only_attributes.path));
 }
 
 struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
@@ -3958,8 +3956,7 @@ end:
  * Returns 0 on success, < 0 on error
  */
 int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
-		uint64_t key, const char *path, uint64_t relayd_id,
-		uint32_t metadata, uint64_t new_chunk_id,
+		uint64_t key, uint64_t relayd_id, uint32_t metadata,
 		struct lttng_consumer_local_data *ctx)
 {
 	int ret;
@@ -3972,14 +3969,6 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 	rcu_read_lock();
 
 	pthread_mutex_lock(&channel->lock);
-	channel->current_chunk_id = new_chunk_id;
-
-	ret = lttng_strncpy(channel->pathname, path, sizeof(channel->pathname));
-	if (ret) {
-		ERR("Failed to copy new path to channel during channel rotation");
-		ret = -1;
-		goto end_unlock_channel;
-	}
 
 	cds_lfht_for_each_entry_duplicate(ht->ht,
 			ht->hash_fct(&channel->key, lttng_ht_seed),
@@ -3994,13 +3983,6 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 		 */
 		pthread_mutex_lock(&stream->lock);
 
-		ret = lttng_strncpy(stream->channel_read_only_attributes.path,
-				channel->pathname,
-				sizeof(stream->channel_read_only_attributes.path));
-		if (ret) {
-			ERR("Failed to sample channel path name during channel rotation");
-			goto end_unlock_stream;
-		}
 		ret = lttng_consumer_sample_snapshot_positions(stream);
 		if (ret < 0) {
 			ERR("Failed to sample snapshot position during channel rotation");
@@ -4036,7 +4018,6 @@ int lttng_consumer_rotate_channel(struct lttng_consumer_channel *channel,
 
 end_unlock_stream:
 	pthread_mutex_unlock(&stream->lock);
-end_unlock_channel:
 	pthread_mutex_unlock(&channel->lock);
 end:
 	rcu_read_unlock();
@@ -4108,16 +4089,17 @@ int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 {
 	int ret;
 
-	DBG("Rotate local stream: stream key %" PRIu64 ", channel key %" PRIu64 " at path %s",
+	DBG("Rotate local stream: stream key %" PRIu64 ", channel key %" PRIu64,
 			stream->key,
-			stream->chan->key,
-			stream->channel_read_only_attributes.path);
+			stream->chan->key);
 
-	ret = close(stream->out_fd);
-	if (ret < 0) {
-		PERROR("Closing trace file (fd %d), stream %" PRIu64,
-				stream->out_fd, stream->key);
-		assert(0);
+	lttng_trace_chunk_put(stream->trace_chunk);
+	if (lttng_trace_chunk_get(stream->chan->trace_chunk)) {
+		stream->trace_chunk = stream->chan->trace_chunk;
+	} else {
+		ERR("Failed to acquire reference to current trace chunk of channel \"%s\"",
+				stream->chan->name);
+		ret = -1;
 		goto end;
 	}
 
@@ -4135,6 +4117,8 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 {
 	int ret;
 	struct consumer_relayd_sock_pair *relayd;
+	uint64_t chunk_id;
+	enum lttng_trace_chunk_status chunk_status;
 
 	DBG("Rotate relay stream");
 	relayd = consumer_find_relayd(stream->net_seq_idx);
@@ -4144,11 +4128,19 @@ int rotate_relay_stream(struct lttng_consumer_local_data *ctx,
 		goto end;
 	}
 
+	chunk_status = lttng_trace_chunk_get_id(stream->chan->trace_chunk,
+			&chunk_id);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ERR("Failed to retrieve the id of the current trace chunk of channel \"%s\"",
+				stream->chan->name);
+		ret = -1;
+		goto end;
+	}
+
 	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
 	ret = relayd_rotate_stream(&relayd->control_sock,
 			stream->relayd_stream_id,
-			stream->channel_read_only_attributes.path,
-			stream->chan->current_chunk_id,
+			chunk_id,
 			stream->last_sequence_number);
 	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
 	if (ret < 0) {
@@ -4291,67 +4283,6 @@ int lttng_consumer_rotate_ready_streams(struct lttng_consumer_channel *channel,
 end:
 	rcu_read_unlock();
 	return ret;
-}
-
-static
-int rotate_rename_local(const char *old_path, const char *new_path,
-		uid_t uid, gid_t gid)
-{
-	int ret;
-
-	assert(old_path);
-	assert(new_path);
-
-	ret = utils_mkdir_recursive(new_path, S_IRWXU | S_IRWXG, uid, gid);
-	if (ret < 0) {
-		ERR("Create directory on rotate");
-		goto end;
-	}
-
-	ret = rename(old_path, new_path);
-	if (ret < 0 && errno != ENOENT) {
-		PERROR("Rename completed rotation chunk");
-		goto end;
-	}
-
-	ret = 0;
-end:
-	return ret;
-}
-
-static
-int rotate_rename_relay(const char *old_path, const char *new_path,
-		uint64_t relayd_id)
-{
-	int ret;
-	struct consumer_relayd_sock_pair *relayd;
-
-	relayd = consumer_find_relayd(relayd_id);
-	if (!relayd) {
-		ERR("Failed to find relayd while running rotate_rename_relay command");
-		ret = -1;
-		goto end;
-	}
-
-	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
-	ret = relayd_rotate_rename(&relayd->control_sock, old_path, new_path);
-	if (ret < 0) {
-		ERR("Relayd rotate rename failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
-		lttng_consumer_cleanup_relayd(relayd);
-	}
-	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-end:
-	return ret;
-}
-
-int lttng_consumer_rotate_rename(const char *old_path, const char *new_path,
-		uid_t uid, gid_t gid, uint64_t relayd_id)
-{
-	if (relayd_id != -1ULL) {
-		return rotate_rename_relay(old_path, new_path, relayd_id);
-	} else {
-		return rotate_rename_local(old_path, new_path, uid, gid);
-	}
 }
 
 /* Stream and channel lock must be acquired by the caller. */
