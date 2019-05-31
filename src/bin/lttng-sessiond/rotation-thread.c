@@ -487,7 +487,6 @@ int check_session_rotation_pending(struct ltt_session *session,
 			session->rotation_state == LTTNG_ROTATION_STATE_ERROR) {
 		goto end;
 	}
-	location = session_get_trace_archive_location(session);
 
 	/*
 	 * Now we can clear the "ONGOING" state in the session. New
@@ -503,6 +502,7 @@ int check_session_rotation_pending(struct ltt_session *session,
 	}
 	session_reset_rotation_state(session, LTTNG_ROTATION_STATE_COMPLETED);
 
+	location = session_get_trace_archive_location(session);
 	/* Ownership of location is transferred. */
 	ret = notification_thread_command_session_rotation_completed(
 			notification_thread_handle,
@@ -557,7 +557,7 @@ end:
 		ret = timer_session_rotation_pending_check_start(session,
 				DEFAULT_ROTATE_PENDING_TIMER);
 		if (ret) {
-			ERR("Re-enabling rotate pending timer");
+			ERR("Failed to re-enable rotation pending timer");
 			ret = -1;
 			goto end;
 		}
