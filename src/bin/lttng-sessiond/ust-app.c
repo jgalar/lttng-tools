@@ -5884,7 +5884,6 @@ enum lttng_error_code ust_app_snapshot_record(
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	char pathname[PATH_MAX];
-	enum lttng_trace_chunk_status chunk_status;
 
 	assert(usess);
 	assert(output);
@@ -5927,14 +5926,7 @@ enum lttng_error_code ust_app_snapshot_record(
 				goto error;
 			}
 
-			chunk_status = lttng_trace_chunk_create_subdirectory(
-					usess->current_trace_chunk, pathname);
-			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-				status = LTTNG_ERR_CREATE_DIR_FAIL;
-				goto error;
-			}
-
-			/* Add the UST default trace dir to path. */
+                        /* Add the UST default trace dir to path. */
 			cds_lfht_for_each_entry(reg->registry->channels->ht, &iter.iter,
 					reg_chan, node.node) {
 				status = consumer_snapshot_channel(socket,
@@ -5988,14 +5980,7 @@ enum lttng_error_code ust_app_snapshot_record(
 				goto error;
 			}
 
-			chunk_status = lttng_trace_chunk_create_subdirectory(
-					usess->current_trace_chunk, pathname);
-			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-				status = LTTNG_ERR_CREATE_DIR_FAIL;
-				goto error;
-			}
-
-			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
+                        cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
 					ua_chan, node.node) {
 				status = consumer_snapshot_channel(socket,
 						ua_chan->key, output,
@@ -6285,8 +6270,6 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 	struct lttng_ht_iter iter;
 	struct ust_app *app;
 	struct ltt_ust_session *usess = session->ust_session;
-	const bool is_local_trace =
-			session->consumer->type == CONSUMER_DST_LOCAL;
 
 	assert(usess);
 
@@ -6307,32 +6290,6 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 			if (!socket) {
 				cmd_ret = LTTNG_ERR_INVALID;
 				goto error;
-			}
-
-			if (is_local_trace) {
-				enum lttng_trace_chunk_status chunk_status;
-				char *pathname_index;
-
-				ret = asprintf(&pathname_index,
-						DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
-						reg->uid, reg->bits_per_long);
-				if (ret < 0) {
-					ERR("Failed to format channel index directory");
-					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
-					goto error;
-				}
-
-				/*
-				 * Create the index subdirectory which will take care
-				 * of implicitly creating the channel's path.
-				 */
-				chunk_status = lttng_trace_chunk_create_subdirectory(
-					session->current_trace_chunk, pathname_index);
-				free(pathname_index);
-				if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
-					goto error;
-				}
 			}
 
 			/* Rotate the data channels. */
@@ -6392,32 +6349,6 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 				continue;
 			}
 
-			if (is_local_trace) {
-				enum lttng_trace_chunk_status chunk_status;
-				char *pathname_index;
-
-				ret = asprintf(&pathname_index,
-						DEFAULT_UST_TRACE_DIR "%s/" DEFAULT_INDEX_DIR,
-						ua_sess->path);
-				if (ret < 0) {
-					ERR("Failed to format channel index directory");
-					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
-					goto error;
-				}
-
-				/*
-				 * Create the index subdirectory which will take care
-				 * of implicitly creating the channel's path.
-				 */
-				chunk_status = lttng_trace_chunk_create_subdirectory(
-					session->current_trace_chunk, pathname_index);
-				free(pathname_index);
-				if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-					cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
-					goto error;
-				}
-			}
-
 			/* Rotate the data channels. */
 			cds_lfht_for_each_entry(ua_sess->channels->ht, &chan_iter.iter,
 					ua_chan, node.node) {
@@ -6460,4 +6391,100 @@ enum lttng_error_code ust_app_rotate_session(struct ltt_session *session)
 error:
 	rcu_read_unlock();
 	return cmd_ret;
+}
+
+enum lttng_error_code ust_app_create_channel_subdirectories(
+		const struct ltt_ust_session *usess)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+	struct lttng_ht_iter iter;
+	enum lttng_trace_chunk_status chunk_status;
+	char *pathname_index;
+	int fmt_ret;
+
+	assert(usess->current_trace_chunk);
+	rcu_read_lock();
+
+	switch (usess->buffer_type) {
+	case LTTNG_BUFFER_PER_UID:
+	{
+		struct buffer_reg_uid *reg;
+
+		cds_list_for_each_entry(reg, &usess->buffer_reg_uid_list, lnode) {
+			fmt_ret = asprintf(&pathname_index,
+				       DEFAULT_UST_TRACE_DIR DEFAULT_UST_TRACE_UID_PATH "/" DEFAULT_INDEX_DIR,
+				       reg->uid, reg->bits_per_long);
+			if (fmt_ret < 0) {
+				ERR("Failed to format channel index directory");
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+
+			/*
+			 * Create the index subdirectory which will take care
+			 * of implicitly creating the channel's path.
+			 */
+			chunk_status = lttng_trace_chunk_create_subdirectory(
+					usess->current_trace_chunk,
+					pathname_index);
+			free(pathname_index);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+		}
+		break;
+	}
+	case LTTNG_BUFFER_PER_PID:
+	{
+		struct ust_app *app;
+
+		cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app,
+				pid_n.node) {
+			struct ust_app_session *ua_sess;
+			struct ust_registry_session *registry;
+
+			ua_sess = lookup_session_by_app(usess, app);
+			if (!ua_sess) {
+				/* Session not associated with this app. */
+				continue;
+			}
+
+			registry = get_session_registry(ua_sess);
+			if (!registry) {
+				DBG("Application session is being torn down. Skip application.");
+				continue;
+			}
+
+			fmt_ret = asprintf(&pathname_index,
+					DEFAULT_UST_TRACE_DIR "%s/" DEFAULT_INDEX_DIR,
+					ua_sess->path);
+			if (fmt_ret < 0) {
+				ERR("Failed to format channel index directory");
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+			/*
+			 * Create the index subdirectory which will take care
+			 * of implicitly creating the channel's path.
+			 */
+			chunk_status = lttng_trace_chunk_create_subdirectory(
+					usess->current_trace_chunk,
+					pathname_index);
+			free(pathname_index);
+			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+				ret = LTTNG_ERR_CREATE_DIR_FAIL;
+				goto error;
+			}
+		}
+		break;
+	}
+	default:
+		abort();
+	}
+
+	ret = LTTNG_OK;
+error:
+	rcu_read_unlock();
+	return ret;
 }

@@ -360,6 +360,7 @@ void check_session_rotation_pending_on_consumers(struct ltt_session *session,
 	enum consumer_trace_chunk_exists_status exists_status;
 	uint64_t relayd_id;
 	bool chunk_exists_on_peer = false;
+	enum lttng_trace_chunk_status chunk_status;
 
 	assert(session->chunk_being_archived);
 
@@ -429,8 +430,14 @@ end:
 	rcu_read_unlock();
 
 	if (!chunk_exists_on_peer) {
+		uint64_t chunk_being_archived_id;
+
+		chunk_status = lttng_trace_chunk_get_id(
+				session->chunk_being_archived,
+				&chunk_being_archived_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " of session \"%s\" is complete on all consumers",
-				session->most_recent_chunk_id.value - 1,
+				chunk_being_archived_id,
 				session->name);
 	}
 	*_rotation_completed = !chunk_exists_on_peer;
@@ -458,9 +465,14 @@ int check_session_rotation_pending(struct ltt_session *session,
 	enum lttng_trace_chunk_status chunk_status;
 	bool rotation_completed = false;
 	const char *archived_chunk_name;
+	uint64_t chunk_being_archived_id;
+
+	chunk_status = lttng_trace_chunk_get_id(session->chunk_being_archived,
+			&chunk_being_archived_id);
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 
 	DBG("[rotation-thread] Checking for pending rotation on session \"%s\", trace archive %" PRIu64,
-			session->name, session->most_recent_chunk_id.value - 1);
+			session->name, chunk_being_archived_id);
 
 	if (!session->chunk_being_archived) {
 		ret = 0;
@@ -551,9 +563,15 @@ int check_session_rotation_pending(struct ltt_session *session,
 	ret = 0;
 end:
 	if (session->rotation_state == LTTNG_ROTATION_STATE_ONGOING) {
+		uint64_t chunk_being_archived_id;
+
+		chunk_status = lttng_trace_chunk_get_id(
+				session->chunk_being_archived,
+				&chunk_being_archived_id);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+
 		DBG("[rotation-thread] Rotation of trace archive %" PRIu64 " is still pending for session %s",
-				session->most_recent_chunk_id.value - 1,
-				session->name);
+				chunk_being_archived_id, session->name);
 		ret = timer_session_rotation_pending_check_start(session,
 				DEFAULT_ROTATE_PENDING_TIMER);
 		if (ret) {

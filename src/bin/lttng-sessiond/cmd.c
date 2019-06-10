@@ -2549,9 +2549,20 @@ int cmd_start_trace(struct ltt_session *session)
 		goto error;
 	}
 
-	if (!session->has_been_started && session->output_traces) {
-		ret = session_switch_trace_chunk(session, NULL, NULL);
-		if (ret != LTTNG_OK) {
+	if (session->output_traces && !session->current_trace_chunk) {
+		struct lttng_trace_chunk *trace_chunk;
+
+		trace_chunk = session_create_new_trace_chunk(
+				session, NULL, NULL);
+		if (!trace_chunk) {
+			ret = LTTNG_ERR_CREATE_DIR_FAIL;
+			goto error;
+		}
+		assert(!session->current_trace_chunk);
+		ret = session_set_trace_chunk(session, trace_chunk, NULL);
+		lttng_trace_chunk_put(trace_chunk);
+		if (ret) {
+			ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
 			goto error;
 		}
 	}
@@ -3021,31 +3032,12 @@ int cmd_destroy_session(struct ltt_session *session,
 	}
 
 	if (session->most_recent_chunk_id.is_set &&
-			session->most_recent_chunk_id.value != 0) {
-		if (!session->rotated_after_last_stop) {
-			ret = cmd_rotate_session(session, NULL);
-			if (ret != LTTNG_OK) {
-				ERR("Failed to perform an implicit rotation as part of the destruction of session \"%s\": %s",
-						session->name, lttng_strerror(-ret));
-			}
-		} else {
-			enum lttng_trace_chunk_status chunk_status;
-
-			/*
-			 * Rename the active chunk to ensure it has a name
-			 * of the form ts_begin-ts_end-id.
-			 *
-			 * Note that no trace data has been produced since
-			 * the last rotation; the directory should be
-			 * removed.
-			 */
-			chunk_status = lttng_trace_chunk_set_close_command(
-					session->current_trace_chunk,
-					LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
-			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-				ERR("Failed to rename active trace chunk during the destruction of session \"%s\"",
-						session->name);
-			}
+			session->most_recent_chunk_id.value != 0 &&
+			session->current_trace_chunk) {
+		ret = cmd_rotate_session(session, NULL);
+		if (ret != LTTNG_OK) {
+			ERR("Failed to perform an implicit rotation as part of the destruction of session \"%s\": %s",
+					session->name, lttng_strerror(-ret));
 		}
 	}
 
@@ -4293,6 +4285,7 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 	int64_t nb_packets_per_stream;
 	char snapshot_chunk_name[LTTNG_NAME_MAX];
 	enum lttng_error_code ret = LTTNG_OK;
+	struct lttng_trace_chunk *snapshot_trace_chunk;
 
 	fmt_ret = snprintf(snapshot_chunk_name, sizeof(snapshot_chunk_name),
 			"%s-%s-%" PRIu64,
@@ -4307,10 +4300,19 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 	DBG("Recording snapshot \"%s\" for session \"%s\" with chunk name \"%s\"",
 			snapshot_output->name, session->name,
 			snapshot_chunk_name);
-	ret = session_switch_trace_chunk(session,
+	snapshot_trace_chunk = session_create_new_trace_chunk(session,
 			snapshot_output_get_base_path(snapshot_output),
 			snapshot_chunk_name);
-	if (ret != LTTNG_OK) {
+	if (!snapshot_trace_chunk) {
+		ret = LTTNG_ERR_CREATE_DIR_FAIL;
+		goto end;
+	}
+	assert(!session->current_trace_chunk);
+	ret = session_set_trace_chunk(session, snapshot_trace_chunk, NULL);
+	lttng_trace_chunk_put(snapshot_trace_chunk);
+	snapshot_trace_chunk = NULL;
+	if (ret) {
+		ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
 		goto end;
 	}
 
@@ -4339,9 +4341,19 @@ enum lttng_error_code snapshot_record(struct ltt_session *session,
 		}
 	}
 
-	if (session_set_trace_chunk(session, NULL)) {
-		ERR("Failed to close the current trace chunk of session \"%s\"",
+	if (session_close_trace_chunk(session, session->current_trace_chunk)) {
+		/*
+		 * Don't goto end; make sure the chunk is closed for the session
+		 * to allow future snapshots.
+		 */
+		ERR("Failed to close snapshot trace chunk of session \"%s\"",
 				session->name);
+		ret = -1;
+	}
+	if (session_set_trace_chunk(session, NULL, NULL)) {
+		ERR("Failed to release the current trace chunk of session \"%s\"",
+				session->name);
+		ret = -1;
 	}
 end:
 	return ret;
@@ -4507,10 +4519,10 @@ int cmd_rotate_session(struct ltt_session *session,
 		struct lttng_rotate_session_return *rotate_return)
 {
 	int ret;
+	uint64_t ongoing_rotation_chunk_id;
 	enum lttng_error_code cmd_ret = LTTNG_OK;
 	struct lttng_trace_chunk *chunk_being_archived = NULL;
-	bool reference_acquired;
-	time_t chunk_close_timestamp;
+	struct lttng_trace_chunk *new_trace_chunk = NULL;
 	enum lttng_trace_chunk_status chunk_status;
 
 	assert(session);
@@ -4525,9 +4537,7 @@ int cmd_rotate_session(struct ltt_session *session,
 		goto end;
 	}
 
-	/*
-	 * Unsupported feature in lttng-relayd before 2.11.
-	 */
+	/* Unsupported feature in lttng-relayd before 2.11. */
 	if (session->consumer->type == CONSUMER_DST_NET &&
 			(session->consumer->relay_major_version == 2 &&
 			session->consumer->relay_minor_version < 11)) {
@@ -4554,18 +4564,34 @@ int cmd_rotate_session(struct ltt_session *session,
 	}
 
 	session->rotation_state = LTTNG_ROTATION_STATE_ONGOING;
-	chunk_being_archived = session->current_trace_chunk;
-	reference_acquired = lttng_trace_chunk_get(
-			session->current_trace_chunk);
-	session->chunk_being_archived = chunk_being_archived;
-	/*
-	 * Should always succeed since the session lock is held and the session
-	 * holds a reference to its current trace chunk.
-	 */
-	assert(reference_acquired);
 
-	cmd_ret = session_switch_trace_chunk(session, NULL, NULL);
-	if (cmd_ret != LTTNG_OK) {
+	if (session->active) {
+		new_trace_chunk = session_create_new_trace_chunk(session,
+				NULL, NULL);
+		if (!new_trace_chunk) {
+			cmd_ret = LTTNG_ERR_CREATE_DIR_FAIL;
+			goto error;
+		}
+        }
+
+        /* The current trace chunk becomes the chunk being archived. */
+	ret = session_set_trace_chunk(session, new_trace_chunk,
+			&chunk_being_archived);
+	if (ret) {
+		cmd_ret = LTTNG_ERR_CREATE_TRACE_CHUNK_FAIL_CONSUMER;
+		goto error;
+	}
+
+	assert(chunk_being_archived);
+	chunk_status = lttng_trace_chunk_get_id(chunk_being_archived,
+			&ongoing_rotation_chunk_id);
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+
+	chunk_status = lttng_trace_chunk_set_close_command(
+			chunk_being_archived,
+			LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		cmd_ret = LTTNG_ERR_FATAL;
 		goto error;
 	}
 
@@ -4582,32 +4608,9 @@ int cmd_rotate_session(struct ltt_session *session,
 		}
 	}
 
-	chunk_close_timestamp = time(NULL);
-	if (chunk_close_timestamp == (time_t) -1) {
-		PERROR("Failed to sample trace chunk close time during session rotation");
-		cmd_ret = LTTNG_ERR_FATAL;
-		goto error;
-	}
-
-	/*
-	 * FIXME This override is not visible to the relay daemon; the command
-	 * to close the trace chunk is performed as part of
-	 * session_switch_trace_chunk() with its own "close_timestamp" value.
-	 *
-	 * session_switch_trace_chunk() should just create a trace chunk and the
-	 * caller should "set" it on the session.
-	 */
-	chunk_status = lttng_trace_chunk_set_close_timestamp(
-			chunk_being_archived, chunk_close_timestamp);
-	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		cmd_ret = LTTNG_ERR_FATAL;
-		goto error;
-	}
-	chunk_status = lttng_trace_chunk_set_close_command(
-			chunk_being_archived,
-			LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
-	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		cmd_ret = LTTNG_ERR_FATAL;
+	ret = session_close_trace_chunk(session, chunk_being_archived);
+	if (ret) {
+		cmd_ret = LTTNG_ERR_CLOSE_TRACE_CHUNK_FAIL_CONSUMER;
 		goto error;
 	}
 
@@ -4623,14 +4626,15 @@ int cmd_rotate_session(struct ltt_session *session,
 	}
 
 	if (rotate_return) {
-		rotate_return->rotation_id =
-				session->most_recent_chunk_id.value - 1;
+		rotate_return->rotation_id = ongoing_rotation_chunk_id;
 	}
 
+	session->chunk_being_archived = chunk_being_archived;
+	chunk_being_archived = NULL;
 	ret = notification_thread_command_session_rotation_ongoing(
 			notification_thread_handle,
 			session->name, session->uid, session->gid,
-			session->most_recent_chunk_id.value - 1);
+			ongoing_rotation_chunk_id);
 	if (ret != LTTNG_OK) {
 		ERR("Failed to notify notification thread that a session rotation is ongoing for session %s",
 				session->name);
@@ -4638,13 +4642,15 @@ int cmd_rotate_session(struct ltt_session *session,
 	}
 
 	DBG("Cmd rotate session %s, archive_id %" PRIu64 " sent",
-			session->name, session->most_recent_chunk_id.value - 1);
+			session->name, ongoing_rotation_chunk_id);
 end:
+	lttng_trace_chunk_put(new_trace_chunk);
+	lttng_trace_chunk_put(chunk_being_archived);
 	ret = (cmd_ret == LTTNG_OK) ? cmd_ret : -((int) cmd_ret);
 	return ret;
 error:
 	if (session_reset_rotation_state(session,
-			LTTNG_ROTATION_STATE_NO_ROTATION)) {
+			LTTNG_ROTATION_STATE_ERROR)) {
 		ERR("Failed to reset rotation state of session \"%s\"",
 				session->name);
 	}

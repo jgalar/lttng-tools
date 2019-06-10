@@ -637,7 +637,7 @@ int consumer_stream_rotate_output_files(struct lttng_consumer_stream *stream)
 	}
 
 	DBG("Rotating output files of stream \"%s\"", stream->name);
-	ret = consumer_stream_create_output_files(stream, false);
+	ret = consumer_stream_create_output_files(stream, true);
 	if (ret) {
 		goto end;
 	}

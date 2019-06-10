@@ -564,7 +564,6 @@ void consumer_stream_update_channel_attributes(
 
 struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 		uint64_t stream_key,
-		enum lttng_consumer_stream_state state,
 		const char *channel_name,
 		uint64_t relayd_id,
 		uint64_t session_id,
@@ -596,7 +595,6 @@ struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 	stream->out_fd = -1;
 	stream->out_fd_offset = 0;
 	stream->output_written = 0;
-	stream->state = state;
 	stream->net_seq_idx = relayd_id;
 	stream->session_id = session_id;
 	stream->monitor = monitor;
@@ -971,6 +969,30 @@ int lttng_consumer_channel_set_trace_chunk(
 {
 	int ret = 0;
 	const bool is_local_trace = channel->relayd_id == -1ULL;
+	bool update_stream_trace_chunk;
+	struct cds_lfht_iter iter;
+	struct lttng_consumer_stream *stream;
+	unsigned long channel_hash;
+
+	pthread_mutex_lock(&channel->lock);
+	/*
+	 * A stream can transition to a state where it and its channel
+	 * no longer belong to a trace chunk. For instance, this happens when
+	 * a session is rotated while it is inactive. After the rotation
+	 * of an inactive session completes, the channel and its streams no
+	 * longer belong to a trace chunk.
+	 *
+	 * However, if a session is stopped, rotated, and started again,
+	 * the session daemon will create a new chunk and send it to its peers.
+	 * In that case, the streams' transition to a new chunk can be performed
+	 * immediately.
+	 *
+	 * This trace chunk transition could also be performed lazily when
+	 * a buffer is consumed. However, creating the files here allows the
+	 * consumer daemon to report any creation error to the session daemon
+	 * and cause the start of the tracing session to fail.
+	 */
+	update_stream_trace_chunk = !channel->trace_chunk && new_trace_chunk;
 
 	/*
 	 * The acquisition of the reference cannot fail (barring
@@ -984,19 +1006,6 @@ int lttng_consumer_channel_set_trace_chunk(
 		assert(acquired_reference);
 	}
 
-	pthread_mutex_lock(&channel->lock);
-	if (new_trace_chunk && channel->trace_chunk) {
-		/*
-		 * Invalid state; the channel's trace chunk should have been
-		 * closed before a new chunk is created.
-		 */
-		ERR("Invalid state encountered while setting trace chunk of channel: previous chunk was not closed (channel name = \"%s\", session_id = %" PRIu64 ")",
-				channel->name, channel->session_id);
-		lttng_trace_chunk_put(new_trace_chunk);
-		ret = -1;
-		goto end;
-	}
-
 	lttng_trace_chunk_put(channel->trace_chunk);
 	channel->trace_chunk = new_trace_chunk;
 	if (!is_local_trace || !new_trace_chunk) {
@@ -1004,6 +1013,32 @@ int lttng_consumer_channel_set_trace_chunk(
 		goto end;
 	}
 
+	if (!update_stream_trace_chunk) {
+		goto end;
+	}
+
+	channel_hash = consumer_data.stream_per_chan_id_ht->hash_fct(
+			&channel->key, lttng_ht_seed);
+	rcu_read_lock();
+	cds_lfht_for_each_entry_duplicate(consumer_data.stream_per_chan_id_ht->ht,
+			channel_hash,
+			consumer_data.stream_per_chan_id_ht->match_fct,
+			&channel->key, &iter, stream, node_channel_id.node) {
+		bool acquired_reference;
+
+		acquired_reference = lttng_trace_chunk_get(channel->trace_chunk);
+		assert(acquired_reference);
+
+		pthread_mutex_lock(&stream->lock);
+		stream->trace_chunk = channel->trace_chunk;
+		ret = consumer_stream_create_output_files(stream, true);
+		pthread_mutex_unlock(&stream->lock);
+		if (ret) {
+			goto end_rcu_unlock;
+		}
+	}
+end_rcu_unlock:
+	rcu_read_unlock();
 end:
 	pthread_mutex_unlock(&channel->lock);
 	return ret;
@@ -1203,16 +1238,13 @@ static int update_poll_array(struct lttng_consumer_local_data *ctx,
 		 * closed by the polling thread after a wakeup on the data_pipe or
 		 * metadata_pipe.
 		 */
-		if (stream->state != LTTNG_CONSUMER_ACTIVE_STREAM ||
-				stream->endpoint_status == CONSUMER_ENDPOINT_INACTIVE) {
+		if (stream->endpoint_status == CONSUMER_ENDPOINT_INACTIVE) {
 			(*nb_inactive_fd)++;
 			continue;
 		}
 		/*
 		 * This clobbers way too much the debug output. Uncomment that if you
 		 * need it for debugging purposes.
-		 *
-		 * DBG("Active FD %d", stream->wait_fd);
 		 */
 		(*pollfd)[i].fd = stream->wait_fd;
 		(*pollfd)[i].events = POLLIN | POLLPRI;
@@ -1630,6 +1662,8 @@ ssize_t lttng_consumer_on_read_subbuffer_mmap(
 
 	/* RCU lock for the relayd pointer */
 	rcu_read_lock();
+
+	assert(stream->chan->trace_chunk);
 
 	/* Flag that the current stream if set for network streaming. */
 	if (stream->net_seq_idx != (uint64_t) -1ULL) {
@@ -4084,29 +4118,38 @@ void lttng_consumer_reset_stream_rotate_state(struct lttng_consumer_stream *stre
 /*
  * Perform the rotation a local stream file.
  */
+static
 int rotate_local_stream(struct lttng_consumer_local_data *ctx,
 		struct lttng_consumer_stream *stream)
 {
-	int ret;
+	int ret = 0;
 
 	DBG("Rotate local stream: stream key %" PRIu64 ", channel key %" PRIu64,
 			stream->key,
 			stream->chan->key);
+	stream->tracefile_size_current = 0;
+	stream->tracefile_count_current = 0;
 
-	lttng_trace_chunk_put(stream->trace_chunk);
-	if (lttng_trace_chunk_get(stream->chan->trace_chunk)) {
-		stream->trace_chunk = stream->chan->trace_chunk;
-	} else {
-		ERR("Failed to acquire reference to current trace chunk of channel \"%s\"",
-				stream->chan->name);
-		ret = -1;
+	if (stream->out_fd >= 0) {
+		ret = close(stream->out_fd);
+		if (ret) {
+			PERROR("close");
+		}
+		stream->out_fd = -1;
+	}
+
+	if (stream->index_file) {
+		lttng_index_file_put(stream->index_file);
+		stream->index_file = NULL;
+	}
+
+	if (!stream->trace_chunk) {
 		goto end;
 	}
 
-	ret = consumer_stream_rotate_output_files(stream);
+	ret = consumer_stream_create_output_files(stream, true);
 end:
 	return ret;
-
 }
 
 /*
@@ -4173,13 +4216,28 @@ int lttng_consumer_rotate_stream(struct lttng_consumer_local_data *ctx,
 	 * now-current chunk.
 	 */
 	lttng_trace_chunk_put(stream->trace_chunk);
-	if (stream->chan->trace_chunk &&
+	if (stream->chan->trace_chunk == stream->trace_chunk) {
+		/*
+		 * A channel can be rotated and not have a "next" chunk
+		 * to transition to. In that case, the channel's "current chunk"
+		 * has not been closed yet, but it has not been updated to
+		 * a "next" trace chunk either. Hence, the stream, like its
+		 * parent channel, becomes part of no chunk and can't output
+		 * anything until a new trace chunk is created.
+		 */
+		stream->trace_chunk = NULL;
+	} else if (stream->chan->trace_chunk &&
 			!lttng_trace_chunk_get(stream->chan->trace_chunk)) {
 		ERR("Failed to acquire a reference to channel's trace chunk during stream rotation");
 		ret = -1;
 		goto error;
+	} else {
+		/*
+		 * Update the stream's trace chunk to its parent channel's
+		 * current trace chunk.
+		 */
+		stream->trace_chunk = stream->chan->trace_chunk;
 	}
-	stream->trace_chunk = stream->chan->trace_chunk;
 
 	if (stream->net_seq_idx != (uint64_t) -1ULL) {
 		ret = rotate_relay_stream(ctx, stream);
@@ -4283,141 +4341,6 @@ int lttng_consumer_rotate_ready_streams(struct lttng_consumer_channel *channel,
 end:
 	rcu_read_unlock();
 	return ret;
-}
-
-/* Stream and channel lock must be acquired by the caller. */
-static
-bool check_stream_rotation_pending(const struct lttng_consumer_stream *stream,
-		uint64_t session_id, uint64_t chunk_id)
-{
-	bool pending = false;
-
-	if (stream->session_id != session_id) {
-		/* Skip. */
-		goto end;
-	}
-
-	/*
-	 * If the stream's chunk belongs to the chunk being rotated (or an
-	 * even older one), it means that the consumer has not consumed all the
-	 * buffers that belong to the chunk being rotated. Therefore, the
-	 * rotation is considered as ongoing/pending.
-	 */
-	ASSERT_LOCKED(stream->chan->lock);
-	pending = stream->trace_chunk != stream->chan->trace_chunk;
-end:
-	return pending;
-}
-
-/* RCU read lock must be acquired by the caller. */
-int lttng_consumer_check_rotation_pending_local(uint64_t session_id,
-		uint64_t chunk_id)
-{
-	struct lttng_ht_iter iter;
-	struct lttng_consumer_stream *stream;
-	bool rotation_pending = false;
-
-	/* Start with the metadata streams... */
-	cds_lfht_for_each_entry(metadata_ht->ht, &iter.iter, stream, node.node) {
-		pthread_mutex_lock(&stream->lock);
-		rotation_pending = check_stream_rotation_pending(stream,
-				session_id, chunk_id);
-		pthread_mutex_unlock(&stream->lock);
-		if (rotation_pending) {
-			goto end;
-		}
-	}
-
-	/* ... followed by the data streams. */
-	cds_lfht_for_each_entry(data_ht->ht, &iter.iter, stream, node.node) {
-		pthread_mutex_lock(&stream->lock);
-		rotation_pending = check_stream_rotation_pending(stream,
-				session_id, chunk_id);
-		pthread_mutex_unlock(&stream->lock);
-		if (rotation_pending) {
-			goto end;
-		}
-	}
-
-end:
-	return !!rotation_pending;
-}
-
-int lttng_consumer_check_rotation_pending_relay(uint64_t session_id,
-		uint64_t relayd_id, uint64_t chunk_id)
-{
-	int ret;
-	struct consumer_relayd_sock_pair *relayd;
-
-	relayd = consumer_find_relayd(relayd_id);
-	if (!relayd) {
-		ERR("Failed to find relayd id %" PRIu64, relayd_id);
-		ret = -1;
-		goto end;
-	}
-
-	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
-	ret = relayd_rotate_pending(&relayd->control_sock, chunk_id);
-	if (ret < 0) {
-		ERR("Relayd rotate pending failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
-		lttng_consumer_cleanup_relayd(relayd);
-	}
-	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-
-end:
-	return ret;
-}
-
-static
-int mkdir_local(const char *path, uid_t uid, gid_t gid)
-{
-	int ret;
-
-	ret = utils_mkdir_recursive(path, S_IRWXU | S_IRWXG, uid, gid);
-	if (ret < 0) {
-		/* utils_mkdir_recursive logs an error. */
-		goto end;
-	}
-
-	ret = 0;
-end:
-	return ret;
-}
-
-static
-int mkdir_relay(const char *path, uint64_t relayd_id)
-{
-	int ret;
-	struct consumer_relayd_sock_pair *relayd;
-
-	relayd = consumer_find_relayd(relayd_id);
-	if (!relayd) {
-		ERR("Failed to find relayd");
-		ret = -1;
-		goto end;
-	}
-
-	pthread_mutex_lock(&relayd->ctrl_sock_mutex);
-	ret = relayd_mkdir(&relayd->control_sock, path);
-	if (ret < 0) {
-		ERR("Relayd mkdir failed. Cleaning up relayd %" PRIu64".", relayd->net_seq_idx);
-		lttng_consumer_cleanup_relayd(relayd);
-	}
-	pthread_mutex_unlock(&relayd->ctrl_sock_mutex);
-
-end:
-	return ret;
-
-}
-
-int lttng_consumer_mkdir(const char *path, uid_t uid, gid_t gid,
-		uint64_t relayd_id)
-{
-	if (relayd_id != -1ULL) {
-		return mkdir_relay(path, relayd_id);
-	} else {
-		return mkdir_local(path, uid, gid);
-	}
 }
 
 enum lttcomm_return_code lttng_consumer_init_command(
@@ -4655,6 +4578,16 @@ enum lttcomm_return_code lttng_consumer_close_trace_chunk(
 			channel, node.node) {
 		int ret;
 
+		/*
+		 * Only change the channel's chunk to NULL if it still
+		 * references the chunk being closed. The channel may
+		 * reference a newer channel in the case of a session
+		 * rotation. When a session rotation occurs, the "next"
+		 * chunk is created before the "current" chunk is closed.
+		 */
+		if (channel->trace_chunk != chunk) {
+			continue;
+		}
 		ret = lttng_consumer_channel_set_trace_chunk(channel, NULL);
 		if (ret) {
 			/*

@@ -215,10 +215,29 @@ int session_access_ok(struct ltt_session *session, uid_t uid, gid_t gid);
 int session_reset_rotation_state(struct ltt_session *session,
 		enum lttng_rotation_state result);
 
-enum lttng_error_code session_switch_trace_chunk(struct ltt_session *session,
+/* Create a new trace chunk object from the session's configuration. */
+struct lttng_trace_chunk *session_create_new_trace_chunk(
+		struct ltt_session *session,
 		const char *session_base_path_override,
 		const char *chunk_name_override);
+
+/*
+ * Set `new_trace_chunk` as the session's current trace chunk. A reference
+ * to `new_trace_chunk` is acquired by the session. The chunk is created
+ * on remote peers (consumer and relay daemons).
+ *
+ * A reference to the session's current trace chunk is returned through
+ * `current_session_trace_chunk` on success.
+ */
 int session_set_trace_chunk(struct ltt_session *session,
-		struct lttng_trace_chunk *current_trace_chunk);
+		struct lttng_trace_chunk *new_trace_chunk,
+		struct lttng_trace_chunk **current_session_trace_chunk);
+
+/*
+ * Close a chunk on the remote peers of a session. Has no effect on the
+ * ltt_session itself.
+ */
+int session_close_trace_chunk(const struct ltt_session *session,
+		struct lttng_trace_chunk *trace_chunk);
 
 #endif /* _LTT_SESSION_H */

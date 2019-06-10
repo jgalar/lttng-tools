@@ -1250,7 +1250,6 @@ enum lttng_error_code kernel_snapshot_record(
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_metadata *saved_metadata;
-	enum lttng_trace_chunk_status chunk_status;
 
 	assert(ksess);
 	assert(ksess->consumer);
@@ -1261,13 +1260,6 @@ enum lttng_error_code kernel_snapshot_record(
 	/* Save current metadata since the following calls will change it. */
 	saved_metadata = ksess->metadata;
 	saved_metadata_fd = ksess->metadata_stream_fd;
-
-	chunk_status = lttng_trace_chunk_create_subdirectory(
-			ksess->current_trace_chunk, DEFAULT_KERNEL_TRACE_DIR);
-	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		status = LTTNG_ERR_CREATE_DIR_FAIL;
-		goto error;
-	}
 
 	rcu_read_lock();
 
@@ -1410,8 +1402,6 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 	struct consumer_socket *socket;
 	struct lttng_ht_iter iter;
 	struct ltt_kernel_session *ksess = session->kernel_session;
-	const bool is_local_trace =
-			session->consumer->type == CONSUMER_DST_LOCAL;
 
 	assert(ksess);
 	assert(ksess->consumer);
@@ -1429,22 +1419,6 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 	cds_lfht_for_each_entry(ksess->consumer->socks->ht, &iter.iter,
 			socket, node.node) {
 		struct ltt_kernel_channel *chan;
-
-		if (is_local_trace) {
-			enum lttng_trace_chunk_status chunk_status;
-
-			/*
-			 * Create the index subdirectory which will take care
-			 * of implicitly creating the channel's path.
-			 */
-			chunk_status = lttng_trace_chunk_create_subdirectory(
-					ksess->current_trace_chunk,
-					DEFAULT_KERNEL_TRACE_DIR "/" DEFAULT_INDEX_DIR);
-			if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-				status = LTTNG_ERR_CREATE_DIR_FAIL;
-				goto error;
-			}
-                }
 
                 /* For each channel, ask the consumer to rotate it. */
 		cds_list_for_each_entry(chan, &ksess->channel_list.head, list) {
@@ -1474,4 +1448,29 @@ enum lttng_error_code kernel_rotate_session(struct ltt_session *session)
 error:
 	rcu_read_unlock();
 	return status;
+}
+
+enum lttng_error_code kernel_create_channel_subdirectories(
+		const struct ltt_kernel_session *ksess)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+	enum lttng_trace_chunk_status chunk_status;
+
+	rcu_read_lock();
+	assert(ksess->current_trace_chunk);
+
+	/*
+	 * Create the index subdirectory which will take care
+	 * of implicitly creating the channel's path.
+	 */
+	chunk_status = lttng_trace_chunk_create_subdirectory(
+			ksess->current_trace_chunk,
+			DEFAULT_KERNEL_TRACE_DIR "/" DEFAULT_INDEX_DIR);
+	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
+		ret = LTTNG_ERR_CREATE_DIR_FAIL;
+		goto error;
+	}
+error:
+	rcu_read_unlock();
+	return ret;
 }

@@ -889,14 +889,29 @@ void consumer_init_ask_channel_comm_msg(struct lttcomm_consumer_msg *msg,
 
         /* Zeroed structure */
 	memset(msg, 0, sizeof(struct lttcomm_consumer_msg));
+	msg->u.ask_channel.buffer_credentials.uid = UINT32_MAX;
+	msg->u.ask_channel.buffer_credentials.gid = UINT32_MAX;
+
+	if (monitor) {
+		assert(trace_chunk);
+	}
 
         if (trace_chunk) {
 		uint64_t chunk_id;
 		enum lttng_trace_chunk_status chunk_status;
+		struct lttng_credentials chunk_credentials;
 
 		chunk_status = lttng_trace_chunk_get_id(trace_chunk, &chunk_id);
 		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 		LTTNG_OPTIONAL_SET(&msg->u.ask_channel.chunk_id, chunk_id);
+
+		chunk_status = lttng_trace_chunk_get_credentials(trace_chunk,
+				&chunk_credentials);
+		assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
+		msg->u.ask_channel.buffer_credentials.uid =
+				chunk_credentials.uid;
+		msg->u.ask_channel.buffer_credentials.gid =
+				chunk_credentials.gid;
         }
 
 	msg->cmd_type = LTTNG_CONSUMER_ASK_CHANNEL_CREATION;
@@ -1848,33 +1863,28 @@ int consumer_close_trace_chunk(struct consumer_socket *socket,
 	}
 
 	chunk_status = lttng_trace_chunk_get_id(chunk, &chunk_id);
-	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		/*
-		 * Anonymous trace chunks should never be transmitted
-		 * to remote peers (consumerd and relayd). They are used
-		 * internally for backward-compatibility purposes.
-		 */
-		ret = -LTTNG_ERR_FATAL;
-		goto error;
-	}
+	/*
+	 * Anonymous trace chunks should never be transmitted to remote peers
+	 * (consumerd and relayd). They are used internally for
+	 * backward-compatibility purposes.
+	 */
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 	msg.u.close_trace_chunk.chunk_id = chunk_id;
 
 	chunk_status = lttng_trace_chunk_get_close_timestamp(chunk,
 			&close_timestamp);
-	if (chunk_status != LTTNG_TRACE_CHUNK_STATUS_OK) {
-		/*
-		 * Anonymous trace chunks should never be transmitted
-		 * to remote peers (consumerd and relayd). They are used
-		 * internally for backward-compatibility purposes.
-		 */
-		ret = -LTTNG_ERR_FATAL;
-		goto error;
-	}
+	/*
+	 * A trace chunk should be closed locally before being closed remotely.
+	 * Otherwise, the close timestamp would never be transmitted to the
+	 * peers.
+	 */
+	assert(chunk_status == LTTNG_TRACE_CHUNK_STATUS_OK);
 	msg.u.close_trace_chunk.close_timestamp = (uint64_t) close_timestamp;
 
 	DBG("Sending consumer close trace chunk command: relayd_id = %" PRId64
 			", session_id = %" PRIu64
-			", chunk_id = %" PRIu64, relayd_id, session_id, chunk_id);
+			", chunk_id = %" PRIu64,
+			relayd_id, session_id, chunk_id);
 
 	health_code_update();
 	ret = consumer_send_msg(socket, &msg);

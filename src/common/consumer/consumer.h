@@ -72,13 +72,6 @@ enum lttng_consumer_command {
 	LTTNG_CONSUMER_TRACE_CHUNK_EXISTS,
 };
 
-/* State of each fd in consumer */
-enum lttng_consumer_stream_state {
-	LTTNG_CONSUMER_ACTIVE_STREAM,
-	LTTNG_CONSUMER_PAUSE_STREAM,
-	LTTNG_CONSUMER_DELETE_STREAM,
-};
-
 enum lttng_consumer_type {
 	LTTNG_CONSUMER_UNKNOWN = 0,
 	LTTNG_CONSUMER_KERNEL,
@@ -272,7 +265,6 @@ struct lttng_consumer_stream {
 	off_t out_fd_offset;
 	/* Amount of bytes written to the output */
 	uint64_t output_written;
-	enum lttng_consumer_stream_state state;
 	int shm_fd_is_copy;
 	int data_read;
 	int hangup_flush_done;
@@ -737,7 +729,6 @@ void consumer_stream_update_channel_attributes(
 
 struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
 		uint64_t stream_key,
-		enum lttng_consumer_stream_state state,
 		const char *channel_name,
 		uint64_t relayd_id,
 		uint64_t session_id,

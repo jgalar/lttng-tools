@@ -158,7 +158,6 @@ static struct lttng_consumer_stream *allocate_stream(int cpu, int key,
 
 	stream = consumer_allocate_stream(channel->key,
 			key,
-			LTTNG_CONSUMER_ACTIVE_STREAM,
 			channel->name,
 			channel->relayd_id,
 			channel->session_id,
@@ -2923,8 +2922,12 @@ int lttng_ustconsumer_on_recv_stream(struct lttng_consumer_stream *stream)
 
 	assert(stream);
 
-	/* Don't create anything if this is set for streaming. */
-	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor) {
+	/*
+	 * Don't create anything if this is set for streaming or if there is
+	 * no current trace chunk on the parent channel.
+	 */
+	if (stream->net_seq_idx == (uint64_t) -1ULL && stream->chan->monitor &&
+			stream->chan->trace_chunk) {
 		ret = consumer_stream_create_output_files(stream, true);
 		if (ret) {
 			goto error;
