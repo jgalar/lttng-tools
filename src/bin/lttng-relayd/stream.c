@@ -314,6 +314,10 @@ static int stream_rotate_data_file(struct relay_stream *stream)
 		/* Rotation completed; reset its state. */
 		stream_complete_rotation(stream);
 	}
+
+	/* Success */
+	ret = 0;
+
 end:
 	return ret;
 }
