@@ -4749,7 +4749,7 @@ enum lttcomm_return_code lttng_consumer_trace_chunk_exists(
 	relayd = consumer_find_relayd(*relayd_id);
 	if (!relayd) {
 		ERR("Failed to find relayd %" PRIu64, *relayd_id);
-		ret = -1;
+		ret_code = LTTCOMM_CONSUMERD_RELAYD_FAIL;
 		goto end_rcu_unlock;
 	}
 	DBG("Looking up existence of trace chunk on relay daemon");
