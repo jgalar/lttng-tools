@@ -26,3 +26,8 @@ required by the LGPL license.
 
 All remaining source code is distributed under the GPLv2 license. See
 gpl-2.0.txt for details. 
+
+* MIT
+
+Logging code under src/common/logging/* derived from the MIT licensed
+zf_log project.

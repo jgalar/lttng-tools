@@ -1107,6 +1107,7 @@ AC_CONFIG_FILES([
 	src/common/health/Makefile
 	src/common/config/Makefile
 	src/common/string-utils/Makefile
+	src/common/logging/Makefile
 	src/lib/Makefile
 	src/lib/lttng-ctl/Makefile
 	src/lib/lttng-ctl/filter/Makefile

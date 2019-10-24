@@ -1,6 +1,6 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-SUBDIRS = string-utils
+SUBDIRS = string-utils logging
 
 # Make sure to always distribute all folders
 # since SUBDIRS is decided at configure time.
