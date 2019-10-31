@@ -2357,7 +2357,47 @@ end_no_reply:
 	return ret;
 }
 
+static enum lttng_error_code set_trace_chunk_to_all_session_streams(
+		uint64_t session_id, struct lttng_trace_chunk *new_chunk)
+{
+	enum lttng_error_code ret_code = LTTNG_OK;
+	struct relay_stream *stream = NULL;
+	struct lttng_ht_iter iter;
 
+	assert(new_chunk);
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(relay_streams_ht->ht, &iter.iter, stream,
+				node.node) {
+		int ret;
+
+		if (!stream_get(stream)) {
+			continue;
+		}
+		if (stream->trace->session->id != session_id) {
+			stream_put(stream);
+			continue;
+		}
+		pthread_mutex_lock(&stream->lock);
+		ret = stream_set_trace_chunk(stream, new_chunk);
+		if (ret) {
+			ERR("Failed to set trace chunk on stream: stream_id %" PRIu64 ", channel_name = %s, session_name = %s",
+					stream->stream_handle,
+					stream->channel_name,
+					stream->trace->session->session_name);
+			ret_code = ret == -EINVAL ? LTTNG_ERR_INVALID_PROTOCOL :
+					LTTNG_ERR_UNK;
+		}
+		pthread_mutex_unlock(&stream->lock);
+		stream_put(stream);
+		if (ret_code != LTTNG_OK) {
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	return ret_code;
+}
 
 /*
  * relay_create_trace_chunk: create a new trace chunk
@@ -2377,6 +2417,7 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 	enum lttng_error_code reply_code = LTTNG_OK;
 	enum lttng_trace_chunk_status chunk_status;
 	struct lttng_directory_handle session_output;
+	bool must_update_session_streams;
 
 	if (!session || !conn->version_check_done) {
 		ERR("Trying to create a trace chunk before version check");
@@ -2396,6 +2437,22 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		ret = -1;
 		goto end_no_reply;
 	}
+
+	/*
+	 * The session (and its streams) have been rotated to a "null"
+	 * trace chunk (e.g. stop -> rotate) or never had a trace chunk.
+	 *
+	 * As the protocol doesn't allow rotations to overlap (i.e. creating a
+	 * trace chunk before all streams have transitioned to the current
+	 * one), it is fair to assume that if the session doesn't have a
+	 * current trace chunk, any pre-existing stream will transition into
+	 * the trace chunk being created here.
+	 *
+	 * There is no need for the consumer to announce a rotation into the new
+	 * trace chunk at the current stream positions; we can directly
+	 * transition into the new chunk and create the stream outputs.
+	 */
+	must_update_session_streams = !session->current_trace_chunk;
 
 	/* Convert to host endianness. */
 	msg = (typeof(msg)) header_view.data;
@@ -2481,6 +2538,19 @@ static int relay_create_trace_chunk(const struct lttcomm_relayd_hdr *recv_hdr,
 		ret = -1;
 		reply_code = LTTNG_ERR_NOMEM;
 		goto end;
+	}
+
+	if (must_update_session_streams) {
+		enum lttng_error_code update_ret;
+
+		ERR("Setting trace chunk on all streams of session \"%s\"", conn->session->session_name);
+		update_ret = set_trace_chunk_to_all_session_streams(
+				conn->session->id, published_chunk);
+		if (update_ret != LTTNG_OK) {
+			reply_code = update_ret;
+			ret = -1;
+			goto end;
+		}
 	}
 
 	pthread_mutex_lock(&conn->session->lock);

@@ -508,7 +508,7 @@ end:
 	return ret;
 }
 
-static int stream_set_trace_chunk(struct relay_stream *stream,
+static int _stream_set_trace_chunk(struct relay_stream *stream,
 		struct lttng_trace_chunk *chunk)
 {
 	int ret = 0;
@@ -535,6 +535,23 @@ static int stream_set_trace_chunk(struct relay_stream *stream,
 	ret = stream_create_data_output_file_from_trace_chunk(stream, chunk,
 			false, &new_stream_fd);
 	stream->stream_fd = new_stream_fd;
+end:
+	return ret;
+}
+
+int stream_set_trace_chunk(struct relay_stream *stream,
+		struct lttng_trace_chunk *chunk)
+{
+	int ret;
+
+	if (stream->trace_chunk) {
+		ERR("Attempted to forcibly set a trace chunk on a stream that already has a trace chunk: stream_id = %" PRIu64 ", channel_name = %s, session  = %s",
+				stream->stream_handle, stream->channel_name,
+				stream->trace->session->session_name);
+		ret = -EINVAL;
+		goto end;
+	}
+	ret = _stream_set_trace_chunk(stream, chunk);
 end:
 	return ret;
 }
@@ -596,7 +613,7 @@ struct relay_stream *stream_create(struct ctf_trace *trace,
 	}
 
 	pthread_mutex_lock(&stream->lock);
-	ret = stream_set_trace_chunk(stream, current_trace_chunk);
+	ret = _stream_set_trace_chunk(stream, current_trace_chunk);
 	pthread_mutex_unlock(&stream->lock);
 	if (ret) {
 		ERR("Failed to set the current trace chunk of session \"%s\" on newly created stream of channel \"%s\"",

@@ -191,6 +191,9 @@ int stream_rotate_output_files(struct relay_session *session,
 int stream_set_pending_rotation(struct relay_stream *stream,
 		struct lttng_trace_chunk *next_trace_chunk,
 		uint64_t rotation_sequence_number);
+/* Only valid on streams that don't have a current trace chunk. */
+int stream_set_trace_chunk(struct relay_stream *stream,
+		struct lttng_trace_chunk *chunk);
 void try_stream_close(struct relay_stream *stream);
 void stream_publish(struct relay_stream *stream);
 int stream_init_packet(struct relay_stream *stream, size_t packet_size,
