@@ -1590,7 +1590,8 @@ static void relay_unknown_command(struct relay_connection *conn)
 
 /*
  * relay_start: send an acknowledgment to the client to tell if we are
- * ready to receive data. We are ready if a session is established.
+ * ready to receive data. We are ready if a session is established and
+ * it has a "current" trace chunk.
  */
 static int relay_start(const struct lttcomm_relayd_hdr *recv_hdr,
 		struct relay_connection *conn,
@@ -1604,6 +1605,11 @@ static int relay_start(const struct lttcomm_relayd_hdr *recv_hdr,
 	if (!session) {
 		DBG("Trying to start the streaming without a session established");
 		ret = htobe32(LTTNG_ERR_UNK);
+	}
+
+	if (!session->current_trace_chunk) {
+		WARN("Protocol error: attempted to start a session without a trace chunk");
+		ret = htobe32(LTTNG_ERR_INVALID_PROTOCOL);
 	}
 
 	memset(&reply, 0, sizeof(reply));
