@@ -998,6 +998,12 @@ int stream_write(struct relay_stream *stream,
 	ASSERT_LOCKED(stream->lock);
 	memset(padding_buffer, 0,
 			min(sizeof(padding_buffer), padding_to_write));
+	if (!stream->stream_fd || !stream->trace_chunk) {
+		WARN("Protocol error: attempted to write to a stream that is not part of a trace chunk: stream_id = %" PRIu64 ", channel_name = %s",
+				stream->stream_handle, stream->channel_name);
+		ret = -1;
+		goto end;
+	}
 
 	if (packet) {
 		write_ret = lttng_write(stream->stream_fd->fd,
