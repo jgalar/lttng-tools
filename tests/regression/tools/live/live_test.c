@@ -138,7 +138,7 @@ end:
 	return ret;
 }
 
-int establish_connection(void)
+static int establish_connection(void)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_connect connect;
@@ -182,7 +182,7 @@ error:
 /*
  * Returns the number of sessions, should be 1 during the unit test.
  */
-int list_sessions(uint64_t *session_id)
+static int list_sessions(uint64_t *session_id)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_list_sessions list;
@@ -229,7 +229,7 @@ error:
 	return -1;
 }
 
-int create_viewer_session(void)
+static int create_viewer_session(void)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_create_session_response resp;
@@ -267,7 +267,7 @@ error:
 	return -1;
 }
 
-int attach_session(uint64_t id)
+static int attach_session(uint64_t id)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_attach_session_request rq;
@@ -356,7 +356,7 @@ error:
 	return -1;
 }
 
-int get_metadata(void)
+static int get_metadata(void)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_get_metadata rq;
@@ -451,7 +451,7 @@ error:
 	return -1;
 }
 
-int get_next_index(void)
+static int get_next_index(void)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_get_next_index rq;
@@ -616,7 +616,7 @@ error:
 	return -1;
 }
 
-int detach_viewer_session(uint64_t id)
+static int detach_viewer_session(uint64_t id)
 {
 	struct lttng_viewer_cmd cmd;
 	struct lttng_viewer_detach_session_response resp;
