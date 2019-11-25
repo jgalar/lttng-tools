@@ -93,7 +93,7 @@ end:
  * gsrc will be garbage collected immediately, and gstr might be.
  * Should only be used to append characters to a string literal or constant.
  */
-LTTNG_HIDDEN
+static
 struct gc_string *gc_string_append(struct filter_parser_ctx *parser_ctx,
 				   struct gc_string *gstr,
 				   struct gc_string *gsrc)
@@ -123,6 +123,8 @@ struct gc_string *gc_string_append(struct filter_parser_ctx *parser_ctx,
 	return gstr;
 }
 
+LTTNG_HIDDEN
+void setstring(struct filter_parser_ctx *parser_ctx, YYSTYPE *lvalp, const char *src);
 LTTNG_HIDDEN
 void setstring(struct filter_parser_ctx *parser_ctx, YYSTYPE *lvalp, const char *src)
 {
@@ -186,11 +188,15 @@ static struct filter_node *make_op_node(struct filter_parser_ctx *scanner,
 }
 
 LTTNG_HIDDEN
+void yyerror(struct filter_parser_ctx *parser_ctx, yyscan_t scanner, const char *str);
+LTTNG_HIDDEN
 void yyerror(struct filter_parser_ctx *parser_ctx, yyscan_t scanner, const char *str)
 {
 	fprintf(stderr, "error %s\n", str);
 }
  
+LTTNG_HIDDEN
+int yywrap(void);
 LTTNG_HIDDEN
 int yywrap(void)
 {
