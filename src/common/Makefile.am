@@ -48,6 +48,12 @@ libcommon_la_SOURCES = \
 	error.c error.h \
 	evaluation.c \
 	event.c \
+	event-rule.c \
+	event-rule-kprobe.c \
+	event-rule-kretprobe.c \
+	event-rule-syscall.c \
+	event-rule-uprobe.c \
+	event-rule-tracepoint.c \
 	filter.c filter.h \
 	futex.c futex.h \
 	location.c \

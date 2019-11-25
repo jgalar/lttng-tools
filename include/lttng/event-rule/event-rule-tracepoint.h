@@ -59,6 +59,15 @@ extern enum lttng_event_rule_status lttng_event_rule_tracepoint_get_pattern(
 		const struct lttng_event_rule *rule, const char **pattern);
 
 /*
+ * Set the domain type of a tracepoint event rule.
+ *
+ * Return LTTNG_EVENT_RULE_STATUS_OK on success, LTTNG_EVENT_RULE_STATUS_INVALID
+ * if invalid parameters are passed.
+ */
+extern enum lttng_event_rule_status lttng_event_rule_tracepoint_set_filter(
+		struct lttng_event_rule *rule, const char *expression);
+
+/*
  * Get the domain type of a tracecpoint event rule.
  *
  * Returns LTTNG_EVENT_RULE_STATUS_OK and sets the domain type output parameter
