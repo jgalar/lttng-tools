@@ -76,7 +76,7 @@ void get_temporary_directories(char **_test_directory, char **_unlink_directory)
 	}
 }
 
-int fd_count(void)
+static int fd_count(void)
 {
 	DIR *dir;
 	struct dirent *entry;
