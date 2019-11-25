@@ -142,6 +142,14 @@ lttngnotificationinclude_HEADERS= \
 lttngtriggerinclude_HEADERS= \
 	lttng/trigger/trigger.h
 
+lttngeventruleinclude_HEADERS= \
+	lttng/event-rule/event-rule.h \
+	lttng/event-rule/event-rule-kprobe.h \
+	lttng/event-rule/event-rule-kretprobe.h \
+	lttng/event-rule/event-rule-syscall.h \
+	lttng/event-rule/event-rule-tracepoint.h \
+	lttng/event-rule/event-rule-uprobe.h
+
 noinst_HEADERS = \
 	lttng/snapshot-internal.h \
 	lttng/health-internal.h \
@@ -167,5 +175,11 @@ noinst_HEADERS = \
 	lttng/session-internal.h \
 	lttng/session-descriptor-internal.h \
 	lttng/tracker-internal.h \
+	lttng/event-rule/event-rule-internal.h \
+	lttng/event-rule/event-rule-kprobe-internal.h \
+	lttng/event-rule/event-rule-kretprobe-internal.h \
+	lttng/event-rule/event-rule-uprobe-internal.h \
+	lttng/event-rule/event-rule-syscall-internal.h \
+	lttng/event-rule/event-rule-tracepoint-internal.h \
 	version.h \
 	version.i
