@@ -280,7 +280,34 @@ end:
 enum lttng_event_rule_status lttng_event_rule_tracepoint_set_filter(
 		struct lttng_event_rule *rule, const char *expression)
 {
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+	char *expression_copy = NULL;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	/* TODO: validate that the passed expression is valid */
+
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule) || !expression ||
+			strlen(expression) == 0) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(
+			rule, struct lttng_event_rule_tracepoint, parent);
+	expression_copy = strdup(expression);
+	if (!expression_copy) {
+		status = LTTNG_EVENT_RULE_STATUS_ERROR;
+		goto end;
+	}
+
+	if (tracepoint->filter_expression) {
+		free(tracepoint->filter_expression);
+	}
+
+	tracepoint->filter_expression = expression_copy;
+	expression_copy = NULL;
+end:
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_filter(
