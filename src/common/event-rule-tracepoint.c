@@ -60,9 +60,18 @@ bool lttng_event_rule_tracepoint_validate(
 	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
 			parent);
 
-	/*
-	 * TODO
-	 */
+	/* Required field */
+	if (!tracepoint->pattern) {
+		ERR("Invalid tracepoint event rule: a pattern must be set.");
+		goto end;
+	}
+	if (tracepoint->domain == LTTNG_DOMAIN_NONE) {
+		ERR("Invalid tracepoint event rule: a domain must be set.");
+		goto end;
+	}
+
+	/* QUESTION: do we validate inside state on validate or during set of
+	 * each component */
 
 	valid = true;
 end:
