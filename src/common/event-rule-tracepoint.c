@@ -402,7 +402,19 @@ end:
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_loglevel_type(
 		const struct lttng_event_rule *rule, enum lttng_loglevel_type *type)
 {
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule) || !type) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	*type = tracepoint->loglevel.type;
+end:
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_loglevel(
