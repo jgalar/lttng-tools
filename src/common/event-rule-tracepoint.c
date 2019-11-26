@@ -335,8 +335,26 @@ end:
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_set_loglevel(
 		struct lttng_event_rule *rule, int level)
-{
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+{	
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	/*
+	 * TODO/QUESTION: do we validate the passed level based on the domain?
+	 * What if no domain is set yet? Should we move the domain to the
+	 * "create" api call to enforce the domain type?
+	 */
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule)) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	tracepoint->loglevel.value = level;
+	tracepoint->loglevel.type = LTTNG_EVENT_LOGLEVEL_SINGLE;
+end:
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_set_loglevel_range(
