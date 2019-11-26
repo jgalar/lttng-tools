@@ -444,7 +444,54 @@ enum lttng_event_rule_status lttng_event_rule_tracepoint_set_exclusions(
 		unsigned int count,
 		const char **exclusions)
 {
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+	char **exclusions_copy = NULL;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	/* TODO: validate that the passed exclusions are valid? */
+
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule) || count == 0 ||
+			!exclusions) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(
+			rule, struct lttng_event_rule_tracepoint, parent);
+
+	exclusions_copy = zmalloc(sizeof(char *) * count);
+	if (!exclusions_copy) {
+		status = LTTNG_EVENT_RULE_STATUS_ERROR;
+		goto end;
+	}
+
+	/* Perform the copy locally */
+	for (int i = 0; i < count; i++) {
+		exclusions_copy[i] = strdup(exclusions[i]);
+		if (!exclusions_copy[i]) {
+			status = LTTNG_EVENT_RULE_STATUS_ERROR;
+			goto end;
+		}
+	}
+
+	if (tracepoint->exclusions.count != 0) {
+		for (int i = 0; i < tracepoint->exclusions.count; i++) {
+			free(tracepoint->exclusions.values[i]);
+		}
+		free(tracepoint->exclusions.values);
+	}
+
+	tracepoint->exclusions.values = exclusions_copy;
+	tracepoint->exclusions.count = count;
+	exclusions_copy = NULL;
+end:
+	if (exclusions_copy) {
+		for (int i = 0; i < count; i++) {
+			free(exclusions_copy[i]);
+		}
+		free(exclusions_copy);
+	}
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_exclusions_count(
