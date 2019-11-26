@@ -160,6 +160,10 @@ struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_ty
 {
 	struct lttng_event_rule_tracepoint *rule;
 
+	if (domain_type == LTTNG_DOMAIN_NONE) {
+		return NULL;
+	}
+
 	rule = zmalloc(sizeof(struct lttng_event_rule_tracepoint));
 	if (!rule) {
 		return NULL;
@@ -170,6 +174,10 @@ struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_ty
 	rule->parent.serialize = lttng_event_rule_tracepoint_serialize;
 	rule->parent.equal = lttng_event_rule_tracepoint_is_equal;
 	rule->parent.destroy = lttng_event_rule_tracepoint_destroy;
+
+	rule->domain = domain_type;
+	rule->loglevel.type = LTTNG_EVENT_LOGLEVEL_ALL;
+
 	return &rule->parent;
 }
 
