@@ -30,12 +30,19 @@ void lttng_event_rule_tracepoint_destroy(struct lttng_event_rule *rule)
 {
 	struct lttng_event_rule_tracepoint *tracepoint;
 
+	if (rule == NULL) {
+		return;
+	}
+
 	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
 			parent);
 
-	/*
-	 * TODO
-	 */
+	free(tracepoint->pattern);
+	free(tracepoint->filter_expression);
+	for(int i = 0; i < tracepoint->exclusions.count; i++) {
+		free(tracepoint->exclusions.values[i]);
+	}
+	free(tracepoint->exclusions.values);
 	free(tracepoint);
 }
 
