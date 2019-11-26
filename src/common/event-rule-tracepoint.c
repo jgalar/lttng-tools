@@ -420,7 +420,23 @@ end:
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_loglevel(
 		const struct lttng_event_rule *rule, int *level)
 {
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule) || !level) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	if (tracepoint->loglevel.type == LTTNG_EVENT_LOGLEVEL_ALL) {
+		status = LTTNG_EVENT_RULE_STATUS_UNSET;
+		goto end;
+	}
+	*level = tracepoint->loglevel.value;
+end:
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_set_exclusions(
