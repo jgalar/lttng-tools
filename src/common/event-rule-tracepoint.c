@@ -207,7 +207,32 @@ error:
 enum lttng_event_rule_status lttng_event_rule_tracepoint_set_pattern(
 		struct lttng_event_rule *rule, const char *pattern)
 {
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+	char *pattern_copy = NULL;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule) || !pattern ||
+			strlen(pattern) == 0) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	pattern_copy = strdup(pattern);
+	if (!pattern_copy) {
+		status = LTTNG_EVENT_RULE_STATUS_ERROR;
+		goto end;
+	}
+
+	if (tracepoint->pattern) {
+		free(tracepoint->pattern);
+	}
+
+	tracepoint->pattern = pattern_copy;
+	pattern_copy = NULL;
+end:
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_pattern(
