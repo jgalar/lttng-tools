@@ -84,7 +84,9 @@ int lttng_event_rule_tracepoint_serialize(
 		struct lttng_dynamic_buffer *buf)
 {
 	int ret;
+	size_t pattern_len, filter_expression_len, exclusions_len;
 	struct lttng_event_rule_tracepoint *tracepoint;
+	struct lttng_event_rule_tracepoint_comm tracepoint_comm;
 
 	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule)) {
 		ret = -1;
@@ -92,10 +94,72 @@ int lttng_event_rule_tracepoint_serialize(
 	}
 
 	DBG("Serializing tracepoint event rule");
-	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
-			parent);
+	tracepoint = container_of(
+			rule, struct lttng_event_rule_tracepoint, parent);
 
-	/* TODO */
+	pattern_len = strlen(tracepoint->pattern) + 1;
+
+	if (tracepoint->filter_expression != NULL) {
+		filter_expression_len =
+				strlen(tracepoint->filter_expression) + 1;
+	} else {
+		filter_expression_len = 0;
+	}
+
+	exclusions_len = 0;
+	for (int i = 0; i < tracepoint->exclusions.count; i++) {
+		/* Payload */
+		exclusions_len += strlen(tracepoint->exclusions.values[i]) + 1;
+		/* Bound check */
+		exclusions_len += sizeof(uint32_t);
+	}
+
+	tracepoint_comm.domain_type = (int8_t) tracepoint->domain;
+	tracepoint_comm.loglevel_type = (int8_t) tracepoint->loglevel.type;
+	tracepoint_comm.loglevel_value = tracepoint->loglevel.value;
+	tracepoint_comm.pattern_len = pattern_len;
+	tracepoint_comm.filter_expression_len = filter_expression_len;
+	tracepoint_comm.exclusions_count = tracepoint->exclusions.count;
+	tracepoint_comm.exclusions_len = exclusions_len;
+
+	ret = lttng_dynamic_buffer_append(
+			buf, &tracepoint_comm, sizeof(tracepoint_comm));
+	if (ret) {
+		goto end;
+	}
+	ret = lttng_dynamic_buffer_append(buf, tracepoint->pattern,
+			pattern_len);
+	if (ret) {
+		goto end;
+	}
+	ret = lttng_dynamic_buffer_append(buf, tracepoint->filter_expression,
+			filter_expression_len);
+	if (ret) {
+		goto end;
+	}
+
+	size_t exclusions_appended = 0;
+	for (int i = 0; i < tracepoint->exclusions.count; i++) {
+		size_t len;
+		len = strlen(tracepoint->exclusions.values[i]) + 1;
+		/* Append bound check, does not include the '\0' */
+		ret = lttng_dynamic_buffer_append(buf, &len, sizeof(uint32_t));
+		if (ret) {
+			goto end;
+		}
+		exclusions_appended += sizeof(uint32_t);
+
+		/* Include the '\0' in the payload */
+		ret = lttng_dynamic_buffer_append(buf, tracepoint->exclusions.values[i],
+				len);
+		if (ret) {
+			goto end;
+		}
+		exclusions_appended += len;
+	}
+
+	assert(exclusions_len == exclusions_appended);
+
 end:
 	return ret;
 }
