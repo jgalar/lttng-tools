@@ -110,7 +110,47 @@ bool lttng_event_rule_tracepoint_is_equal(const struct lttng_event_rule *_a,
 	a = container_of(_a, struct lttng_event_rule_tracepoint, parent);
 	b = container_of(_b, struct lttng_event_rule_tracepoint, parent);
 
-	/* TODO */
+	/* Quick checks */
+	if (a->domain != b->domain) {
+		goto end;
+	}
+
+	if (a->exclusions.count != b->exclusions.count) {
+		goto end;
+	}
+
+	if (!!a->filter_expression != !!b->filter_expression) {
+		goto end;
+	}
+
+	/* Long check */
+	/* Tracepoint is invalid if this is not true */
+	assert(a->pattern);
+	assert(b->pattern);
+	if (strcmp(a->pattern, b->pattern)) {
+		goto end;
+	}
+
+	if (a->filter_expression && b->filter_expression) {
+		if (strcmp(a->filter_expression, b->filter_expression)) {
+			goto end;
+		}
+	}
+
+	if (a->loglevel.type != b->loglevel.type) {
+		goto end;
+	}
+
+	if (a->loglevel.value != b->loglevel.value) {
+		goto end;
+	}
+
+	for (int i = 0; i < a->exclusions.count; i++) {
+		if (strcmp(a->exclusions.values[i], b->exclusions.values[i])) {
+			goto end;
+		}
+	}
+
 	is_equal = true;
 end:
 	return is_equal;
