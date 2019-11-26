@@ -497,7 +497,19 @@ end:
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_exclusions_count(
 		struct lttng_event_rule *rule, unsigned int *count)
 {
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	if (!rule || !IS_TRACEPOINT_EVENT_RULE(rule) || !count) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	*count = tracepoint->exclusions.count;
+end:
+	return status;
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_exclusion_at_index(
