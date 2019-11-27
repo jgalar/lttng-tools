@@ -84,6 +84,10 @@
 #include "version.h"
 #include "viewer-stream.h"
 
+#include <dirent.h>
+
+static int shall_quit;
+
 static const char *help_msg =
 #ifdef LTTNG_EMBED_HELP
 #include <lttng-relayd.8.h>
@@ -208,6 +212,34 @@ static const char *config_ignore_options[] = { "help", "config", "version" };
 
 static void print_version(void) {
 	fprintf(stdout, "%s\n", VERSION);
+}
+
+static int fd_count(void)
+{
+	DIR *dir;
+	struct dirent *entry;
+        int count = 0;
+
+	dir = opendir("/proc/self/fd");
+	if (!dir) {
+		perror("Failed to enumerate /proc/self/fd/ to count the number of used file descriptors");
+	        count = -1;
+		goto end;
+	}
+
+	while ((entry = readdir(dir)) != NULL) {
+		if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
+			continue;
+		}
+	        count++;
+	}
+	/* Don't account for the file descriptor opened by opendir(). */
+        count--;
+	if (closedir(dir)) {
+		perror("Failed to close self/fd directory file descriptor");
+	}
+end:
+	return count;
 }
 
 static void relayd_config_log(void)
@@ -804,6 +836,7 @@ int lttng_relay_stop_threads(void)
 		ERR("Error stopping live threads");
 		retval = -1;
 	}
+	CMM_STORE_SHARED(shall_quit, 1);
 	return retval;
 }
 
@@ -4312,6 +4345,12 @@ int main(int argc, char **argv)
 		goto exit_live;
 	}
 
+	while (!CMM_LOAD_SHARED(shall_quit)) {
+		DBG("Process currently has %i open file descriptors",
+				fd_count());
+		fd_tracker_log(the_fd_tracker);
+		sleep(1);
+	}
 	/*
 	 * This is where we start awaiting program completion (e.g. through
 	 * signal that asks threads to teardown).
