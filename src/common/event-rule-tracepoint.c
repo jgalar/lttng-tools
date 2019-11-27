@@ -250,20 +250,207 @@ ssize_t lttng_event_rule_tracepoint_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_event_rule **_event_rule)
 {
-	ssize_t ret;
-	struct lttng_event_rule *rule =
-			lttng_event_rule_tracepoint_create();
+	ssize_t ret, offset = 0;
+	enum lttng_event_rule_status status;
+	enum lttng_domain_type domain_type;
+	enum lttng_loglevel_type loglevel_type;
+	const struct lttng_event_rule_tracepoint_comm *tracepoint_comm;
+	const char *pattern;
+	const char *filter_expression = NULL;
+	const char **exclusions =  NULL;
+	const uint32_t *exclusion_len;
+	const char *exclusion;
+	struct lttng_buffer_view current_view;
+	struct lttng_event_rule *rule = NULL;
 
-	if (!_event_rule || !rule) {
+	if (!_event_rule) {
 		ret = -1;
-		goto error;
+		goto end;
 	}
 
-	/* TODO */
+	if (view->size < sizeof(*tracepoint_comm)) {
+		ERR("Failed to initialize from malformed event rule tracepoint: buffer too short to contain header");
+		ret = -1;
+		goto end;
+	}
+
+	current_view = lttng_buffer_view_from_view(view, offset, sizeof(*tracepoint_comm));
+	tracepoint_comm = (typeof(tracepoint_comm)) current_view.data;
+
+	if(!tracepoint_comm) {
+		ret = -1;
+		goto end;
+	}
+
+	if (tracepoint_comm->domain_type <= LTTNG_DOMAIN_NONE ||
+			tracepoint_comm->domain_type > LTTNG_DOMAIN_PYTHON) {
+		/* Invalid domain value. */
+		ERR("Invalid domain type value (%i) found in tracepoint_comm buffer",
+				(int) tracepoint_comm->domain_type);
+		ret = -1;
+		goto end;
+	}
+
+	domain_type = (enum lttng_domain_type) tracepoint_comm->domain_type;
+	rule = lttng_event_rule_tracepoint_create(domain_type);
+	if (!rule) {
+		ERR("Failed to create event rule tracepoint");
+		ret = -1;
+		goto end;
+	}
+
+	loglevel_type = (enum lttng_loglevel_type)
+					tracepoint_comm->loglevel_type;
+	switch (loglevel_type) {
+	case LTTNG_EVENT_LOGLEVEL_ALL:
+		status = lttng_event_rule_tracepoint_set_loglevel_all(rule);
+		break;
+	case LTTNG_EVENT_LOGLEVEL_RANGE:
+		status = lttng_event_rule_tracepoint_set_loglevel_range(
+				rule, (enum lttng_loglevel_type) tracepoint_comm
+						      ->loglevel_value);
+		break;
+	case LTTNG_EVENT_LOGLEVEL_SINGLE:
+		status = lttng_event_rule_tracepoint_set_loglevel(
+				rule, (enum lttng_loglevel_type) tracepoint_comm
+						      ->loglevel_value);
+		break;
+	default:
+		ERR("Failed to set event rule tracepoint loglevel: unknown loglevel type");
+		ret = -1;
+		goto end;
+	}
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ERR("Failed to set event rule tracepoint loglevel");
+	}
+
+	/* Skip to payload */
+	offset += current_view.size;
+
+	/* Map the pattern */
+	current_view = lttng_buffer_view_from_view(view, offset, tracepoint_comm->pattern_len);
+	pattern = current_view.data;
+	if (!pattern) {
+		ret = -1;
+		goto end;
+	}
+
+	if (tracepoint_comm->pattern_len == 1 ||
+			pattern[tracepoint_comm->pattern_len - 1] != '\0' ||
+			strlen(pattern) != tracepoint_comm->pattern_len - 1) {
+		/*
+		 * Check that the pattern is not NULL, is NULL-terminated, and
+		 * does not contain a NULL before the last byte.
+		 */
+		ret = -1;
+		goto end;
+	}
+
+	/* Skip after the pattern */
+	offset += tracepoint_comm->pattern_len;
+
+	if (!tracepoint_comm->filter_expression_len) {
+		goto skip_filter_expression;
+	}
+
+	/* Map the filter_expression */
+	current_view = lttng_buffer_view_from_view(view, offset, tracepoint_comm->filter_expression_len);
+	filter_expression = current_view.data;
+	if (!filter_expression) {
+		ret = -1;
+		goto end;
+	}
+
+	if (tracepoint_comm->filter_expression_len == 1 ||
+			filter_expression[tracepoint_comm->filter_expression_len -
+					  1] != '\0' ||
+			strlen(filter_expression) !=
+					tracepoint_comm->filter_expression_len -
+							1) {
+		/*
+		 * Check that the filter expression is not NULL, is
+		 * NULL-terminated, and does not contain a NULL before the last
+		 * byte.
+		 */
+		ret = -1;
+		goto end;
+	}
+
+	/* Skip after the pattern */
+	offset += tracepoint_comm->filter_expression_len;
+
+skip_filter_expression:
+
+	if (!tracepoint_comm->exclusions_count) {
+		goto skip_exclusions;
+	}
+
+	exclusions = zmalloc(sizeof(*exclusions) * tracepoint_comm->exclusions_count);
+	if (!exclusions) {
+		ret = -1;
+		goto end;
+	}
+
+	for (int i = 0; i < tracepoint_comm->exclusions_count; i++) {
+		current_view = lttng_buffer_view_from_view(view, offset, sizeof(*exclusion_len));
+		exclusion_len = (typeof(exclusion_len)) current_view.data;
+		if (!exclusion_len) {
+			ret = -1;
+			goto end;
+		}
+
+		offset += sizeof(*exclusion_len);
+		current_view = lttng_buffer_view_from_view(view, offset, *exclusion_len);
+		exclusion = current_view.data;
+		if (*exclusion_len == 1 ||
+				exclusion[*exclusion_len - 1] != '\0' ||
+				strlen(exclusion) != *exclusion_len - 1) {
+			/*
+			 * Check that the exclusion is not NULL, is
+			 * NULL-terminated, and does not contain a NULL before
+			 * the last byte.
+			 */
+			ret = -1;
+			goto end;
+		}
+		exclusions[i] = exclusion;
+		/* Skip to next exclusion */
+		offset += *exclusion_len;
+	}
+
+skip_exclusions:
+	status = lttng_event_rule_tracepoint_set_pattern(rule, pattern);
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ERR("Failed to set event rule tracepoint pattern");
+		ret = -1;
+		goto end;
+	}
+
+	if (filter_expression) {
+		status = lttng_event_rule_tracepoint_set_filter(
+				rule, filter_expression);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			ERR("Failed to set event rule tracepoint pattern");
+			ret = -1;
+			goto end;
+		}
+	}
+
+	if (exclusions) {
+		status = lttng_event_rule_tracepoint_set_exclusions(rule,
+				tracepoint_comm->exclusions_count, exclusions);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			ERR("Failed to set event rule tracepoint exclusions");
+			ret = -1;
+			goto end;
+		}
+	}
 
 	*_event_rule = rule;
-	return ret;
-error:
+	rule = NULL;
+	ret = offset;
+end:
+	free(exclusions);
 	lttng_event_rule_destroy(rule);
 	return ret;
 }
