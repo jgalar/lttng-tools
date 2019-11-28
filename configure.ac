@@ -1098,9 +1098,9 @@ AC_CONFIG_FILES([
 	src/common/config/Makefile
 	src/common/string-utils/Makefile
 	src/common/fd-tracker/Makefile
+	src/common/filter/Makefile
 	src/lib/Makefile
 	src/lib/lttng-ctl/Makefile
-	src/lib/lttng-ctl/filter/Makefile
 	src/lib/lttng-ctl/lttng-ctl.pc
 	src/bin/Makefile
 	src/bin/lttng-consumerd/Makefile
