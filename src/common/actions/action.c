@@ -8,6 +8,7 @@
 #include <lttng/action/action-internal.h>
 #include <lttng/action/notify-internal.h>
 #include <lttng/action/start-session-internal.h>
+#include <lttng/action/stop-session-internal.h>
 #include <common/error.h>
 #include <assert.h>
 
@@ -22,6 +23,9 @@ static const char *lttng_action_type_string(enum lttng_action_type action_type)
 
 	case LTTNG_ACTION_TYPE_START_SESSION:
 		return "START_SESSION";
+
+	case LTTNG_ACTION_TYPE_STOP_SESSION:
+		return "STOP_SESSION";
 
 	default:
 		return "???";
@@ -135,6 +139,11 @@ ssize_t lttng_action_create_from_buffer(const struct lttng_buffer_view *view,
 	case LTTNG_ACTION_TYPE_START_SESSION:
 		create_from_buffer_cb =
 				lttng_action_start_session_create_from_buffer;
+		break;
+
+	case LTTNG_ACTION_TYPE_STOP_SESSION:
+		create_from_buffer_cb =
+				lttng_action_stop_session_create_from_buffer;
 		break;
 
 	default:

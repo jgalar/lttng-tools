@@ -30,6 +30,7 @@
 #include <lttng/action/action.h>
 #include <lttng/action/notify.h>
 #include <lttng/action/start-session.h>
+#include <lttng/action/stop-session.h>
 #include <lttng/condition/condition.h>
 #include <lttng/condition/buffer-usage.h>
 #include <lttng/condition/session-consumed-size.h>

@@ -122,7 +122,8 @@ lttnginclude_HEADERS = \
 lttngactioninclude_HEADERS= \
 	lttng/action/action.h \
 	lttng/action/notify.h \
-	lttng/action/start-session.h
+	lttng/action/start-session.h \
+	lttng/action/stop-session.h
 
 lttngconditioninclude_HEADERS= \
 	lttng/condition/condition.h \
