@@ -28,6 +28,7 @@
 #include <lttng/session-descriptor.h>
 #include <lttng/destruction-handle.h>
 #include <lttng/action/action.h>
+#include <lttng/action/group.h>
 #include <lttng/action/notify.h>
 #include <lttng/action/rotate-session.h>
 #include <lttng/action/snapshot-session.h>
