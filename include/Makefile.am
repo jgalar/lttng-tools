@@ -131,6 +131,7 @@ lttngactioninclude_HEADERS= \
 lttngconditioninclude_HEADERS= \
 	lttng/condition/condition.h \
 	lttng/condition/buffer-usage.h \
+	lttng/condition/event-rule.h \
 	lttng/condition/session-consumed-size.h \
 	lttng/condition/session-rotation.h \
 	lttng/condition/evaluation.h
@@ -159,6 +160,7 @@ noinst_HEADERS = \
 	lttng/action/notify-internal.h \
 	lttng/condition/condition-internal.h \
 	lttng/condition/buffer-usage-internal.h \
+	lttng/condition/event-rule-internal.h \
 	lttng/condition/session-consumed-size-internal.h \
 	lttng/condition/evaluation-internal.h \
 	lttng/condition/session-rotation-internal.h \
