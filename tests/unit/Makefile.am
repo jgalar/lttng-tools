@@ -42,7 +42,7 @@ noinst_PROGRAMS = test_uri test_session test_kernel_data \
                   test_string_utils test_notification test_directory_handle \
                   test_relayd_backward_compat_group_by_session \
                   test_fd_tracker test_uuid \
-                  test_buffer_view test_fd_tracker test_event_rule
+                  test_buffer_view test_fd_tracker test_event_rule test_condition
 
 if HAVE_LIBLTTNG_UST_CTL
 noinst_PROGRAMS += test_ust_data
@@ -189,6 +189,10 @@ test_notification_LDADD = $(LIBTAP) $(LIBLTTNG_CTL) $(DL_LIBS)
 # Event rule api
 test_event_rule_SOURCES = test_event_rule.c
 test_event_rule_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS)
+
+# Condition api
+test_condition_SOURCES = test_condition.c
+test_condition_LDADD = $(LIBTAP) $(LIBCOMMON) $(LIBLTTNG_CTL) $(DL_LIBS)
 
 # relayd backward compat for groou-by-session utilities
 test_relayd_backward_compat_group_by_session_SOURCES = test_relayd_backward_compat_group_by_session.c
