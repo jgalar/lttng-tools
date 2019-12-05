@@ -1084,6 +1084,7 @@ AC_CONFIG_FILES([
 	extras/core-handler/Makefile
 	src/Makefile
 	src/common/Makefile
+	src/common/argpar/Makefile
 	src/common/kernel-ctl/Makefile
 	src/common/kernel-consumer/Makefile
 	src/common/consumer/Makefile
