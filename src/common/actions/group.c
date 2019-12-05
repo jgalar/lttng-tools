@@ -232,6 +232,7 @@ struct lttng_action *lttng_action_group_create(void)
 
 	action_group = zmalloc(sizeof(struct lttng_action_group));
 	if (!action_group) {
+		action = NULL;
 		goto end;
 	}
 
