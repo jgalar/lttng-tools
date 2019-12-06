@@ -891,7 +891,7 @@ end:
 	return ret;
 }
 
-static
+LTTNG_HIDDEN
 int create_exclusion_list_and_validate(const char *event_name,
 		const char *exclusions_arg,
 		char ***exclusion_list)
