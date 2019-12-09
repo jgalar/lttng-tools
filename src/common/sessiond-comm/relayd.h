@@ -119,6 +119,22 @@ struct lttcomm_relayd_version {
 	uint32_t minor;
 } LTTNG_PACKED;
 
+enum lttcomm_relayd_configuration_flag {
+	/* The relay daemon (2.12) is configured to allow clear operations. */
+        LTTCOMM_RELAYD_CONFIGURATION_FLAG_CLEAR_ALLOWED = (1 << 0),
+};
+
+/*
+ * Used to return a relay daemon's configuration in reply to the
+ * RELAYD_GET_CONFIGURATION command.
+ */
+struct lttcomm_relayd_get_configuration_reply {
+	/* Set of lttcomm_relayd_configuration_flag. */
+	uint64_t relayd_configuration_flags;
+	/* Optional variable-length payload. */
+	char payload[];
+} LTTNG_PACKED;
+
 /*
  * Metadata payload used when metadata command is sent.
  */

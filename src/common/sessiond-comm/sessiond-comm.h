@@ -139,6 +139,8 @@ enum lttcomm_relayd_command {
 	RELAYD_CLOSE_TRACE_CHUNK            = 20,
 	/* Ask the relay whether a trace chunk exists (2.11+) */
 	RELAYD_TRACE_CHUNK_EXISTS           = 21,
+	/* Get the current configuration of a relayd peer (2.12+) */
+	RELAYD_GET_CONFIGURATION            = 22,
 };
 
 /*
