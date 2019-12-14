@@ -41,7 +41,7 @@ struct lttng_action_group_comm {
 } LTTNG_PACKED;
 
 static struct lttng_action_group *action_group_from_action(
-		struct lttng_action *action)
+		const struct lttng_action *action)
 {
 	assert(action);
 
@@ -73,6 +73,39 @@ static bool lttng_action_group_validate(struct lttng_action *action)
 
 end:
 	return valid;
+}
+
+static bool lttng_action_group_is_equal(const struct lttng_action *_a, const struct lttng_action *_b)
+{
+	bool is_equal = false;
+	struct lttng_action_group *a, *b;
+	size_t i;
+
+	assert(lttng_action_get_type_const(_a) == LTTNG_ACTION_TYPE_GROUP);
+	assert(lttng_action_get_type_const(_b) == LTTNG_ACTION_TYPE_GROUP);
+
+	a = action_group_from_action(_a);
+	b = action_group_from_action(_b);
+
+	if (a->n_elements != b->n_elements) {
+		goto end;
+	}
+
+	for (i = 0; i < a->n_elements; i++) {
+		struct lttng_action *child_a = a->elements[i];
+		struct lttng_action *child_b = b->elements[i];
+
+		assert(child_a);
+		assert(child_b);
+
+		if (!lttng_action_is_equal(child_a, child_b)) {
+			goto end;
+		}
+	}
+
+	is_equal = true;
+end:
+	return is_equal;
 }
 
 static int lttng_action_group_serialize(
@@ -207,6 +240,7 @@ struct lttng_action *lttng_action_group_create(void)
 	lttng_action_init(action, LTTNG_ACTION_TYPE_GROUP,
 			lttng_action_group_validate,
 			lttng_action_group_serialize,
+			lttng_action_group_is_equal,
 			lttng_action_group_destroy);
 
 	action_group->n_elements = 0;

@@ -50,7 +50,7 @@ struct lttng_action_snapshot_session_comm {
 } LTTNG_PACKED;
 
 static struct lttng_action_snapshot_session *
-action_snapshot_session_from_action(struct lttng_action *action)
+action_snapshot_session_from_action(const struct lttng_action *action)
 {
 	assert(action);
 
@@ -87,6 +87,34 @@ static bool lttng_action_snapshot_session_validate(struct lttng_action *action)
 	valid = true;
 end:
 	return valid;
+}
+
+static bool lttng_action_snapshot_session_is_equal(const struct lttng_action *_a, const struct lttng_action *_b)
+{
+	bool is_equal = false;
+	struct lttng_action_snapshot_session *a, *b;
+
+	a = action_snapshot_session_from_action(_a);
+	b = action_snapshot_session_from_action(_b);
+
+	/* Action is not valid if this is not true. */
+	assert(a->session_name);
+	assert(b->session_name);
+	if (strcmp(a->session_name, b->session_name)) {
+		goto end;
+	}
+
+	if (!!a->snapshot_name != !!b->snapshot_name) {
+		goto end;
+	}
+
+	if (a->snapshot_name && strcmp(a->snapshot_name, b->snapshot_name)) {
+		goto end;
+	}
+
+	is_equal = true;
+end:
+	return is_equal;
 }
 
 static int lttng_action_snapshot_session_serialize(
@@ -233,6 +261,7 @@ struct lttng_action *lttng_action_snapshot_session_create(void)
 	lttng_action_init(action, LTTNG_ACTION_TYPE_SNAPSHOT_SESSION,
 			lttng_action_snapshot_session_validate,
 			lttng_action_snapshot_session_serialize,
+			lttng_action_snapshot_session_is_equal,
 			lttng_action_snapshot_session_destroy);
 
 end:

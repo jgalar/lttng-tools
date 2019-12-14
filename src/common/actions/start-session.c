@@ -73,6 +73,26 @@ end:
 	return valid;
 }
 
+static bool lttng_action_start_session_is_equal(const struct lttng_action *_a, const struct lttng_action *_b)
+{
+	bool is_equal = false;
+	struct lttng_action_start_session *a, *b;
+
+	a = container_of(_a, struct lttng_action_start_session, parent);
+	b = container_of(_b, struct lttng_action_start_session, parent);
+
+	/* Action is not valid if this is not true. */
+	assert(a->session_name);
+	assert(b->session_name);
+	if (strcmp(a->session_name, b->session_name)) {
+		goto end;
+	}
+
+	is_equal = true;
+end:
+	return is_equal;
+}
+
 static int lttng_action_start_session_serialize(
 		struct lttng_action *action, struct lttng_dynamic_buffer *buf)
 {
@@ -184,6 +204,7 @@ struct lttng_action *lttng_action_start_session_create(void)
 	lttng_action_init(action, LTTNG_ACTION_TYPE_START_SESSION,
 			lttng_action_start_session_validate,
 			lttng_action_start_session_serialize,
+			lttng_action_start_session_is_equal,
 			lttng_action_start_session_destroy);
 
 end:
