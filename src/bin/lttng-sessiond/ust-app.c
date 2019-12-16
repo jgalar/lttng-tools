@@ -1413,33 +1413,30 @@ end:
 /*
  * Set event exclusions on the tracer.
  */
-static
-int set_ust_event_exclusion(struct ust_app_event *ua_event,
-		struct ust_app *app)
+static int set_ust_exclusions(struct ust_app *app,
+		struct lttng_event_exclusion *exclusions,
+		struct lttng_ust_object_data *ust_object)
 {
 	int ret;
-	struct lttng_ust_event_exclusion *ust_exclusion = NULL;
+	struct lttng_ust_event_exclusion *ust_exclusions = NULL;
+
+	assert(exclusions && exclusions->count > 0);
 
 	health_code_update();
 
-	if (!ua_event->exclusion || !ua_event->exclusion->count) {
-		ret = 0;
-		goto error;
-	}
-
-	ust_exclusion = create_ust_exclusion_from_exclusion(
-			ua_event->exclusion);
-	if (!ust_exclusion) {
+	ust_exclusions = create_ust_exclusion_from_exclusion(
+			exclusions);
+	if (!ust_exclusions) {
 		ret = -LTTNG_ERR_NOMEM;
 		goto error;
 	}
 	pthread_mutex_lock(&app->sock_lock);
-	ret = ustctl_set_exclusion(app->sock, ust_exclusion, ua_event->obj);
+	ret = ustctl_set_exclusion(app->sock, ust_exclusions, ust_object);
 	pthread_mutex_unlock(&app->sock_lock);
 	if (ret < 0) {
 		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
-			ERR("UST app event %s exclusions failed for app (pid: %d) "
-					"with ret %d", ua_event->attr.name, app->pid, ret);
+			ERR("UST app exclusions failed for object %p of app (pid: %d) "
+					"with ret %d", ust_object, app->pid, ret);
 		} else {
 			/*
 			 * This is normal behavior, an application can die during the
@@ -1447,16 +1444,16 @@ int set_ust_event_exclusion(struct ust_app_event *ua_event,
 			 * continue normally.
 			 */
 			ret = 0;
-			DBG3("UST app event exclusion failed. Application is dead.");
+			DBG3("UST app set exclusions failed. Application is dead.");
 		}
 		goto error;
 	}
 
-	DBG2("UST exclusion set successfully for event %s", ua_event->name);
+	DBG2("UST exclusions set successfully for object %p", ust_object);
 
 error:
 	health_code_update();
-	free(ust_exclusion);
+	free(ust_exclusions);
 	return ret;
 }
 
@@ -1718,7 +1715,7 @@ int create_ust_event(struct ust_app *app, struct ust_app_session *ua_sess,
 
 	/* Set exclusions for the event */
 	if (ua_event->exclusion) {
-		ret = set_ust_event_exclusion(ua_event, app);
+		ret = set_ust_exclusions(app, ua_event->exclusion, ua_event->obj);
 		if (ret < 0) {
 			goto error;
 		}
