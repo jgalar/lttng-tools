@@ -5,6 +5,7 @@
 #include "common/argpar/argpar.h"
 #include "common/dynamic-array.h"
 #include "common/string-utils/string-utils.h"
+#include "common/utils.h"
 #include <lttng/condition/event-rule.h>
 #include <lttng/event-rule/event-rule-tracepoint.h>
 
@@ -146,6 +147,7 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 
 	state = argpar_state_create(*argc, *argv, event_rule_opt_descrs);
 	if (!state) {
+		fprintf(stderr, "Failed to allocate an argpar state.\n");
 		goto error;
 	}
 
@@ -445,7 +447,118 @@ end:
 static
 struct lttng_condition *handle_condition_session_consumed_size(int *argc, const char ***argv)
 {
-	return NULL;
+	struct lttng_condition *cond = NULL;
+	struct argpar_state *state = NULL;
+	struct argpar_item *item = NULL;
+	const char *threshold_arg = NULL;
+	const char *session_name_arg = NULL;
+	uint64_t threshold;
+	char *error = NULL;
+	enum lttng_condition_status condition_status;
+
+	state = argpar_state_create(*argc, *argv, event_rule_opt_descrs);
+	if (!state) {
+		fprintf(stderr, "Failed to allocate an argpar state.\n");
+		goto error;
+	}
+
+	while (true) {
+		enum argpar_state_parse_next_status status;
+
+		ARGPAR_ITEM_DESTROY_AND_RESET(item);
+		status = argpar_state_parse_next(state, &item, &error);
+		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
+			fprintf(stderr, "Internal argpar error: %s\n", error);
+			goto error;
+		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
+			/* Just stop parsing here. */
+			break;
+		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_END) {
+			break;
+		}
+
+		assert(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+
+		if (item->type == ARGPAR_ITEM_TYPE_OPT) {
+			struct argpar_item_opt *item_opt =
+				(struct argpar_item_opt *) item;
+
+			switch (item_opt->descr->id) {
+			default:
+				abort();
+			}
+		} else {
+			struct argpar_item_non_opt *item_non_opt;
+
+			assert(item->type == ARGPAR_ITEM_TYPE_NON_OPT);
+
+			item_non_opt = (struct argpar_item_non_opt *) item;
+
+			switch (item_non_opt->non_opt_index) {
+			case 0:
+				session_name_arg = item_non_opt->arg;
+				break;
+			case 1:
+				threshold_arg = item_non_opt->arg;
+				break;
+			default:
+				fprintf(stderr, "Unexpected argument `%s`.\n",
+					item_non_opt->arg);
+				goto error;
+			}
+		}
+	}
+
+	*argc -= argpar_state_get_ingested_orig_args(state);
+	*argv += argpar_state_get_ingested_orig_args(state);
+
+	if (!session_name_arg) {
+		fprintf(stderr, "Missing session name argument.\n");
+		goto error;
+	}
+
+	if (!threshold_arg) {
+		fprintf(stderr, "Missing threshold argument.\n");
+		goto error;
+	}
+
+	if (utils_parse_size_suffix(threshold_arg, &threshold) != 0) {
+		fprintf(stderr, "Failed to parse `%s` as a size.\n", threshold_arg);
+		goto error;
+	}
+
+	cond = lttng_condition_session_consumed_size_create();
+	if (!cond) {
+		fprintf(stderr, "Failed to allocate a session consumed size condition.\n");
+		goto error;
+	}
+
+	condition_status = lttng_condition_session_consumed_size_set_session_name(
+		cond, session_name_arg);
+	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
+		fprintf(stderr, "Failed to set session consumed size condition session name.\n");
+		goto error;
+	}
+
+
+	condition_status = lttng_condition_session_consumed_size_set_threshold(
+		cond, threshold);
+	if (condition_status != LTTNG_CONDITION_STATUS_OK) {
+		fprintf(stderr, "Failed to set session consumed size condition threshold.\n");
+		goto error;
+	}
+
+	goto end;
+
+error:
+	lttng_condition_destroy(cond);
+	cond = NULL;
+
+end:
+	argpar_state_destroy(state);
+	argpar_item_destroy(item);
+	free(error);
+	return cond;
 }
 
 static
