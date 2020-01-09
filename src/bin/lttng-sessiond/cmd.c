@@ -4320,6 +4320,9 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 
 	ret = notification_thread_command_register_trigger(notification_thread,
 			trigger);
+
+	ust_app_global_update_all_tokens();
+
 	/* Ownership of trigger was transferred. */
 	trigger = NULL;
 end:

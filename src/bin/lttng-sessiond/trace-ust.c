@@ -981,6 +981,7 @@ int trace_ust_track_id(enum lttng_tracker_type tracker_type,
 		}
 	}
 	if (should_update_apps && session->active) {
+		/* TODO: should tokens be affected by tracking? */
 		ust_app_global_update_all(session);
 	}
 	goto end;
@@ -1081,6 +1082,7 @@ int trace_ust_untrack_id(enum lttng_tracker_type tracker_type,
 		}
 	}
 	if (should_update_apps && session->active) {
+		/* TODO should tokens be affected by tracker */
 		ust_app_global_update_all(session);
 	}
 	goto end;

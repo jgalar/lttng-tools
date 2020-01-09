@@ -1864,13 +1864,20 @@ int handle_notification_thread_command_add_application(
 {
 	int ret = 0;
 	enum lttng_error_code cmd_result = LTTNG_OK;
-	struct notification_event_trigger_source_element element = { 0 };
+	struct notification_event_trigger_source_element *element = NULL;
 
-	CDS_INIT_LIST_HEAD(&element.node);
-	element.fd = read_side_trigger_event_application_pipe;
+	element = zmalloc(sizeof(*element));
+	if (!element) {
+		cmd_result = LTTNG_ERR_NOMEM;
+		ret = -1;
+		goto end;
+	}
+
+	CDS_INIT_LIST_HEAD(&element->node);
+	element->fd = read_side_trigger_event_application_pipe;
 
 	pthread_mutex_lock(&handle->event_trigger_sources.lock);
-	cds_list_add(&element.node, &handle->event_trigger_sources.list);
+	cds_list_add(&element->node, &handle->event_trigger_sources.list);
 	pthread_mutex_unlock(&handle->event_trigger_sources.lock);
 
 	/* TODO: remove on failure to add to list? */

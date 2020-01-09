@@ -59,7 +59,7 @@ static void update_ust_app(int app_sock)
 	}
 
 	/* Update all tokens for the app */
-	ust_app_global_update_token(app);
+	ust_app_global_update_tokens(app);
 
 	/* For all tracing session(s) */
 	cds_list_for_each_entry_safe(sess, stmp, &session_list->head, list) {
@@ -79,7 +79,6 @@ static void update_ust_app(int app_sock)
 
 unlock_rcu:
 	rcu_read_unlock();
-
 }
 
 /*

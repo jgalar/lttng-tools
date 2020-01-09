@@ -338,7 +338,7 @@ int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_context *uctx);
 void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app);
 void ust_app_global_update_all(struct ltt_ust_session *usess);
-void ust_app_global_update_token(struct ust_app *app);
+void ust_app_global_update_tokens(struct ust_app *app);
 void ust_app_global_update_all_tokens(void);
 
 void ust_app_clean_list(void);

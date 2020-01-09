@@ -1384,7 +1384,7 @@ static struct ust_app_token_event_rule *find_ust_app_token_event_rule(struct ltt
 
 	assert(ht);
 
-	lttng_ht_lookup(ht, (void *) token, &iter);
+	lttng_ht_lookup(ht, &token, &iter);
 	node = lttng_ht_iter_get_node_u64(&iter);
 	if (node == NULL) {
 		DBG2("UST app token %" PRIu64 " not found", token);
@@ -3646,6 +3646,7 @@ struct ust_app *ust_app_create(struct ust_register_msg *msg, int sock)
 	lta->ust_objd = lttng_ht_new(0, LTTNG_HT_TYPE_ULONG);
 	lta->ust_sessions_objd = lttng_ht_new(0, LTTNG_HT_TYPE_ULONG);
 	lta->notify_sock = -1;
+	lta->tokens_ht = lttng_ht_new(0, LTTNG_HT_TYPE_U64);
 
 	/* Copy name and make sure it's NULL terminated. */
 	strncpy(lta->name, msg->name, sizeof(lta->name));
@@ -5507,7 +5508,7 @@ void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 	}
 }
 
-void ust_app_global_update_token(struct ust_app *app)
+void ust_app_global_update_tokens(struct ust_app *app)
 {
 	DBG2("UST app global update token for app sock %d", app->sock);
 
@@ -5539,7 +5540,7 @@ void ust_app_global_update_all_tokens(void)
 
 	rcu_read_lock();
 	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
-		ust_app_global_update_token(app);
+		ust_app_global_update_tokens(app);
 	}
 	rcu_read_unlock();
 }
