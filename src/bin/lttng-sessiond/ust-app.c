@@ -20,6 +20,7 @@
 #include <signal.h>
 
 #include <common/common.h>
+#include <common/hashtable/utils.h>
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/event-rule-tracepoint.h>
@@ -1554,21 +1555,20 @@ error:
 /*
  * Disable the specified event on to UST tracer for the UST session.
  */
-static int disable_ust_event(struct ust_app *app,
-		struct ust_app_session *ua_sess, struct ust_app_event *ua_event)
+static int disable_ust_object(struct ust_app *app,
+		struct lttng_ust_object_data *object)
 {
 	int ret;
 
 	health_code_update();
 
 	pthread_mutex_lock(&app->sock_lock);
-	ret = ustctl_disable(app->sock, ua_event->obj);
+	ret = ustctl_disable(app->sock, object);
 	pthread_mutex_unlock(&app->sock_lock);
 	if (ret < 0) {
 		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
-			ERR("UST app event %s disable failed for app (pid: %d) "
-					"and session handle %d with ret %d",
-					ua_event->attr.name, app->pid, ua_sess->handle, ret);
+			ERR("UST app disable failed for object %p app (pid: %d) with ret %d",
+					object, app->pid, ret);
 		} else {
 			/*
 			 * This is normal behavior, an application can die during the
@@ -1581,8 +1581,8 @@ static int disable_ust_event(struct ust_app *app,
 		goto error;
 	}
 
-	DBG2("UST app event %s disabled successfully for app (pid: %d)",
-			ua_event->attr.name, app->pid);
+	DBG2("UST app object %p disabled successfully for app (pid: %d)",
+			object, app->pid);
 
 error:
 	health_code_update();
@@ -2587,7 +2587,7 @@ static int disable_ust_app_event(struct ust_app_session *ua_sess,
 {
 	int ret;
 
-	ret = disable_ust_event(app, ua_sess, ua_event);
+	ret = disable_ust_object(app, ua_event->obj);
 	if (ret < 0) {
 		goto error;
 	}
@@ -5323,6 +5323,22 @@ end:
 	return ret;
 }
 
+/* TODO: find a better way, this is copied from notification-thread-events.c to
+ * allows the lookup of the "passed" hast table from the notification thread.
+ * This is ugly as fuck since the passed hash table is a cdf instead of a
+ * lttng_ht
+ */
+static
+int match_trigger_token(struct cds_lfht_node *node, const void *key)
+{
+	const uint64_t *_key = key;
+	struct notification_trigger_tokens_ht_element *element;
+
+	element = caa_container_of(node, struct notification_trigger_tokens_ht_element,
+			node);
+	return *_key == element->token ;
+}
+
 static
 void ust_app_synchronize_tokens(struct ust_app *app)
 {
@@ -5330,7 +5346,9 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 	enum lttng_error_code ret_code;
 	struct cds_lfht *trigger_tokens_ht = NULL;
 	struct cds_lfht_iter iter;
-	struct notification_trigger_tokens_ht_element *trigger_token_element = NULL;
+	struct lttng_ht_iter app_trigger_iter;
+	struct notification_trigger_tokens_ht_element *trigger_token_element;
+	struct ust_app_token_event_rule *token_event_rule_element;
 
 	/* Get list of token trigger from the notification thread here */
 	rcu_read_lock();
@@ -5339,6 +5357,8 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 	if (ret_code != LTTNG_OK) {
 		goto end;
 	}
+
+	assert(trigger_tokens_ht);
 
 	cds_lfht_for_each_entry (trigger_tokens_ht, &iter,
 			trigger_token_element, node) {
@@ -5364,6 +5384,37 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 		}
 	}
 
+	/* Remove all unknown trigger from the app
+	 * TODO find a way better way then this, do it on the unregister command
+	 * and be specific on the token to remove instead of going over all
+	 * trigger known to the app. This is sub optimal.
+	 */
+	cds_lfht_for_each_entry (app->tokens_ht->ht, &app_trigger_iter.iter,
+			token_event_rule_element, node.node) {
+		struct cds_lfht_node *node;
+		struct cds_lfht_iter lookup_iter;
+		uint64_t token;
+
+		token = token_event_rule_element->token;
+
+		/* Check if the app event trigger still exists on the
+		 * notification side.
+		 */
+		cds_lfht_lookup(trigger_tokens_ht, hash_key_u64(&token, lttng_ht_seed),
+				match_trigger_token, &token, &lookup_iter);
+		node = cds_lfht_iter_get_node(&lookup_iter);
+		if (node != NULL) {
+			/* Still valid, continue */
+			continue;
+		}
+
+		/* TODO: This is fucking ugly API for fuck sake */
+		assert(!lttng_ht_del(app->tokens_ht, &app_trigger_iter));
+
+		(void) disable_ust_object(app, token_event_rule_element->obj);
+
+		delete_ust_app_token_event_rule(app->sock, token_event_rule_element, app);
+	}
 end:
 	rcu_read_unlock();
 	pthread_mutex_unlock(&notification_trigger_tokens_ht_lock);

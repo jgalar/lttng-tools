@@ -2386,6 +2386,13 @@ void free_lttng_trigger_ht_element_rcu(struct rcu_head *node)
 }
 
 static
+void free_notification_trigger_tokens_ht_element_rcu(struct rcu_head *node)
+{
+	free(caa_container_of(node, struct notification_trigger_tokens_ht_element,
+			rcu_node));
+}
+
+static
 int handle_notification_thread_command_unregister_trigger(
 		struct notification_thread_state *state,
 		struct lttng_trigger *trigger,
@@ -2449,6 +2456,42 @@ int handle_notification_thread_command_unregister_trigger(
 			DBG("[notification-thread] Removed trigger from channel_triggers_ht");
 			cds_list_del(&trigger_element->node);
 			/* A trigger can only appear once per channel */
+			break;
+		}
+	}
+
+	if (lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT) {
+		struct notification_trigger_tokens_ht_element *trigger_tokens_ht_element;
+		cds_lfht_for_each_entry(state->trigger_tokens_ht, &iter, trigger_tokens_ht_element,
+				node) {
+			/* TODO: check that the actions is also identical,
+			 * aka use lttng_trigger_equal if it exists.
+			 * TODO move to trigger is equal.
+			 */
+			const struct lttng_condition *current_condition =
+					lttng_trigger_get_const_condition(
+						trigger_tokens_ht_element->trigger);
+			const struct lttng_action *current_action =
+					lttng_trigger_get_const_action(
+						trigger_tokens_ht_element->trigger);
+
+			assert(current_condition);
+			assert(current_action);
+			if (!lttng_condition_is_equal(condition,
+					current_condition)) {
+				continue;
+			}
+			if (!lttng_action_is_equal(action,
+					current_action)) {
+				continue;
+			}
+
+			/* TODO talk to all app and remove it */
+			DBG("[notification-thread] Removed trigger from tokens_ht");
+			cds_lfht_del(state->trigger_tokens_ht,
+					&trigger_tokens_ht_element->node);
+			call_rcu(&trigger_tokens_ht_element->rcu_node, free_notification_trigger_tokens_ht_element_rcu);
+
 			break;
 		}
 	}

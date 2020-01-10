@@ -4368,6 +4368,8 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 
 	ret = notification_thread_command_unregister_trigger(notification_thread,
 			trigger);
+
+	ust_app_global_update_all_tokens();
 end:
 	lttng_trigger_destroy(trigger);
 	lttng_dynamic_buffer_reset(&trigger_buffer);
