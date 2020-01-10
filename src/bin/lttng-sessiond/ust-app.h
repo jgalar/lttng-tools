@@ -292,6 +292,13 @@ struct ust_app {
 	 * Used for path creation
 	 */
 	time_t registration_time;
+	/*
+	 * Trigger
+	 */
+	struct {
+		struct lttng_ust_object_data *handle;
+		struct lttng_pipe *trigger_event_pipe;
+	} trigger;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
@@ -354,6 +361,8 @@ enum lttng_error_code ust_app_create_channel_subdirectories(
 int ust_app_release_object(struct ust_app *app,
 		struct lttng_ust_object_data *data);
 enum lttng_error_code ust_app_clear_session(struct ltt_session *session);
+
+int ust_app_setup_trigger_group(struct ust_app *app);
 
 static inline
 int ust_app_supported(void)
