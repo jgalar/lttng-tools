@@ -40,4 +40,10 @@ ssize_t lttng_condition_event_rule_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_condition **condition);
 
+LTTNG_HIDDEN
+enum lttng_condition_status
+lttng_condition_event_rule_get_rule_no_const(
+		const struct lttng_condition *condition,
+		struct lttng_event_rule **rule);
+
 #endif /* LTTNG_CONDITION_event_rule_INTERNAL_H */

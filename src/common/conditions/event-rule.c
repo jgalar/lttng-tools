@@ -227,10 +227,11 @@ end:
 	return offset;
 }
 
+LTTNG_HIDDEN
 enum lttng_condition_status
-lttng_condition_event_rule_get_rule(
+lttng_condition_event_rule_get_rule_no_const(
 		const struct lttng_condition *condition,
-		const struct lttng_event_rule **rule)
+		struct lttng_event_rule **rule)
 {
 	struct lttng_condition_event_rule *event_rule;
 	enum lttng_condition_status status = LTTNG_CONDITION_STATUS_OK;
@@ -248,5 +249,18 @@ lttng_condition_event_rule_get_rule(
 	}
 	*rule = event_rule->rule;
 end:
+	return status;
+}
+
+enum lttng_condition_status
+lttng_condition_event_rule_get_rule(
+		const struct lttng_condition *condition,
+		const struct lttng_event_rule **rule)
+{
+	struct lttng_event_rule *no_const_rule = NULL;
+	enum lttng_condition_status status;
+
+	status = lttng_condition_event_rule_get_rule_no_const(condition, &no_const_rule);
+	*rule = no_const_rule;
 	return status;
 }
