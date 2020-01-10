@@ -20,6 +20,12 @@
 #include <signal.h>
 
 #include <common/common.h>
+#include <lttng/event-rule/event-rule.h>
+#include <lttng/event-rule/event-rule-internal.h>
+#include <lttng/event-rule/event-rule-tracepoint.h>
+#include <lttng/condition/condition.h>
+#include <lttng/condition/event-rule-internal.h>
+#include <lttng/condition/event-rule.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 
 #include "buffer-registry.h"
@@ -311,6 +317,35 @@ void delete_ust_app_event(int sock, struct ust_app_event *ua_event,
 		free(ua_event->obj);
 	}
 	free(ua_event);
+}
+
+/*
+ * Delete ust app token event_rule safely. RCU read lock must be held before calling
+ * this function. TODO: or does it????
+ */
+static
+void delete_ust_app_token_event_rule(int sock, struct ust_app_token_event_rule *ua_token,
+		struct ust_app *app)
+{
+	int ret;
+
+	assert(ua_token);
+
+	free(ua_token->filter);
+	if (ua_token->exclusion != NULL)
+		free(ua_token->exclusion);
+	if (ua_token->obj != NULL) {
+		pthread_mutex_lock(&app->sock_lock);
+		ret = ustctl_release_object(sock, ua_token->obj);
+		pthread_mutex_unlock(&app->sock_lock);
+		if (ret < 0 && ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			ERR("UST app sock %d release event obj failed with ret %d",
+					sock, ret);
+		}
+		free(ua_token->obj);
+	}
+	lttng_event_rule_put(ua_token->event_rule);
+	free(ua_token);
 }
 
 /*
@@ -1131,6 +1166,39 @@ error:
 }
 
 /*
+ * Alloc new UST app token event rule.
+ */
+static struct ust_app_token_event_rule *alloc_ust_app_token_event_rule(
+		struct lttng_event_rule *event_rule, uint64_t token)
+{
+	struct ust_app_token_event_rule *ua_token;
+
+	ua_token = zmalloc(sizeof(struct ust_app_token_event_rule));
+	if (ua_token == NULL) {
+		PERROR("Failed to allocate ust_app_token_event_rule structure");
+		goto error;
+	}
+
+	ua_token->enabled = 1;
+	ua_token->token = token;
+	lttng_ht_node_init_u64(&ua_token->node, token);
+
+	/* Get reference of the event_rule */
+	if (!lttng_event_rule_get(event_rule)) {
+		assert(0);
+	}
+
+	ua_token->event_rule = event_rule;
+
+	DBG3("UST app token event rule %" PRIu64 " allocated", ua_token->token);
+
+	return ua_token;
+
+error:
+	return NULL;
+}
+
+/*
  * Alloc new UST app context.
  */
 static
@@ -1300,6 +1368,32 @@ static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
 
 end:
 	return event;
+}
+
+/*
+ * Lookup for an ust app tokens based on a token id.
+ *
+ * Return an ust_app_token_event_rule object or NULL on error.
+ */
+static struct ust_app_token_event_rule *find_ust_app_token_event_rule(struct lttng_ht *ht,
+		uint64_t token)
+{
+	struct lttng_ht_iter iter;
+	struct lttng_ht_node_u64 *node;
+	struct ust_app_token_event_rule *token_event_rule = NULL;
+
+	assert(ht);
+
+	lttng_ht_lookup(ht, (void *) token, &iter);
+	node = lttng_ht_iter_get_node_u64(&iter);
+	if (node == NULL) {
+		DBG2("UST app token %" PRIu64 " not found", token);
+		goto end;
+	}
+
+	token_event_rule = caa_container_of(node, struct ust_app_token_event_rule, node);
+end:
+	return token_event_rule;
 }
 
 /*
@@ -1746,6 +1840,145 @@ int create_ust_event(struct ust_app *app, struct ust_app_session *ua_sess,
 			goto error;
 		}
 	}
+
+error:
+	health_code_update();
+	return ret;
+}
+
+static
+void init_ust_trigger_from_event_rule(const struct lttng_event_rule *rule, struct lttng_ust_trigger *trigger)
+{
+	enum lttng_event_rule_status status;
+	enum lttng_loglevel_type loglevel_type;
+	enum lttng_ust_loglevel_type ust_loglevel_type = LTTNG_UST_LOGLEVEL_ALL;
+	int loglevel = -1;
+	const char *pattern;
+
+	/* For now only LTTNG_EVENT_RULE_TYPE_TRACEPOINT are supported */
+	assert(lttng_event_rule_get_type(rule) == LTTNG_EVENT_RULE_TYPE_TRACEPOINT);
+
+	memset(trigger, 0, sizeof(*trigger));
+
+	status = lttng_event_rule_tracepoint_get_pattern(rule, &pattern);
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		/* At this point this is a fatal error */
+		assert(0);
+	}
+
+	status = lttng_event_rule_tracepoint_get_loglevel_type(rule, &loglevel_type);
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		/* At this point this is a fatal error */
+		assert(0);
+	}
+
+	switch (loglevel_type) {
+	case LTTNG_EVENT_LOGLEVEL_ALL:
+		ust_loglevel_type = LTTNG_UST_LOGLEVEL_ALL;
+		break;
+	case LTTNG_EVENT_LOGLEVEL_RANGE:
+		ust_loglevel_type = LTTNG_UST_LOGLEVEL_RANGE;
+		break;
+	case LTTNG_EVENT_LOGLEVEL_SINGLE:
+		ust_loglevel_type = LTTNG_UST_LOGLEVEL_SINGLE;
+		break;
+	}
+
+	if (loglevel_type != LTTNG_EVENT_LOGLEVEL_ALL) {
+		status = lttng_event_rule_tracepoint_get_loglevel(rule, &loglevel);
+		assert(status == LTTNG_EVENT_RULE_STATUS_OK);
+	}
+
+	trigger->instrumentation = LTTNG_UST_TRACEPOINT;
+	strncpy(trigger->name, pattern, LTTNG_UST_SYM_NAME_LEN - 1);
+	trigger->loglevel_type = ust_loglevel_type;
+	trigger->loglevel = loglevel;
+}
+
+/*
+ * Create the specified event rule token onto the UST tracer for a UST app.
+ *
+ */
+static
+int create_ust_token_event_rule(struct ust_app *app, struct ust_app_token_event_rule *ua_token)
+{
+	int ret = 0;
+	struct lttng_ust_trigger trigger;
+
+	health_code_update();
+
+	init_ust_trigger_from_event_rule(ua_token->event_rule, &trigger);
+	trigger.id = ua_token->token;
+
+	/* Create UST trigger on tracer */
+	pthread_mutex_lock(&app->sock_lock);
+	ret = ustctl_create_trigger(app->sock, &trigger, app->token_communication.handle, &ua_token->obj);
+	pthread_mutex_unlock(&app->sock_lock);
+	if (ret < 0) {
+		if (ret != -EPIPE && ret != -LTTNG_UST_ERR_EXITING) {
+			abort();
+			ERR("Error ustctl create trigger %s for app pid: %d with ret %d",
+					trigger.name, app->pid, ret);
+		} else {
+			/*
+			 * This is normal behavior, an application can die during the
+			 * creation process. Don't report an error so the execution can
+			 * continue normally.
+			 */
+			ret = 0;
+			DBG3("UST app create event failed. Application is dead.");
+		}
+		goto error;
+	}
+
+	ua_token->handle = ua_token->obj->handle;
+
+	DBG2("UST app event %s created successfully for pid:%d object: %p",
+			trigger.name, app->pid, ua_token->obj);
+
+	health_code_update();
+
+	/* Set filter if one is present. */
+	if (ua_token->filter) {
+		ret = set_ust_filter(app, ua_token->filter, ua_token->obj);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	/* Set exclusions for the event */
+	if (ua_token->exclusion) {
+		ret = set_ust_exclusions(app, ua_token->exclusion, ua_token->obj);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	/*
+	 * We now need to explicitly enable the event, since it
+	 * is now disabled at creation.
+	 */
+	ret = enable_ust_object(app, ua_token->obj);
+	if (ret < 0) {
+		/*
+		 * If we hit an EPERM, something is wrong with our enable call. If
+		 * we get an EEXIST, there is a problem on the tracer side since we
+		 * just created it.
+		 */
+		switch (ret) {
+		case -LTTNG_UST_ERR_PERM:
+			/* Code flow problem */
+			assert(0);
+		case -LTTNG_UST_ERR_EXIST:
+			/* It's OK for our use case. */
+			ret = 0;
+			break;
+		default:
+			break;
+		}
+		goto error;
+	}
+	ua_token->enabled = true;
 
 error:
 	health_code_update();
@@ -3166,6 +3399,57 @@ end:
 error:
 	/* Valid. Calling here is already in a read side lock */
 	delete_ust_app_event(-1, ua_event, app);
+	return ret;
+}
+
+/*
+ * Create UST app event and create it on the tracer side.
+ *
+ * Called with ust app session mutex held.
+ */
+static
+int create_ust_app_token_event_rule(struct lttng_event_rule *rule,
+		struct ust_app *app, uint64_t token)
+{
+	int ret = 0;
+	struct ust_app_token_event_rule *ua_token;
+
+	ua_token = alloc_ust_app_token_event_rule(rule, token);
+	if (ua_token == NULL) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	/* Create it on the tracer side */
+	ret = create_ust_token_event_rule(app, ua_token);
+	if (ret < 0) {
+		/*
+		 * Not found previously means that it does not exist on the
+		 * tracer. If the application reports that the event existed,
+		 * it means there is a bug in the sessiond or lttng-ust
+		 * (or corruption, etc.)
+		 */
+		if (ret == -LTTNG_UST_ERR_EXIST) {
+			ERR("Tracer for application reported that a token event rule being created already existed: "
+					"token = \"%" PRIu64 "\", pid = %d, ppid = %d, uid = %d, gid = %d",
+					token,
+					app->pid, app->ppid, app->uid,
+					app->gid);
+		}
+		goto error;
+	}
+
+	lttng_ht_add_unique_u64(app->tokens_ht, &ua_token->node);
+
+	DBG2("UST app create token event rule %" PRIu64 " for PID %d completed", token,
+			app->pid);
+
+end:
+	return ret;
+
+error:
+	/* Valid. Calling here is already in a read side lock */
+	delete_ust_app_token_event_rule(-1, ua_token, app);
 	return ret;
 }
 
@@ -5038,6 +5322,53 @@ end:
 	return ret;
 }
 
+static
+void ust_app_synchronize_tokens(struct ust_app *app)
+{
+	int ret = 0;
+	enum lttng_error_code ret_code;
+	struct cds_lfht *trigger_tokens_ht = NULL;
+	struct cds_lfht_iter iter;
+	struct notification_trigger_tokens_ht_element *trigger_token_element = NULL;
+
+	/* Get list of token trigger from the notification thread here */
+	rcu_read_lock();
+	pthread_mutex_lock(&notification_trigger_tokens_ht_lock);
+	ret_code = notification_thread_command_get_tokens(notification_thread_handle, &trigger_tokens_ht);
+	if (ret_code != LTTNG_OK) {
+		goto end;
+	}
+
+	cds_lfht_for_each_entry (trigger_tokens_ht, &iter,
+			trigger_token_element, node) {
+		struct lttng_condition *condition;
+		struct lttng_event_rule *event_rule;
+		struct lttng_trigger *trigger;
+		uint64_t token;
+		struct ust_app_token_event_rule *ua_token;
+
+		/* TODO: error checking and type checking */
+		token = trigger_token_element->token;
+		trigger = trigger_token_element->trigger;
+		condition = lttng_trigger_get_condition(trigger);
+		(void) lttng_condition_event_rule_get_rule_no_const(condition, &event_rule);
+
+		/* Iterate over all known token trigger */
+		ua_token = find_ust_app_token_event_rule(app->tokens_ht, token);
+		if (!ua_token) {
+			ret = create_ust_app_token_event_rule(event_rule, app, token);
+			if (ret < 0) {
+				goto end;
+			}
+		}
+	}
+
+end:
+	rcu_read_unlock();
+	pthread_mutex_unlock(&notification_trigger_tokens_ht_lock);
+	return;
+}
+
 /*
  * The caller must ensure that the application is compatible and is tracked
  * by the PID tracker.
@@ -5176,6 +5507,16 @@ void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 	}
 }
 
+void ust_app_global_update_token(struct ust_app *app)
+{
+	DBG2("UST app global update token for app sock %d", app->sock);
+
+	if (!app->compatible) {
+		return;
+	}
+	ust_app_synchronize_tokens(app);
+}
+
 /*
  * Called with session lock held.
  */
@@ -5187,6 +5528,18 @@ void ust_app_global_update_all(struct ltt_ust_session *usess)
 	rcu_read_lock();
 	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
 		ust_app_global_update(usess, app);
+	}
+	rcu_read_unlock();
+}
+
+void ust_app_global_update_all_tokens(void)
+{
+	struct lttng_ht_iter iter;
+	struct ust_app *app;
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry(ust_app_ht->ht, &iter.iter, app, pid_n.node) {
+		ust_app_global_update_token(app);
 	}
 	rcu_read_unlock();
 }
