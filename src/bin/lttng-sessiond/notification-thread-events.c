@@ -24,6 +24,7 @@
 #include <lttng/condition/buffer-usage-internal.h>
 #include <lttng/condition/session-consumed-size-internal.h>
 #include <lttng/condition/session-rotation-internal.h>
+#include <lttng/condition/event-rule-internal.h>
 #include <lttng/notification/channel-internal.h>
 
 #include <time.h>
@@ -442,6 +443,22 @@ unsigned long lttng_condition_session_rotation_hash(
 	return hash;
 }
 
+static
+unsigned long lttng_condition_event_rule_hash(
+	const struct lttng_condition *_condition)
+{
+	unsigned long hash, condition_type;
+	struct lttng_condition_event_rule *condition;
+
+	condition = container_of(_condition,
+			struct lttng_condition_event_rule, parent);
+	condition_type = (unsigned long) condition->parent.type;
+	hash = hash_key_ulong((void *) condition_type, lttng_ht_seed);
+
+	/* TODO: further hasg using the event rule? on pattern maybe?*/
+	return hash;
+}
+
 /*
  * The lttng_condition hashing code is kept in this file (rather than
  * condition.c) since it makes use of GPLv2 code (hashtable utils), which we
@@ -459,6 +476,8 @@ unsigned long lttng_condition_hash(const struct lttng_condition *condition)
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
 		return lttng_condition_session_rotation_hash(condition);
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+		return lttng_condition_event_rule_hash(condition);
 	default:
 		ERR("[notification-thread] Unexpected condition type caught");
 		abort();
@@ -1929,10 +1948,55 @@ int condition_is_supported(struct lttng_condition *condition)
 		ret = kernel_supports_ring_buffer_snapshot_sample_positions();
 		break;
 	}
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+	{
+		/* TODO:
+		 * Check for kernel support.
+		 * Check for ust support ??
+		 */
+		ret = 1;
+		break;
+	}
 	default:
 		ret = 1;
 	}
 end:
+	return ret;
+}
+
+static
+int action_is_supported(struct lttng_action *action)
+{
+	int ret;
+
+	switch (lttng_action_get_type(action)) {
+	case LTTNG_ACTION_TYPE_NOTIFY:
+	case LTTNG_ACTION_TYPE_START_SESSION:
+	case LTTNG_ACTION_TYPE_STOP_SESSION:
+	case LTTNG_ACTION_TYPE_ROTATE_SESSION:
+	case LTTNG_ACTION_TYPE_SNAPSHOT_SESSION:
+	{
+		/* TODO validate that this is true for kernel in regards to
+		 * rotation and snapshot. Start stop is not a problem notify
+		 * either.
+		 */
+		/* For now all type of actions are supported */
+		ret = 1;
+		break;
+	}
+	case LTTNG_ACTION_TYPE_GROUP:
+	{
+		/* TODO: Iterate over all internal actions and validate that
+		 * they are supported
+		 */
+		ret = 1;
+		break;
+
+	}
+	default:
+		ret = 1;
+	}
+
 	return ret;
 }
 
@@ -2028,91 +2092,26 @@ end:
 	return ret;
 }
 
-/*
- * FIXME A client's credentials are not checked when registering a trigger, nor
- *       are they stored alongside with the trigger.
- *
- * The effects of this are benign since:
- *     - The client will succeed in registering the trigger, as it is valid,
- *     - The trigger will, internally, be bound to the channel/session,
- *     - The notifications will not be sent since the client's credentials
- *       are checked against the channel at that moment.
- *
- * If this function returns a non-zero value, it means something is
- * fundamentally broken and the whole subsystem/thread will be torn down.
- *
- * If a non-fatal error occurs, just set the cmd_result to the appropriate
- * error code.
- */
-static
-int handle_notification_thread_command_register_trigger(
+static int action_notify_register_trigger(
 		struct notification_thread_state *state,
-		struct lttng_trigger *trigger,
-		enum lttng_error_code *cmd_result)
+		struct lttng_trigger *trigger
+		)
 {
-	int ret = 0;
+
+	int ret;
 	struct lttng_condition *condition;
 	struct notification_client *client;
 	struct notification_client_list *client_list = NULL;
-	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
-	struct notification_client_list_element *client_list_element, *tmp;
-	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
-	bool free_trigger = true;
-
-	rcu_read_lock();
+	struct notification_client_list_element *client_list_element, *tmp;
 
 	condition = lttng_trigger_get_condition(trigger);
 	assert(condition);
 
-	ret = condition_is_supported(condition);
-	if (ret < 0) {
-		goto error;
-	} else if (ret == 0) {
-		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
-		goto error;
-	} else {
-		/* Feature is supported, continue. */
-		ret = 0;
-	}
-
-	trigger_ht_element = zmalloc(sizeof(*trigger_ht_element));
-	if (!trigger_ht_element) {
-		ret = -1;
-		goto error;
-	}
-
-	/* Add trigger to the trigger_ht. */
-	cds_lfht_node_init(&trigger_ht_element->node);
-	trigger_ht_element->trigger = trigger;
-
-	node = cds_lfht_add_unique(state->triggers_ht,
-			lttng_condition_hash(condition),
-			match_condition,
-			condition,
-			&trigger_ht_element->node);
-	if (node != &trigger_ht_element->node) {
-		/* Not a fatal error, simply report it to the client. */
-		*cmd_result = LTTNG_ERR_TRIGGER_EXISTS;
-		goto error_free_ht_element;
-	}
-
-	/*
-	 * Ownership of the trigger and of its wrapper was transfered to
-	 * the triggers_ht.
-	 */
-	trigger_ht_element = NULL;
-	free_trigger = false;
-
-	/*
-	 * The rest only applies to triggers that have a "notify" action.
-	 * It is not skipped as this is the only action type currently
-	 * supported.
-	 */
 	client_list = zmalloc(sizeof(*client_list));
 	if (!client_list) {
 		ret = -1;
-		goto error_free_ht_element;
+		goto end;
 	}
 	cds_lfht_node_init(&client_list->notification_trigger_ht_node);
 	CDS_INIT_LIST_HEAD(&client_list->list);
@@ -2205,8 +2204,6 @@ int handle_notification_thread_command_register_trigger(
 	 * notification_trigger_clients_ht.
 	 */
 	client_list = NULL;
-
-	*cmd_result = LTTNG_OK;
 error_free_client_list:
 	if (client_list) {
 		cds_list_for_each_entry_safe(client_list_element, tmp,
@@ -2215,6 +2212,105 @@ error_free_client_list:
 		}
 		free(client_list);
 	}
+end:
+	return ret;
+}
+
+/*
+ * TODO: REVIEW THIS COMMENT.
+ * FIXME A client's credentials are not checked when registering a trigger, nor
+ *       are they stored alongside with the trigger.
+ *
+ * The effects of this are benign since:
+ *     - The client will succeed in registering the trigger, as it is valid,
+ *     - The trigger will, internally, be bound to the channel/session,
+ *     - The notifications will not be sent since the client's credentials
+ *       are checked against the channel at that moment.
+ *
+ * If this function returns a non-zero value, it means something is
+ * fundamentally broken and the whole subsystem/thread will be torn down.
+ *
+ * If a non-fatal error occurs, just set the cmd_result to the appropriate
+ * error code.
+ */
+static
+int handle_notification_thread_command_register_trigger(
+		struct notification_thread_state *state,
+		struct lttng_trigger *trigger,
+		enum lttng_error_code *cmd_result)
+{
+	int ret = 0;
+	struct lttng_condition *condition;
+	struct lttng_action *action;
+	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
+	struct cds_lfht_node *node;
+	bool free_trigger = true;
+
+	rcu_read_lock();
+
+	condition = lttng_trigger_get_condition(trigger);
+	assert(condition);
+
+	action = lttng_trigger_get_action(trigger);
+	assert(action);
+
+	ret = condition_is_supported(condition);
+	if (ret < 0) {
+		goto error;
+	} else if (ret == 0) {
+		ret = 0;
+		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
+		goto error;
+	}
+
+	ret = action_is_supported(action);
+	if (ret < 0) {
+		goto error;
+	} else if (ret == 0) {
+		ret = 0;
+		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
+		goto error;
+	}
+
+	trigger_ht_element = zmalloc(sizeof(*trigger_ht_element));
+	if (!trigger_ht_element) {
+		ret = -1;
+		goto error;
+	}
+
+	/* Add trigger to the trigger_ht. */
+	cds_lfht_node_init(&trigger_ht_element->node);
+	trigger_ht_element->trigger = trigger;
+
+	node = cds_lfht_add_unique(state->triggers_ht,
+			lttng_condition_hash(condition),
+			match_condition,
+			condition,
+			&trigger_ht_element->node);
+	if (node != &trigger_ht_element->node) {
+		/* Not a fatal error, simply report it to the client. */
+		*cmd_result = LTTNG_ERR_TRIGGER_EXISTS;
+		goto error_free_ht_element;
+	}
+
+	/*
+	 * Ownership of the trigger and of its wrapper was transfered to
+	 * the triggers_ht.
+	 */
+	trigger_ht_element = NULL;
+	free_trigger = false;
+
+	if (lttng_action_get_type(action) == LTTNG_ACTION_TYPE_NOTIFY) {
+		ret = action_notify_register_trigger(state, trigger);
+		if (ret < 0) {
+			/* TODO should cmd_result be set here? */
+			ret = -1;
+			goto error_free_ht_element;
+		}
+	}
+
+	*cmd_result = LTTNG_OK;
+
 error_free_ht_element:
 	free(trigger_ht_element);
 error:
