@@ -513,6 +513,56 @@ end:
 	return ret;
 }
 
+static
+int handle_trigger_event_pipe(int fd, uint32_t revents,
+		struct notification_thread_handle *handle,
+		struct notification_thread_state *state)
+{
+	int ret = 0;
+	struct lttng_ust_trigger_notification notification;
+
+	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
+		ret = lttng_poll_del(&state->events, fd);
+		if (ret) {
+			ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
+		}
+		goto end;
+	}
+
+	/*
+	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
+	 * ensuring that read/write of sampling messages are atomic.
+	 */
+	/* TODO: should we read as much as we can ? EWOULDBLOCK? */
+
+	ret = lttng_read(fd, &notification, sizeof(notification));
+	if (ret != sizeof(notification)) {
+		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
+				fd);
+		ret = -1;
+		goto end;
+	}
+
+	ERR("JORAJ: message from event source %d value:%" PRIu64, fd, notification.id);
+	/* Success */
+	ret = 0;
+end:
+	return ret;
+}
+
+static bool fd_is_event_source(struct notification_thread_handle *handle, int fd)
+{
+	struct notification_event_trigger_source_element *source_element, *tmp;
+	cds_list_for_each_entry_safe(source_element, tmp,
+			&handle->event_trigger_sources.list, node) {
+		if (source_element->fd != fd) {
+			continue;
+		}
+		return true;
+	}
+	return false;
+}
+
 /*
  * This thread services notification channel clients and commands received
  * from various lttng-sessiond components over a command queue.
@@ -597,6 +647,11 @@ void *thread_notification(void *data)
 					fd == handle->channel_monitoring_pipes.kernel_consumer) {
 				ret = handle_channel_monitoring_pipe(fd,
 						revents, handle, &state);
+				if (ret) {
+					goto error;
+				}
+			} else if (fd_is_event_source(handle, fd)) {
+				ret = handle_trigger_event_pipe(fd, revents, handle, &state);
 				if (ret) {
 					goto error;
 				}
