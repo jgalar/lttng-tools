@@ -113,14 +113,6 @@ struct lttng_trigger_ht_element {
 	struct rcu_head rcu_node;
 };
 
-struct lttng_trigger_tokens_ht_element {
-	uint64_t token;
-	struct lttng_trigger *trigger;
-	struct cds_lfht_node node;
-	/* call_rcu delayed reclaim. */
-	struct rcu_head rcu_node;
-};
-
 struct lttng_condition_list_element {
 	struct lttng_condition *condition;
 	struct cds_list_head node;
@@ -353,9 +345,9 @@ static
 int match_trigger_token(struct cds_lfht_node *node, const void *key)
 {
 	const uint64_t *_key = key;
-	struct lttng_trigger_tokens_ht_element *element;
+	struct notification_trigger_tokens_ht_element *element;
 
-	element = caa_container_of(node, struct lttng_trigger_tokens_ht_element,
+	element = caa_container_of(node, struct notification_trigger_tokens_ht_element,
 			node);
 	return *_key == element->token ;
 }
@@ -2262,7 +2254,7 @@ int handle_notification_thread_command_register_trigger(
 	struct lttng_condition *condition;
 	struct lttng_action *action;
 	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
-	struct lttng_trigger_tokens_ht_element *trigger_tokens_ht_element = NULL;
+	struct notification_trigger_tokens_ht_element *trigger_tokens_ht_element = NULL;
 	struct cds_lfht_node *node;
 	bool free_trigger = true;
 
@@ -2570,6 +2562,13 @@ int handle_notification_thread_command(
 				state,
 				cmd->parameters.application.read_side_trigger_event_application_pipe,
 				&cmd->reply_code);
+		break;
+	case NOTIFICATION_COMMAND_TYPE_GET_TOKENS:
+		/* TODO: Find a better way than passing around a ref to a hash
+		 * table... */
+		cmd->reply.get_tokens.ht = state->trigger_tokens_ht;
+		cmd->reply_code = LTTNG_OK;
+		ret = 0;
 		break;
 	case NOTIFICATION_COMMAND_TYPE_QUIT:
 		DBG("[notification-thread] Received quit command");

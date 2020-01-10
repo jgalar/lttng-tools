@@ -24,6 +24,14 @@ struct notification_event_trigger_source_element {
 	struct cds_list_head node;
 };
 
+struct notification_trigger_tokens_ht_element {
+    uint64_t token;
+    struct lttng_trigger *trigger;
+    struct cds_lfht_node node;
+    /* call_rcu delayed reclaim. */
+    struct rcu_head rcu_node;
+};
+
 struct notification_thread_handle {
 	/*
 	 * Queue of struct notification command.

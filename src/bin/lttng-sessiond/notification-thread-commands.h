@@ -28,6 +28,7 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_COMPLETED,
 	NOTIFICATION_COMMAND_TYPE_ADD_APPLICATION,
 	NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION,
+	NOTIFICATION_COMMAND_TYPE_GET_TOKENS,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 };
 
@@ -71,6 +72,12 @@ struct notification_thread_command {
 
 	} parameters;
 
+	union {
+		struct {
+			struct cds_lfht *ht;
+		} get_tokens;
+	} reply;
+
 	/* lttng_waiter on which to wait for command reply (optional). */
 	struct lttng_waiter reply_waiter;
 	enum lttng_error_code reply_code;
@@ -109,6 +116,12 @@ enum lttng_error_code notification_thread_command_session_rotation_completed(
 enum lttng_error_code notification_thread_command_add_application(
 		struct notification_thread_handle *handle,
 		struct lttng_pipe *trigger_event_application_pipe);
+
+/* Must hold the notification_trigger_tokens_ht_lock to protect trigger_tokens_ht */
+/* todo find a better way....*/
+enum lttng_error_code notification_thread_command_get_tokens(
+		struct notification_thread_handle *handle,
+		struct cds_lfht **trigger_tokens_ht);
 
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle);
