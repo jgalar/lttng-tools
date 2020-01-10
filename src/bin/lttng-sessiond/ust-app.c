@@ -1956,7 +1956,7 @@ int create_ust_token_event_rule(struct ust_app *app, struct ust_app_token_event_
 
 	/*
 	 * We now need to explicitly enable the event, since it
-	 * is now disabled at creation.
+	 * is disabled at creation.
 	 */
 	ret = enable_ust_object(app, ua_token->obj);
 	if (ret < 0) {
