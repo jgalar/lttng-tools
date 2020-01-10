@@ -2325,7 +2325,7 @@ int handle_notification_thread_command_register_trigger(
 		trigger_tokens_ht_element->trigger = trigger;
 
 		node = cds_lfht_add_unique(state->trigger_tokens_ht,
-				lttng_condition_hash(condition),
+				hash_key_u64(&trigger_tokens_ht_element->token, lttng_ht_seed),
 				match_trigger_token,
 				&trigger_tokens_ht_element->token,
 				&trigger_tokens_ht_element->node);
