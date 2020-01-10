@@ -921,6 +921,14 @@ void delete_ust_app(struct ust_app *app)
 	ht_cleanup_push(app->ust_sessions_objd);
 	ht_cleanup_push(app->ust_objd);
 
+	/* This can happen if trigger setup failed. e.g killed app */
+	if (app->token_communication.handle) {
+		ustctl_release_object(sock, app->token_communication.handle);
+		free(app->token_communication.handle);
+	}
+
+	lttng_pipe_destroy(app->token_communication.trigger_event_pipe);
+
 	/*
 	 * Wait until we have deleted the application from the sock hash table
 	 * before closing this socket, otherwise an application could re-use the
@@ -3307,6 +3315,7 @@ error:
 struct ust_app *ust_app_create(struct ust_register_msg *msg, int sock)
 {
 	struct ust_app *lta = NULL;
+	struct lttng_pipe *trigger_event_source_pipe = NULL;
 
 	assert(msg);
 	assert(sock >= 0);
@@ -3323,11 +3332,19 @@ struct ust_app *ust_app_create(struct ust_register_msg *msg, int sock)
 		goto error;
 	}
 
+	trigger_event_source_pipe = lttng_pipe_open(FD_CLOEXEC);
+	if (!trigger_event_source_pipe) {
+		PERROR("Open trigger pipe");
+		goto error;
+	}
+
 	lta = zmalloc(sizeof(struct ust_app));
 	if (lta == NULL) {
 		PERROR("malloc");
 		goto error;
 	}
+
+	lta->token_communication.trigger_event_pipe = trigger_event_source_pipe;
 
 	lta->ppid = msg->ppid;
 	lta->uid = msg->uid;
@@ -3434,6 +3451,52 @@ int ust_app_version(struct ust_app *app)
 }
 
 /*
+ * Setup the base trigger group.
+ *
+ * Return 0 on success else a negative value either an errno code or a
+ * LTTng-UST error code.
+ */
+int ust_app_setup_trigger_group(struct ust_app *app)
+{
+	int ret;
+	int writefd;
+	struct lttng_ust_object_data *group = NULL;
+	enum lttng_error_code lttng_ret;
+
+	assert(app);
+
+	/* Get the write side of the pipe */
+	writefd = lttng_pipe_get_writefd(app->token_communication.trigger_event_pipe);
+
+	pthread_mutex_lock(&app->sock_lock);
+	ret = ustctl_create_trigger_group(app->sock, writefd, &group);
+	pthread_mutex_unlock(&app->sock_lock);
+	if (ret < 0) {
+		if (ret != -LTTNG_UST_ERR_EXITING && ret != -EPIPE) {
+			ERR("UST app %d create_trigger_group failed with ret %d, trigger pipe %d", app->sock, ret, writefd);
+		} else {
+			DBG("UST app %d create trigger group failed. Application is dead", app->sock);
+		}
+		goto end;
+	}
+
+	lttng_ret = notification_thread_command_add_application(
+			notification_thread_handle, app->token_communication.trigger_event_pipe);
+	if (lttng_ret != LTTNG_OK) {
+		/* TODO: error */
+		ret = - 1;
+		ERR("Failed to add channel to notification thread");
+		goto end;
+	}
+
+	/* Assign handle only when the complete setup is valid */
+	app->token_communication.handle = group;
+
+end:
+	return ret;
+}
+
+/*
  * Unregister app by removing it from the global traceable app list and freeing
  * the data struct.
  *
@@ -3441,6 +3504,7 @@ int ust_app_version(struct ust_app *app)
  */
 void ust_app_unregister(int sock)
 {
+	enum lttng_error_code ret_code;
 	struct ust_app *lta;
 	struct lttng_ht_node_ulong *node;
 	struct lttng_ht_iter ust_app_sock_iter;
@@ -3544,6 +3608,16 @@ void ust_app_unregister(int sock)
 	if (ret) {
 		DBG3("Unregister app by PID %d failed. This can happen on pid reuse",
 				lta->pid);
+	}
+
+	/* trigger handle can be null in certain scenario such as a dead app */
+	if (lta->token_communication.handle) {
+		ret_code = notification_thread_command_remove_application(
+				notification_thread_handle,
+				lta->token_communication.trigger_event_pipe);
+		if (ret_code != LTTNG_OK) {
+			ERR("Failed to remove application from notification thread");
+		}
 	}
 
 	/* Free memory */
