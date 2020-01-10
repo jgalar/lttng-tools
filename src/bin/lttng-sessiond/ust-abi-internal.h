@@ -87,6 +87,29 @@ struct lttng_ust_stream {
 	 */
 } LTTNG_PACKED;
 
+#define LTTNG_UST_TRIGGER_PADDING1	16
+#define LTTNG_UST_TRIGGER_PADDING2	(LTTNG_UST_SYM_NAME_LEN + 32)
+struct lttng_ust_trigger {
+	uint64_t id;
+	enum lttng_ust_instrumentation instrumentation;
+	char name[LTTNG_UST_SYM_NAME_LEN];	/* event name */
+
+	enum lttng_ust_loglevel_type loglevel_type;
+	int loglevel;	/* value, -1: all */
+	char padding[LTTNG_UST_TRIGGER_PADDING1];
+
+	/* Per instrumentation type configuration */
+	union {
+		char padding[LTTNG_UST_TRIGGER_PADDING2];
+	} u;
+} LTTNG_PACKED;
+
+#define LTTNG_TRIGGER_NOTIFICATION_PADDING 32
+struct lttng_ust_trigger_notification {
+	uint64_t id;
+	char padding[LTTNG_TRIGGER_NOTIFICATION_PADDING];
+} LTTNG_PACKED;
+
 #define LTTNG_UST_EVENT_PADDING1	16
 #define LTTNG_UST_EVENT_PADDING2	(LTTNG_UST_SYM_NAME_LEN + 32)
 struct lttng_ust_event {
@@ -304,6 +327,9 @@ struct lttng_ust_event_exclusion {
 /* Event FD commands */
 #define LTTNG_UST_FILTER			_UST_CMD(0xA0)
 #define LTTNG_UST_EXCLUSION			_UST_CMD(0xA1)
+
+#define LTTNG_UST_TRIGGER_SEND_FD		_UST_CMD(0xB0)
+#define LTTNG_UST_TRIGGER_CREATE		_UST_CMDW(0xB1, struct lttng_ust_trigger)
 
 #define LTTNG_UST_ROOT_HANDLE	0
 
