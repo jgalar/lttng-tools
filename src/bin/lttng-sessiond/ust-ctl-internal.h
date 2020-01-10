@@ -85,6 +85,14 @@ int ustctl_disable(int sock, struct lttng_ust_object_data *object);
 int ustctl_start_session(int sock, int handle);
 int ustctl_stop_session(int sock, int handle);
 
+int ustctl_create_trigger_group(int sock,
+		int pipe_fd,
+		struct lttng_ust_object_data **trigger_group_handle);
+int ustctl_create_trigger(int sock,
+		struct lttng_ust_trigger *trigger,
+		struct lttng_ust_object_data *trigger_group_handle,
+		struct lttng_ust_object_data **trigger_data);
+
 /*
  * ustctl_tracepoint_list returns a tracepoint list handle, or negative
  * error value.
