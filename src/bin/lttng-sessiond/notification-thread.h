@@ -63,6 +63,8 @@ struct notification_thread_handle {
 	} event_trigger_sources;
 	/* Used to wait for the launch of the notification thread. */
 	sem_t ready;
+
+	pthread_mutex_t trigger_lock;
 };
 
 /**
