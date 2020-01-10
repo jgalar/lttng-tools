@@ -20,6 +20,7 @@ long page_size;
 struct health_app *health_sessiond;
 
 struct notification_thread_handle *notification_thread_handle;
+pthread_mutex_t notification_trigger_tokens_ht_lock = PTHREAD_MUTEX_INITIALIZER;
 
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
 

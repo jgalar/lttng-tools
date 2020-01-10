@@ -29,6 +29,7 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_COMPLETED,
 	NOTIFICATION_COMMAND_TYPE_ADD_APPLICATION,
 	NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION,
+	NOTIFICATION_COMMAND_TYPE_GET_TOKENS,
 	NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 	NOTIFICATION_COMMAND_TYPE_CLIENT_COMMUNICATION_UPDATE,
@@ -88,8 +89,12 @@ struct notification_thread_command {
 	union {
 		struct {
 			struct lttng_triggers *triggers;
+		} get_tokens;
+		struct {
+			struct lttng_triggers *triggers;
 		} list_triggers;
 	} reply;
+
 	/* lttng_waiter on which to wait for command reply (optional). */
 	struct lttng_waiter reply_waiter;
 	enum lttng_error_code reply_code;
@@ -133,6 +138,13 @@ enum lttng_error_code notification_thread_command_add_application(
 enum lttng_error_code notification_thread_command_remove_application(
 		struct notification_thread_handle *handle,
 		struct lttng_pipe *trigger_event_application_pipe);
+
+/* Must hold the notification_trigger_tokens_ht_lock to protect against
+ * insertion removal of triggers TODO: is it the case even with refcounting? */
+/* todo find a better way....*/
+enum lttng_error_code notification_thread_command_get_tokens(
+		struct notification_thread_handle *handle,
+		struct lttng_triggers **triggers);
 
 /* TODO: for now we borrow with no refcount the trigger. THIS IS DANGEROUS */
 enum lttng_error_code notification_thread_command_list_triggers(

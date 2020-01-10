@@ -118,14 +118,6 @@ struct lttng_trigger_ht_element {
 	struct rcu_head rcu_node;
 };
 
-struct notification_trigger_tokens_ht_element {
-	uint64_t token;
-	struct lttng_trigger *trigger;
-	struct cds_lfht_node node;
-	/* call_rcu delayed reclaim. */
-	struct rcu_head rcu_node;
-};
-
 struct lttng_condition_list_element {
 	struct lttng_condition *condition;
 	struct cds_list_head node;
@@ -2078,6 +2070,51 @@ end:
 	return ret;
 }
 
+static int handle_notification_thread_command_get_tokens(
+		struct notification_thread_handle *handle,
+		struct notification_thread_state *state,
+		struct lttng_triggers **triggers,
+		enum lttng_error_code *_cmd_result)
+{
+	int ret = 0, i = 0;
+	enum lttng_error_code cmd_result = LTTNG_OK;
+	struct cds_lfht_iter iter;
+	struct notification_trigger_tokens_ht_element *element;
+	struct lttng_triggers *local_triggers = NULL;
+
+	local_triggers = lttng_triggers_create();
+	if (!local_triggers) {
+		cmd_result = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	rcu_read_lock();
+	cds_lfht_for_each_entry (
+			state->trigger_tokens_ht, &iter, element, node) {
+		ret = lttng_triggers_add(local_triggers, element->trigger);
+		if (ret < 0) {
+			cmd_result = LTTNG_ERR_FATAL;
+			ret = -1;
+			goto end;
+		}
+
+		/* Ownership is shared with the lttng_triggers object */
+		lttng_trigger_get(element->trigger);
+
+		i++;
+	}
+
+	/* Passing ownership up */
+	*triggers = local_triggers;
+	local_triggers = NULL;
+
+end:
+	rcu_read_unlock();
+	lttng_triggers_destroy(local_triggers);
+	*_cmd_result = cmd_result;
+	return ret;
+}
+
 static
 int handle_notification_thread_command_list_triggers(
 	struct notification_thread_handle *handle,
@@ -2922,6 +2959,15 @@ int handle_notification_thread_command(
 				cmd->parameters.application.read_side_trigger_event_application_pipe,
 				&cmd->reply_code);
 		break;
+	case NOTIFICATION_COMMAND_TYPE_GET_TOKENS:
+	{
+		struct lttng_triggers *triggers = NULL;
+		ret = handle_notification_thread_command_get_tokens(
+				handle, state, &triggers, &cmd->reply_code);
+		cmd->reply.get_tokens.triggers = triggers;
+		ret = 0;
+		break;
+	}
 	case NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS:
 	{
 		struct lttng_triggers *triggers = NULL;

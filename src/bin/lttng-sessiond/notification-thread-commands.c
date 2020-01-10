@@ -314,6 +314,33 @@ end:
 	return ret_code;
 }
 
+enum lttng_error_code notification_thread_command_get_tokens(
+		struct notification_thread_handle *handle,
+		struct lttng_triggers **tokens_triggers)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd = {};
+
+	assert(handle);
+	assert(tokens_triggers);
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_GET_TOKENS;
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+	*tokens_triggers = cmd.reply.get_tokens.triggers;
+
+end:
+	return ret_code;
+}
+
 enum lttng_error_code notification_thread_command_list_triggers(
 		struct notification_thread_handle *handle,
 		uid_t uid,
