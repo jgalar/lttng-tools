@@ -213,6 +213,52 @@ end:
 	return ret_code;
 }
 
+enum lttng_error_code notification_thread_command_add_application(
+		struct notification_thread_handle *handle,
+		struct lttng_pipe *pipe)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_ADD_APPLICATION;
+	cmd.parameters.application.read_side_trigger_event_application_pipe = lttng_pipe_get_readfd(pipe);
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
+enum lttng_error_code notification_thread_command_remove_application(
+		struct notification_thread_handle *handle,
+		struct lttng_pipe *pipe)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct notification_thread_command cmd;
+
+	init_notification_thread_command(&cmd);
+
+	cmd.type = NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION;
+	cmd.parameters.application.read_side_trigger_event_application_pipe = lttng_pipe_get_readfd(pipe);
+
+	ret = run_command_wait(handle, &cmd);
+	if (ret) {
+		ret_code = LTTNG_ERR_UNK;
+		goto end;
+	}
+	ret_code = cmd.reply_code;
+end:
+	return ret_code;
+}
+
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle)
 {

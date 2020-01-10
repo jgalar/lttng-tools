@@ -1826,6 +1826,79 @@ end:
 }
 
 static
+int handle_notification_thread_command_add_application(
+	struct notification_thread_handle *handle,
+	struct notification_thread_state *state,
+	int read_side_trigger_event_application_pipe,
+	enum lttng_error_code *_cmd_result)
+{
+	int ret = 0;
+	enum lttng_error_code cmd_result = LTTNG_OK;
+	struct notification_event_trigger_source_element element = { 0 };
+
+	CDS_INIT_LIST_HEAD(&element.node);
+	element.fd = read_side_trigger_event_application_pipe;
+
+	pthread_mutex_lock(&handle->event_trigger_sources.lock);
+	cds_list_add(&element.node, &handle->event_trigger_sources.list);
+	pthread_mutex_unlock(&handle->event_trigger_sources.lock);
+
+	/* TODO: remove on failure to add to list? */
+
+	/* Adding the read side pipe to the event poll */
+	ret = lttng_poll_add(&state->events,
+			read_side_trigger_event_application_pipe,
+			LPOLLIN | LPOLLERR);
+
+	if (ret < 0) {
+		/* TODO: what should be the value of cmd_result??? */
+		ERR("[notification-thread] Failed to add event source pipe fd to pollset");
+		goto end;
+	}
+
+end:
+	*_cmd_result = cmd_result;
+	return ret;
+}
+
+static
+int handle_notification_thread_command_remove_application(
+	struct notification_thread_handle *handle,
+	struct notification_thread_state *state,
+	int read_side_trigger_event_application_pipe,
+	enum lttng_error_code *_cmd_result)
+{
+	int ret = 0;
+	enum lttng_error_code cmd_result = LTTNG_OK;
+
+	/* TODO: missing a lock propably to revisit */
+	struct notification_event_trigger_source_element *source_element, *tmp;
+	cds_list_for_each_entry_safe(source_element, tmp,
+			&handle->event_trigger_sources.list, node) {
+		if (source_element->fd != read_side_trigger_event_application_pipe) {
+			continue;
+		}
+
+		DBG("[notification-thread] Removed event source from event source list");
+		cds_list_del(&source_element->node);
+		break;
+	}
+
+	/* Removing the read side pipe to the event poll */
+	ret = lttng_poll_del(&state->events,
+			read_side_trigger_event_application_pipe);
+
+	if (ret < 0) {
+		/* TODO: what should be the value of cmd_result??? */
+		ERR("[notification-thread] Failed to remove event source pipe fd from pollset");
+		goto end;
+	}
+
+end:
+	*_cmd_result = cmd_result;
+	return ret;
+}
+static
 int condition_is_supported(struct lttng_condition *condition)
 {
 	int ret;
@@ -2325,6 +2398,20 @@ int handle_notification_thread_command(
 				cmd->parameters.session_rotation.gid,
 				cmd->parameters.session_rotation.trace_archive_chunk_id,
 				cmd->parameters.session_rotation.location,
+				&cmd->reply_code);
+		break;
+	case NOTIFICATION_COMMAND_TYPE_ADD_APPLICATION:
+		ret = handle_notification_thread_command_add_application(
+				handle,
+				state,
+				cmd->parameters.application.read_side_trigger_event_application_pipe,
+				&cmd->reply_code);
+		break;
+	case NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION:
+		ret = handle_notification_thread_command_remove_application(
+				handle,
+				state,
+				cmd->parameters.application.read_side_trigger_event_application_pipe,
 				&cmd->reply_code);
 		break;
 	case NOTIFICATION_COMMAND_TYPE_QUIT:

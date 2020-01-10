@@ -26,6 +26,8 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_REMOVE_CHANNEL,
 	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_ONGOING,
 	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_COMPLETED,
+	NOTIFICATION_COMMAND_TYPE_ADD_APPLICATION,
+	NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 };
 
@@ -62,6 +64,11 @@ struct notification_thread_command {
 			uint64_t trace_archive_chunk_id;
 			struct lttng_trace_archive_location *location;
 		} session_rotation;
+		/* Add/Remove application */
+		struct {
+			int read_side_trigger_event_application_pipe;
+		} application;
+
 	} parameters;
 
 	/* lttng_waiter on which to wait for command reply (optional). */
@@ -98,6 +105,10 @@ enum lttng_error_code notification_thread_command_session_rotation_completed(
 		const char *session_name, uid_t session_uid, gid_t session_gid,
 		uint64_t trace_archive_chunk_id,
 		struct lttng_trace_archive_location *location);
+
+enum lttng_error_code notification_thread_command_add_application(
+		struct notification_thread_handle *handle,
+		struct lttng_pipe *trigger_event_application_pipe);
 
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle);

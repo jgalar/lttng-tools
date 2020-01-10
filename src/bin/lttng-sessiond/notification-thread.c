@@ -135,6 +135,12 @@ struct notification_thread_handle *notification_thread_handle_create(
 	} else {
 		handle->channel_monitoring_pipes.kernel_consumer = -1;
 	}
+
+	CDS_INIT_LIST_HEAD(&handle->event_trigger_sources.list);
+	ret = pthread_mutex_init(&handle->event_trigger_sources.lock, NULL);
+	if (ret) {
+		goto error;
+	}
 end:
 	return handle;
 error:
