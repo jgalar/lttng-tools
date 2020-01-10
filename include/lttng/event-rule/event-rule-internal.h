@@ -26,6 +26,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <urcu/ref.h>
 
 typedef void (*event_rule_destroy_cb)(struct lttng_event_rule *event_rule);
 typedef bool (*event_rule_validate_cb)(
@@ -40,6 +41,7 @@ typedef ssize_t (*event_rule_create_from_buffer_cb)(
 		struct lttng_event_rule **event_rule);
 
 struct lttng_event_rule {
+	struct urcu_ref ref;
 	enum lttng_event_rule_type type;
 	event_rule_validate_cb validate;
 	event_rule_serialize_cb serialize;
@@ -72,5 +74,11 @@ int lttng_event_rule_serialize(const struct lttng_event_rule *event_rule,
 LTTNG_HIDDEN
 bool lttng_event_rule_is_equal(const struct lttng_event_rule *a,
 		const struct lttng_event_rule *b);
+
+LTTNG_HIDDEN
+bool lttng_event_rule_get(struct lttng_event_rule *rule);
+
+LTTNG_HIDDEN
+void lttng_event_rule_put(struct lttng_event_rule *rule);
 
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

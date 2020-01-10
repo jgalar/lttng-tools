@@ -34,14 +34,20 @@ enum lttng_event_rule_type lttng_event_rule_get_type(
 	return event_rule ? event_rule->type : LTTNG_EVENT_RULE_TYPE_UNKNOWN;
 }
 
-void lttng_event_rule_destroy(struct lttng_event_rule *event_rule)
+static
+void lttng_event_rule_release(struct urcu_ref *ref)
 {
-	if (!event_rule) {
-		return;
-	}
+
+	struct lttng_event_rule *event_rule = container_of(ref, typeof(*event_rule),
+			ref);
 
 	assert(event_rule->destroy);
 	event_rule->destroy(event_rule);
+}
+
+void lttng_event_rule_destroy(struct lttng_event_rule *event_rule)
+{
+	lttng_event_rule_put(event_rule);
 }
 
 LTTNG_HIDDEN
@@ -182,5 +188,22 @@ LTTNG_HIDDEN
 void lttng_event_rule_init(struct lttng_event_rule *event_rule,
 		enum lttng_event_rule_type type)
 {
+	urcu_ref_init(&event_rule->ref);
 	event_rule->type = type;
+}
+
+LTTNG_HIDDEN
+bool lttng_event_rule_get(struct lttng_event_rule *event_rule)
+{
+	return urcu_ref_get_unless_zero(&event_rule->ref);
+}
+
+LTTNG_HIDDEN
+void lttng_event_rule_put(struct lttng_event_rule *event_rule)
+{
+	if (!event_rule) {
+		return;
+	}
+	assert(event_rule->ref.refcount);
+	urcu_ref_put(&event_rule->ref, lttng_event_rule_release);
 }
