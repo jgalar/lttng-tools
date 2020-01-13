@@ -112,6 +112,19 @@ struct ust_app_event {
 	struct lttng_event_exclusion *exclusion;
 };
 
+struct ust_app_token_event_rule {
+	int enabled;
+	int handle;
+	struct lttng_ust_object_data *obj;
+	struct lttng_event_rule *event_rule;
+	uint64_t token;
+	struct lttng_ht_node_u64 node;
+	/* The event_rule object own this pointer */
+	struct lttng_filter_bytecode *filter;
+	/* The event_rule object own this pointer */
+	struct lttng_event_exclusion *exclusion;
+};
+
 struct ust_app_stream {
 	int handle;
 	char pathname[PATH_MAX];
@@ -299,6 +312,7 @@ struct ust_app {
 		struct lttng_ust_object_data *handle;
 		struct lttng_pipe *trigger_event_pipe;
 	} token_communication;
+	struct lttng_ht *tokens_ht;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
@@ -326,6 +340,8 @@ int ust_app_add_ctx_channel_glb(struct ltt_ust_session *usess,
 		struct ltt_ust_channel *uchan, struct ltt_ust_context *uctx);
 void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app);
 void ust_app_global_update_all(struct ltt_ust_session *usess);
+void ust_app_global_update_tokens(struct ust_app *app);
+void ust_app_global_update_all_tokens(void);
 
 void ust_app_clean_list(void);
 int ust_app_ht_alloc(void);
@@ -454,6 +470,9 @@ void ust_app_global_update(struct ltt_ust_session *usess, struct ust_app *app)
 {}
 static inline
 void ust_app_global_update_tokens(struct ust_app *app)
+{}
+static inline
+void ust_app_global_update_all_tokens(void)
 {}
 static inline
 int ust_app_setup_trigger_group(struct ust_app *app)
