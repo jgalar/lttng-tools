@@ -2454,20 +2454,22 @@ int handle_notification_thread_command_unregister_trigger(
 		}
 	}
 
-	/*
-	 * Remove and release the client list from
-	 * notification_trigger_clients_ht.
-	 */
-	client_list = get_client_list_from_condition(state, condition);
-	assert(client_list);
+	if (lttng_action_get_type(action) == LTTNG_ACTION_TYPE_NOTIFY) {
+		/*
+		 * Remove and release the client list from
+		 * notification_trigger_clients_ht.
+		 */
+		client_list = get_client_list_from_condition(state, condition);
+		assert(client_list);
 
-	cds_list_for_each_entry_safe(client_list_element, tmp,
-			&client_list->list, node) {
-		free(client_list_element);
+		cds_list_for_each_entry_safe(client_list_element, tmp,
+				&client_list->list, node) {
+			free(client_list_element);
+		}
+		cds_lfht_del(state->notification_trigger_clients_ht,
+				&client_list->notification_trigger_ht_node);
+		call_rcu(&client_list->rcu_node, free_notification_client_list_rcu);
 	}
-	cds_lfht_del(state->notification_trigger_clients_ht,
-			&client_list->notification_trigger_ht_node);
-	call_rcu(&client_list->rcu_node, free_notification_client_list_rcu);
 
 	/* Remove trigger from triggers_ht. */
 	trigger_ht_element = caa_container_of(triggers_ht_node,
