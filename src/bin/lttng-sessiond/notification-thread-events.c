@@ -2353,7 +2353,7 @@ int handle_notification_thread_command_unregister_trigger(
 	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
 	struct lttng_condition *condition = lttng_trigger_get_condition(
 			trigger);
-	struct lttng_action *action;
+	struct lttng_action *action = lttng_trigger_get_action(trigger);
 	enum lttng_error_code cmd_reply;
 
 	rcu_read_lock();
@@ -2380,14 +2380,23 @@ int handle_notification_thread_command_unregister_trigger(
 				&trigger_list->list, node) {
 			/* TODO: check that the actions is also identical,
 			 * aka use lttng_trigger_equal if it exists.
+			 * TODO move to trigger is equal.
 			 */
 			const struct lttng_condition *current_condition =
 					lttng_trigger_get_const_condition(
 						trigger_element->trigger);
+			const struct lttng_action *current_action =
+					lttng_trigger_get_const_action(
+						trigger_element->trigger);
 
 			assert(current_condition);
+			assert(current_action);
 			if (!lttng_condition_is_equal(condition,
 					current_condition)) {
+				continue;
+			}
+			if (!lttng_action_is_equal(action,
+					current_action)) {
 				continue;
 			}
 
