@@ -2378,6 +2378,9 @@ int handle_notification_thread_command_unregister_trigger(
 
 		cds_list_for_each_entry_safe(trigger_element, tmp,
 				&trigger_list->list, node) {
+			/* TODO: check that the actions is also identical,
+			 * aka use lttng_trigger_equal if it exists.
+			 */
 			const struct lttng_condition *current_condition =
 					lttng_trigger_get_const_condition(
 						trigger_element->trigger);

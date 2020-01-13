@@ -23,6 +23,8 @@ struct notification_thread_handle *notification_thread_handle;
 
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
 
+struct lttng_ht *registered_ust_event_rule = NULL;
+
 struct lttng_kernel_tracer_version kernel_tracer_version;
 struct lttng_kernel_tracer_abi_version kernel_tracer_abi_version;
 

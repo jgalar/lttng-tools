@@ -278,6 +278,7 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	 *	- consumerd (32-bit user space) channel monitor pipe,
 	 *	- consumerd (64-bit user space) channel monitor pipe,
 	 *	- consumerd (kernel) channel monitor pipe.
+	 *	- kernel trigger event pipe,
 	 */
 	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
 	if (ret < 0) {
