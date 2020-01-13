@@ -230,6 +230,7 @@ struct notification_thread_state {
 	struct cds_lfht *sessions_ht;
 	struct cds_lfht *triggers_ht;
 	struct cds_lfht *triggers_by_name_ht;
+	struct cds_lfht *trigger_tokens_ht;
 	struct {
 		uint64_t token_generator;
 		uint64_t name_offset;

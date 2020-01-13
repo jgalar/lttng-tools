@@ -373,6 +373,10 @@ void fini_thread_state(struct notification_thread_state *state)
 		ret = cds_lfht_destroy(state->triggers_by_name_ht, NULL);
 		assert(!ret);
 	}
+	if (state->trigger_tokens_ht) {
+		ret = cds_lfht_destroy(state->trigger_tokens_ht, NULL);
+		assert(!ret);
+	}
 	/*
 	 * Must be destroyed after all channels have been destroyed.
 	 * See comment in struct lttng_session_trigger_list.
@@ -493,6 +497,11 @@ int init_thread_state(struct notification_thread_handle *handle,
 		goto error;
 	}
 
+	state->trigger_tokens_ht = cds_lfht_new(DEFAULT_HT_SIZE,
+			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
+	if (!state->trigger_tokens_ht) {
+		goto error;
+	}
 	state->executor = action_executor_create(handle);
 	if (!state->executor) {
 		goto error;
