@@ -112,6 +112,17 @@ struct ust_app_event {
 	struct lttng_event_exclusion *exclusion;
 };
 
+struct ust_app_token_event_rule {
+	int enabled;
+	int handle;
+	struct lttng_ust_object_data *obj;
+	struct lttng_event_rule *event_rule;
+	uint64_t token;
+	struct lttng_ht_node_u64 node;
+	struct lttng_filter_bytecode *filter;
+	struct lttng_event_exclusion *exclusion;
+};
+
 struct ust_app_stream {
 	int handle;
 	char pathname[PATH_MAX];
@@ -299,6 +310,7 @@ struct ust_app {
 		struct lttng_ust_object_data *handle;
 		struct lttng_pipe *trigger_event_pipe;
 	} token_communication;
+	struct lttng_ht *tokens_ht;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
