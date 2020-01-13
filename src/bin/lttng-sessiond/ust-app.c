@@ -922,7 +922,7 @@ void delete_ust_app(struct ust_app *app)
 	ht_cleanup_push(app->ust_objd);
 
 
-	ustctl_release_object(sock, app->trigger.handle);
+	ustctl_release_object(sock, app->token_communication.handle);
 
 	/*
 	 * Wait until we have deleted the application from the sock hash table
@@ -943,7 +943,7 @@ void delete_ust_app(struct ust_app *app)
 	}
 	lttng_fd_put(LTTNG_FD_APPS, 1);
 
-	lttng_pipe_close(app->trigger.trigger_event_pipe);
+	lttng_pipe_close(app->token_communication.trigger_event_pipe);
 
 	DBG2("UST app pid %d deleted", app->pid);
 	free(app);
@@ -3353,7 +3353,7 @@ struct ust_app *ust_app_create(struct ust_register_msg *msg, int sock)
 		goto error;
 	}
 
-	lta->trigger.trigger_event_pipe = trigger_event_source_pipe;
+	lta->token_communication.trigger_event_pipe = trigger_event_source_pipe;
 
 	lta->ppid = msg->ppid;
 	lta->uid = msg->uid;
@@ -3475,7 +3475,7 @@ int ust_app_setup_trigger_group(struct ust_app *app)
 	assert(app);
 
 	/* Get the write side of the pipe */
-	writefd = lttng_pipe_get_writefd(app->trigger.trigger_event_pipe);
+	writefd = lttng_pipe_get_writefd(app->token_communication.trigger_event_pipe);
 
 	pthread_mutex_lock(&app->sock_lock);
 	ret = ustctl_create_trigger_group(app->sock, writefd, &group);
@@ -3485,10 +3485,10 @@ int ust_app_setup_trigger_group(struct ust_app *app)
 		goto end;
 	}
 
-	app->trigger.handle = group;
+	app->token_communication.handle = group;
 
 	lttng_ret = notification_thread_command_add_application(
-			notification_thread_handle, app->trigger.trigger_event_pipe);
+			notification_thread_handle, app->token_communication.trigger_event_pipe);
 	if (lttng_ret != LTTNG_OK) {
 		/* TODO: error */
 		ret = - 1;

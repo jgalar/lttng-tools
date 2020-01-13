@@ -298,7 +298,7 @@ struct ust_app {
 	struct {
 		struct lttng_ust_object_data *handle;
 		struct lttng_pipe *trigger_event_pipe;
-	} trigger;
+	} token_communication;
 };
 
 #ifdef HAVE_LIBLTTNG_UST_CTL
