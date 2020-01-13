@@ -212,6 +212,8 @@ struct notification_thread_state {
 	struct cds_lfht *channels_ht;
 	struct cds_lfht *sessions_ht;
 	struct cds_lfht *triggers_ht;
+	struct cds_lfht *trigger_tokens_ht;
+	uint64_t token_generator;
 };
 
 /* notification_thread_data takes ownership of the channel monitor pipes. */
