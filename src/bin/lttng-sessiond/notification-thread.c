@@ -550,7 +550,11 @@ int handle_trigger_event_pipe(int fd, uint32_t revents,
 	if (ret != sizeof(notification)) {
 		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
 				fd);
-		ret = -1;
+		/* TODO: Should this error out completly.
+		 * This can happen when an app is killed as of today
+		 * ret = -1 cause the whole thread to die and fuck up
+		 * everything.
+		 */
 		goto end;
 	}
 
