@@ -3635,6 +3635,7 @@ int handle_notification_thread_channel_sample(
 		action = lttng_trigger_get_const_action(trigger);
 
 		/* Notify actions are the only type currently supported. */
+		/* TODO support other type of action */
 		assert(lttng_action_get_type_const(action) ==
 				LTTNG_ACTION_TYPE_NOTIFY);
 
