@@ -65,4 +65,7 @@ LTTNG_HIDDEN
 bool lttng_action_is_equal(const struct lttng_action *a,
 		const struct lttng_action *b);
 
+LTTNG_HIDDEN
+const char* lttng_action_type_string(enum lttng_action_type action_type);
+
 #endif /* LTTNG_ACTION_INTERNAL_H */
