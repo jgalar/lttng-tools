@@ -60,6 +60,7 @@ struct notification_thread_handle {
 		/* List of notification_event_trigger_source_element */
 		struct cds_list_head list;
 		pthread_mutex_t lock;
+		int kernel_tracer;
 	} event_trigger_sources;
 	/* Used to wait for the launch of the notification thread. */
 	sem_t ready;

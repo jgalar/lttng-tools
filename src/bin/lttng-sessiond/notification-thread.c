@@ -141,6 +141,7 @@ struct notification_thread_handle *notification_thread_handle_create(
 	if (ret) {
 		goto error;
 	}
+	handle->event_trigger_sources.kernel_tracer = -1;
 end:
 	return handle;
 error:
@@ -524,43 +525,34 @@ end:
 	return ret;
 }
 
-static
-int handle_trigger_event_pipe(int fd, uint32_t revents,
+static int handle_trigger_event_pipe(int fd,
+		uint32_t revents,
 		struct notification_thread_handle *handle,
 		struct notification_thread_state *state)
 {
 	int ret = 0;
-	struct lttng_ust_trigger_notification notification;
+	enum lttng_domain_type domain;
 
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 		ret = lttng_poll_del(&state->events, fd);
 		if (ret) {
-			ERR("[notification-thread] Failed to remove consumer monitoring pipe from poll set");
+			ERR("[notification-thread] Failed to remove event monitoring pipe from poll set");
 		}
 		goto end;
 	}
 
-	/*
-	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
-	 * ensuring that read/write of sampling messages are atomic.
-	 */
-	/* TODO: should we read as much as we can ? EWOULDBLOCK? */
-
-	ret = lttng_read(fd, &notification, sizeof(notification));
-	if (ret != sizeof(notification)) {
-		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
-				fd);
-		/* TODO: Should this error out completly.
-		 * This can happen when an app is killed as of today
-		 * ret = -1 cause the whole thread to die and fuck up
-		 * everything.
-		 */
-		goto end;
+	if (fd == handle->event_trigger_sources.kernel_tracer) {
+		domain = LTTNG_DOMAIN_KERNEL;
+	} else {
+		domain = LTTNG_DOMAIN_UST;
 	}
 
-	ERR("JORAJ: message from event source %d value:%" PRIu64, fd, notification.id);
-	/* Success */
-	ret = 0;
+	ret = handle_notification_thread_event(state, fd, domain);
+	if (ret) {
+		ERR("[notification-thread] Consumer sample handling error occurred");
+		ret = -1;
+		goto end;
+	}
 end:
 	return ret;
 }
@@ -573,6 +565,9 @@ static bool fd_is_event_source(struct notification_thread_handle *handle, int fd
 		if (source_element->fd != fd) {
 			continue;
 		}
+		return true;
+	}
+	if (fd == handle->event_trigger_sources.kernel_tracer) {
 		return true;
 	}
 	return false;
