@@ -299,3 +299,49 @@ enum lttng_action_status lttng_action_group_add_action(
 end:
 	return status;
 }
+
+LTTNG_HIDDEN
+enum lttng_action_status lttng_action_group_get_count(
+		const struct lttng_action *group, unsigned int *count)
+{
+	struct lttng_action_group *action_group;
+	enum lttng_action_status status = LTTNG_ACTION_STATUS_OK;
+
+	if (!group || (lttng_action_get_type_const(group) !=
+				      LTTNG_ACTION_TYPE_GROUP)) {
+		status = LTTNG_ACTION_STATUS_INVALID;
+		*count = 0;
+		goto end;
+	}
+
+	action_group = action_group_from_action(group);
+
+
+	*count = action_group->n_elements;
+end:
+	return status;
+}
+
+LTTNG_HIDDEN
+const struct lttng_action *lttng_action_group_get_at_index(
+		const struct lttng_action *group,
+		unsigned int index)
+{
+	struct lttng_action_group *action_group;
+	const struct lttng_action *action = NULL;
+
+	if (!group || (lttng_action_get_type_const(group) !=
+				      LTTNG_ACTION_TYPE_GROUP)) {
+		goto end;
+	}
+
+	action_group = action_group_from_action(group);
+
+	if (index >= action_group->n_elements) {
+		goto end;
+	}
+
+	action = action_group->elements[index];
+end:
+	return action;
+}

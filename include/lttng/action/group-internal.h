@@ -36,4 +36,14 @@ extern ssize_t lttng_action_group_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_action **group);
 
+
+LTTNG_HIDDEN
+enum lttng_action_status lttng_action_group_get_count(
+		const struct lttng_action *group, unsigned int *count);
+
+LTTNG_HIDDEN
+const struct lttng_action *lttng_action_group_get_at_index(
+		const struct lttng_action *group,
+		unsigned int index);
+
 #endif /* LTTNG_ACTION_GROUP_INTERNAL_H */
