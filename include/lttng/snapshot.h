@@ -65,6 +65,36 @@ int lttng_snapshot_output_set_size(uint64_t size,
 /* Set the snapshot name. */
 int lttng_snapshot_output_set_name(const char *name,
 		struct lttng_snapshot_output *output);
+
+/*
+ * Set the output destination to be a path on the local filesystem.
+ *
+ * The path must be absolute.  It can optionally begin with `file://`.
+ */
+int lttng_snapshot_output_set_local_path(const char *path,
+		struct lttng_snapshot_output *output);
+
+/*
+ * Set the output destination to be the network from a combined control/data
+ * URL.
+ *
+ * `url` must start with `net://` or `net6://`.
+ */
+int lttng_snapshot_output_set_network_url(const char *url,
+		struct lttng_snapshot_output *output);
+
+/*
+ * Set the output destination to be the network using separate URLs for control
+ * and data.
+ *
+ * `ctrl_url` and `data_url` must start with `tcp://` or `tcp6://`.
+ */
+int lttng_snapshot_output_set_network_urls(
+		const char *ctrl_url, const char *data_url,
+		struct lttng_snapshot_output *output);
+
+// Deprecated?
+
 /* Set the control URL. Local and remote URL are supported. */
 int lttng_snapshot_output_set_ctrl_url(const char *url,
 		struct lttng_snapshot_output *output);

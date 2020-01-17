@@ -38,6 +38,11 @@ enum {
 	OPT_USERSPACE_PROBE,
 	OPT_SYSCALL,
 	OPT_TRACEPOINT,
+
+	OPT_NAME,
+	OPT_MAX_SIZE,
+	OPT_DATA_URL,
+	OPT_CTRL_URL,
 };
 
 static const struct argpar_opt_descr event_rule_opt_descrs[] = {
@@ -768,6 +773,386 @@ struct lttng_action *handle_action_notify(int *argc, const char ***argv)
 	return lttng_action_notify_create();
 }
 
+static const struct argpar_opt_descr no_opt_descrs[] = {
+	ARGPAR_OPT_DESCR_SENTINEL
+};
+
+/*
+ * Generic handler for a kind of action that takes a session name as its sole
+ * argument.
+ */
+
+static
+struct lttng_action *handle_action_simple_session(
+		int *argc, const char ***argv,
+		struct lttng_action *(*create_action_cb)(void),
+		enum lttng_action_status (*set_session_name_cb)(struct lttng_action *, const char *),
+		const char *action_name)
+{
+	struct lttng_action *action = NULL;
+	struct argpar_state *state = NULL;
+	struct argpar_item *item = NULL;
+	const char *session_name_arg = NULL;
+	char *error = NULL;
+	enum lttng_action_status action_status;
+
+	state = argpar_state_create(*argc, *argv, no_opt_descrs);
+	if (!state) {
+		fprintf(stderr, "Failed to allocate an argpar state.\n");
+		goto error;
+	}
+
+	while (true) {
+		enum argpar_state_parse_next_status status;
+		struct argpar_item_non_opt *item_non_opt;
+
+		ARGPAR_ITEM_DESTROY_AND_RESET(item);
+		status = argpar_state_parse_next(state, &item, &error);
+		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
+			fprintf(stderr, "Internal argpar error: %s\n", error);
+			goto error;
+		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
+			/* Just stop parsing here. */
+			break;
+		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_END) {
+			break;
+		}
+
+		assert(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+		assert(item->type == ARGPAR_ITEM_TYPE_NON_OPT);
+
+		item_non_opt = (struct argpar_item_non_opt *) item;
+
+		switch (item_non_opt->non_opt_index) {
+		case 0:
+			session_name_arg = item_non_opt->arg;
+			break;
+		default:
+			fprintf(stderr, "Unexpected argument `%s`.\n",
+				item_non_opt->arg);
+			goto error;
+		}
+	}
+
+	*argc -= argpar_state_get_ingested_orig_args(state);
+	*argv += argpar_state_get_ingested_orig_args(state);
+
+	if (!session_name_arg) {
+		fprintf(stderr, "Missing session name.\n");
+		goto error;
+	}
+
+	action = create_action_cb();
+	if (!action) {
+		fprintf(stderr,
+			"Failed to allocate %s session action.\n", action_name);
+		goto error;
+	}
+
+	action_status = set_session_name_cb(action, session_name_arg);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		fprintf(stderr,
+			"Failed to set action %s session's session name.\n",
+			action_name);
+		goto error;
+	}
+
+	goto end;
+
+error:
+	lttng_action_destroy(action);
+	action = NULL;
+
+end:
+	return action;
+}
+
+static
+struct lttng_action *handle_action_start_session(int *argc,
+		const char ***argv)
+{
+	return handle_action_simple_session(argc, argv,
+		lttng_action_start_session_create,
+		lttng_action_start_session_set_session_name,
+		"start");
+}
+
+static
+struct lttng_action *handle_action_stop_session(int *argc,
+		const char ***argv)
+{
+	return handle_action_simple_session(argc, argv,
+		lttng_action_stop_session_create,
+		lttng_action_stop_session_set_session_name,
+		"stop");
+}
+
+static
+struct lttng_action *handle_action_rotate_session(int *argc,
+		const char ***argv)
+{
+	return handle_action_simple_session(argc, argv,
+		lttng_action_rotate_session_create,
+		lttng_action_rotate_session_set_session_name,
+		"rotate");
+}
+
+static const struct argpar_opt_descr snapshot_action_opt_descrs[] = {
+	{ OPT_NAME, 'n', "name", true },
+	{ OPT_MAX_SIZE, 'm', "max-size", true },
+	{ OPT_CTRL_URL, '\0', "ctrl-url", true },
+	{ OPT_DATA_URL, '\0', "data-url", true },
+	ARGPAR_OPT_DESCR_SENTINEL
+};
+
+static
+struct lttng_action *handle_action_snapshot_session(int *argc,
+		const char ***argv)
+{
+	struct lttng_action *action = NULL;
+	struct argpar_state *state = NULL;
+	struct argpar_item *item = NULL;
+	const char *session_name_arg = NULL;
+	char *snapshot_name_arg = NULL;
+	char *ctrl_url_arg = NULL;
+	char *data_url_arg = NULL;
+	char *max_size_arg = NULL;
+	const char *url_arg = NULL;
+	char *error = NULL;
+	enum lttng_action_status action_status;
+	struct lttng_snapshot_output *snapshot_output = NULL;
+	int ret;
+
+	state = argpar_state_create(*argc, *argv, snapshot_action_opt_descrs);
+	if (!state) {
+		fprintf(stderr, "Failed to allocate an argpar state.\n");
+		goto error;
+	}
+
+	while (true) {
+		enum argpar_state_parse_next_status status;
+
+		ARGPAR_ITEM_DESTROY_AND_RESET(item);
+		status = argpar_state_parse_next(state, &item, &error);
+		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
+			fprintf(stderr, "Error: %s\n", error);
+			goto error;
+		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
+			/* Just stop parsing here. */
+			break;
+		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_END) {
+			break;
+		}
+
+		assert(status == ARGPAR_STATE_PARSE_NEXT_STATUS_OK);
+
+		if (item->type == ARGPAR_ITEM_TYPE_OPT) {
+			struct argpar_item_opt *item_opt =
+				(struct argpar_item_opt *) item;
+
+			switch (item_opt->descr->id) {
+			case OPT_NAME:
+				if (!assign_string(&snapshot_name_arg, item_opt->arg, "--name/-n")) {
+					goto error;
+				}
+				break;
+
+			case OPT_MAX_SIZE:
+				if (!assign_string(&max_size_arg, item_opt->arg, "--max-size/-m")) {
+					goto error;
+				}
+				break;
+
+			case OPT_CTRL_URL:
+				if (!assign_string(&ctrl_url_arg, item_opt->arg, "--ctrl-url")) {
+					goto error;
+				}
+				break;
+
+			case OPT_DATA_URL:
+				if (!assign_string(&data_url_arg, item_opt->arg, "--data-url")) {
+					goto error;
+				}
+				break;
+
+			default:
+				abort();
+			}
+		} else {
+			struct argpar_item_non_opt *item_non_opt;
+
+			assert(item->type == ARGPAR_ITEM_TYPE_NON_OPT);
+
+			item_non_opt = (struct argpar_item_non_opt *) item;
+
+			switch (item_non_opt->non_opt_index) {
+			case 0:
+				session_name_arg = item_non_opt->arg;
+				break;
+
+			// FIXME: the use of a non-option argument for this is to
+			// follow the syntax of `lttng snapshot record`.  But otherwise,
+			// I think an option argument would be best.
+			case 1:
+				url_arg = item_non_opt->arg;
+				break;
+
+			default:
+				fprintf(stderr, "Unexpected argument `%s`.\n",
+					item_non_opt->arg);
+				goto error;
+			}
+		}
+	}
+
+	*argc -= argpar_state_get_ingested_orig_args(state);
+	*argv += argpar_state_get_ingested_orig_args(state);
+
+	if (!session_name_arg) {
+		fprintf(stderr, "Missing session name.\n");
+		goto error;
+	}
+
+	/* --ctrl-url and --data-url must come in pair. */
+	if (ctrl_url_arg && !data_url_arg) {
+		fprintf(stderr, "--ctrl-url is specified, but --data-url is missing.\n");
+		goto error;
+	}
+
+	if (!ctrl_url_arg && data_url_arg) {
+		fprintf(stderr, "--data-url is specified, but --ctrl-url is missing.\n");
+		goto error;
+	}
+
+	/* --ctrl-url/--data-url and the non-option URL are mutually exclusive. */
+	if (ctrl_url_arg && url_arg) {
+		fprintf(stderr, "Both --ctrl-url/--data-url and the non-option URL argument "
+				"can't be used together.\n");
+		goto error;
+	}
+
+	/*
+	 * Did the user specify an option that implies using a
+	 * custom/unregistered output?
+	 */
+	if (url_arg || ctrl_url_arg) {
+		snapshot_output = lttng_snapshot_output_create();
+		if (!snapshot_output) {
+			fprintf(stderr, "Failed to allocate a snapshot output.\n");
+			goto error;
+		}
+	}
+
+	action = lttng_action_snapshot_session_create();
+	if (!action) {
+		fprintf(stderr,
+			"Failed to allocate snapshot session action.\n");
+		goto error;
+	}
+
+	action_status = lttng_action_snapshot_session_set_session_name(
+		action, session_name_arg);
+	if (action_status != LTTNG_ACTION_STATUS_OK) {
+		fprintf(stderr,
+			"Failed to set action snapshot session's session name.\n");
+		goto error;
+	}
+
+	if (snapshot_name_arg) {
+		if (!snapshot_output) {
+			fprintf(stderr, "Can't provide a snapshot output name without a snapshot output destination.\n");
+			goto error;
+		}
+
+		ret = lttng_snapshot_output_set_name(snapshot_name_arg, snapshot_output);
+		if (ret != 0) {
+			fprintf(stderr, "Failed to set name of snapshot output.\n");
+			goto error;
+		}
+	}
+
+	if (max_size_arg) {
+		uint64_t max_size;
+
+		if (!snapshot_output) {
+			fprintf(stderr, "Can't provide a snapshot output max size without a snapshot output destination.\n");
+			goto error;
+		}
+
+		ret = utils_parse_size_suffix(max_size_arg, &max_size);
+		if (ret != 0) {
+			fprintf(stderr, "Failed to parse `%s` as a size.\n", max_size_arg);
+			goto error;
+		}
+
+		ret = lttng_snapshot_output_set_size(max_size, snapshot_output);
+		if (ret != 0) {
+			fprintf(stderr, "Failed to set snapshot output's max size.\n");
+			goto error;
+		}
+	}
+
+	if (url_arg) {
+		/* One argument form, either net:// / net6:// or a local file path. */
+
+		if (strncmp(url_arg, "net://", strlen("net://")) == 0 ||
+				strncmp(url_arg, "net6://", strlen("net6://")) == 0) {
+			ret = lttng_snapshot_output_set_network_url(
+				url_arg, snapshot_output);
+			if (ret != 0) {
+				fprintf(stderr, "Failed to parse %s as a network URL.\n", url_arg);
+				goto error;
+			}
+		} else {
+			ret = lttng_snapshot_output_set_local_path(
+				url_arg, snapshot_output);
+			if (ret != 0) {
+				fprintf(stderr, "Failed to parse %s as a local path.\n", url_arg);
+				goto error;
+			}
+		}
+	}
+
+	if (ctrl_url_arg) {
+		/*
+		 * Two argument form, network output with separate control and
+		 * data URLs.
+		 */
+		ret = lttng_snapshot_output_set_network_urls(
+			ctrl_url_arg, data_url_arg, snapshot_output);
+		if (ret != 0) {
+			fprintf(stderr, "Failed to parse `%s` and `%s` as control and data URLs.\n",
+				ctrl_url_arg, data_url_arg);
+			goto error;
+		}
+	}
+
+	if (snapshot_output) {
+		action_status = lttng_action_snapshot_session_set_output(
+			action, snapshot_output);
+		if (action_status != LTTNG_ACTION_STATUS_OK) {
+			fprintf(stderr, "Failed to set snapshot session action's output.\n");
+			goto error;
+		}
+
+		/* Ownership of `snapshot_output` has been transferred to the action. */
+		snapshot_output = NULL;
+	}
+
+	goto end;
+
+error:
+	lttng_action_destroy(action);
+	action = NULL;
+
+end:
+	free(snapshot_name_arg);
+	free(ctrl_url_arg);
+	free(data_url_arg);
+	free(snapshot_output);
+	return action;
+}
+
 struct action_descr {
 	const char *name;
 	struct lttng_action *(*handler) (int *argc, const char ***argv);
@@ -776,6 +1161,10 @@ struct action_descr {
 static const
 struct action_descr action_descrs[] = {
 	{ "notify", handle_action_notify },
+	{ "start-session", handle_action_start_session },
+	{ "stop-session", handle_action_stop_session },
+	{ "rotate-session", handle_action_rotate_session },
+	{ "snapshot-session", handle_action_snapshot_session },
 };
 
 static

@@ -70,6 +70,7 @@ libcommon_la_SOURCES = \
 	readwrite.c readwrite.h \
 	runas.c runas.h \
 	session-descriptor.c \
+	snapshot.c snapshot.h \
 	time.c \
 	trace-chunk.c trace-chunk.h \
 	trace-chunk-registry.h \
