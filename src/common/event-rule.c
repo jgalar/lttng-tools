@@ -34,6 +34,30 @@ enum lttng_event_rule_type lttng_event_rule_get_type(
 	return event_rule ? event_rule->type : LTTNG_EVENT_RULE_TYPE_UNKNOWN;
 }
 
+LTTNG_HIDDEN
+enum lttng_domain_type lttng_event_rule_get_domain_type(
+		const struct lttng_event_rule *event_rule)
+{
+	enum lttng_domain_type domain_type;
+
+	switch (lttng_event_rule_get_type(event_rule)) {
+	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
+		(void) lttng_event_rule_tracepoint_get_domain_type(event_rule, &domain_type);
+		break;
+	case LTTNG_EVENT_RULE_TYPE_SYSCALL:
+	case LTTNG_EVENT_RULE_TYPE_KPROBE:
+	case LTTNG_EVENT_RULE_TYPE_KRETPROBE:
+	case LTTNG_EVENT_RULE_TYPE_UPROBE:
+		domain_type = LTTNG_DOMAIN_KERNEL;
+		break;
+	case LTTNG_EVENT_RULE_TYPE_UNKNOWN:
+		domain_type = LTTNG_DOMAIN_NONE;
+		break;
+	}
+
+	return domain_type;
+}
+
 static
 void lttng_event_rule_release(struct urcu_ref *ref)
 {

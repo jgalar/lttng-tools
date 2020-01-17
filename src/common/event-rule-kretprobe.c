@@ -103,7 +103,7 @@ enum lttng_event_rule_status lttng_event_rule_kretprobe_set_name(
 }
 
 enum lttng_event_rule_status lttng_event_rule_kretprobe_get_name(
-		const struct lttng_event_rule *rule, const char *name)
+		const struct lttng_event_rule *rule, const char **name)
 {
 	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
 }
@@ -115,7 +115,28 @@ enum lttng_event_rule_status lttng_event_rule_kretprobe_set_filter(
 }
 
 enum lttng_event_rule_status lttng_event_rule_kretprobe_get_filter(
-		const struct lttng_event_rule *rule, const char *expression)
+		const struct lttng_event_rule *rule, const char **expression)
 {
 	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+}
+
+LTTNG_HIDDEN
+uint64_t lttng_event_rule_kretprobe_get_address(
+		const struct lttng_event_rule *rule)
+{
+	assert("Not implemented" && 0);
+}
+
+LTTNG_HIDDEN
+uint64_t lttng_event_rule_kretprobe_get_offset(
+		const struct lttng_event_rule *rule)
+{
+	assert("Not implemented" && 0);
+}
+
+LTTNG_HIDDEN
+const char *lttng_event_rule_kretprobe_get_symbol_name(
+		const struct lttng_event_rule *rule)
+{
+	assert("Not implemented" && 0);
 }

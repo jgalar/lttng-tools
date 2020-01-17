@@ -150,6 +150,24 @@ struct lttng_kernel_event {
 	} u;
 } LTTNG_PACKED;
 
+#define LTTNG_KERNEL_TRIGGER_PADDING1	16
+#define LTTNG_KERNEL_TRIGGER_PADDING2	LTTNG_KERNEL_SYM_NAME_LEN + 32
+struct lttng_kernel_trigger {
+	uint64_t id;
+	char name[LTTNG_KERNEL_SYM_NAME_LEN];	/* event name */
+	enum lttng_kernel_instrumentation instrumentation;
+	char padding[LTTNG_KERNEL_TRIGGER_PADDING1];
+
+	/* Per instrumentation type configuration */
+	union {
+		struct lttng_kernel_kretprobe kretprobe;
+		struct lttng_kernel_kprobe kprobe;
+		struct lttng_kernel_uprobe uprobe;
+		struct lttng_kernel_function ftrace;
+		char padding[LTTNG_KERNEL_TRIGGER_PADDING2];
+	} u;
+} LTTNG_PACKED;
+
 struct lttng_kernel_tracer_version {
 	uint32_t major;
 	uint32_t minor;

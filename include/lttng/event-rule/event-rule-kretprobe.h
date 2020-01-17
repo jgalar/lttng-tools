@@ -63,7 +63,7 @@ extern enum lttng_event_rule_status lttng_event_rule_kretprobe_set_name(
  * or LTTNG_EVENT_RULE_STATUS_UNSET if a name was not set prior to this call.
  */
 extern enum lttng_event_rule_status lttng_event_rule_kretprobe_get_name(
-		const struct lttng_event_rule *rule, const char *name);
+		const struct lttng_event_rule *rule, const char **name);
 
 /*
  * Set the filter expression of a kretprobe event rule.
@@ -89,7 +89,7 @@ extern enum lttng_event_rule_status lttng_event_rule_kretprobe_set_filter(
  * was not set prior to this call.
  */
 extern enum lttng_event_rule_status lttng_event_rule_kretprobe_get_filter(
-		const struct lttng_event_rule *rule, const char *expression);
+		const struct lttng_event_rule *rule, const char **expression);
 
 #ifdef __cplusplus
 }

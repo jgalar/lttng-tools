@@ -26,6 +26,12 @@ int kernctl_disable(int fd);
 int kernctl_start_session(int fd);
 int kernctl_stop_session(int fd);
 
+int kernctl_create_trigger_group(int fd);
+
+/* Apply on trigger_group FD*/
+int kernctl_create_trigger_group_notification_fd(int fd);
+int kernctl_create_trigger(int fd, struct lttng_kernel_trigger *trigger);
+
 /* Apply on event FD */
 int kernctl_filter(int fd, struct lttng_filter_bytecode *filter);
 int kernctl_add_callsite(int fd, struct lttng_kernel_event_callsite *callsite);

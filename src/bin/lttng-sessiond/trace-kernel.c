@@ -15,6 +15,16 @@
 #include <lttng/lttng-error.h>
 #include <lttng/userspace-probe.h>
 #include <lttng/userspace-probe-internal.h>
+#include <lttng/event-rule/event-rule.h>
+#include <lttng/event-rule/event-rule-internal.h>
+#include <lttng/event-rule/event-rule-kprobe.h>
+#include <lttng/event-rule/event-rule-kprobe-internal.h>
+#include <lttng/event-rule/event-rule-kretprobe.h>
+#include <lttng/event-rule/event-rule-kretprobe-internal.h>
+#include <lttng/event-rule/event-rule-syscall.h>
+#include <lttng/event-rule/event-rule-syscall-internal.h>
+#include <lttng/event-rule/event-rule-tracepoint.h>
+#include <lttng/event-rule/event-rule-tracepoint-internal.h>
 
 #include <common/common.h>
 #include <common/defaults.h>
@@ -125,6 +135,29 @@ struct ltt_kernel_event *trace_kernel_get_event_by_name(
 		DBG("Found event %s for channel %s", name,
 			channel->channel->name);
 		return ev;
+	} else {
+		return NULL;
+	}
+}
+
+struct ltt_kernel_token_event_rule *trace_kernel_find_trigger_by_token(
+		struct ltt_kernel_token_event_rule_list *list,
+		uint64_t token)
+{
+	struct ltt_kernel_token_event_rule *token_event_rule;
+	int found = 0;
+
+	assert(list);
+
+	cds_list_for_each_entry(token_event_rule, &list->head, list) {
+		if (token_event_rule->token == token) {
+			found = 1;
+		}
+		break;
+	}
+	if (found) {
+		DBG("Found token event rule %" PRIu64, token);
+		return token_event_rule;
 	} else {
 		return NULL;
 	}
@@ -479,6 +512,110 @@ error:
 }
 
 /*
+ * Allocate and initialize a kernel token event rule.
+ *
+ * Return pointer to structure or NULL.
+ */
+enum lttng_error_code trace_kernel_create_token_event_rule(
+		struct lttng_event_rule *event_rule,
+		uint64_t token,
+		struct ltt_kernel_token_event_rule **kernel_token_event_rule)
+{
+	enum lttng_error_code ret = LTTNG_OK;
+	struct ltt_kernel_token_event_rule *local_kernel_token_event_rule;
+
+	assert(kernel_token_event_rule);
+
+	local_kernel_token_event_rule = zmalloc(sizeof(struct ltt_kernel_token_event_rule));
+	if (local_kernel_token_event_rule == NULL) {
+		PERROR("Failed to allocate ltt_kernel_token_event_rule structure");
+		ret = LTTNG_ERR_NOMEM;
+		goto error;
+	}
+
+	local_kernel_token_event_rule->fd = -1;
+	local_kernel_token_event_rule->enabled = 1;
+	local_kernel_token_event_rule->token = token;
+
+	/* Get the reference of the event rule */
+	if (!lttng_event_rule_get(event_rule)) {
+		assert(0);
+	}
+
+	local_kernel_token_event_rule->event_rule = event_rule;
+
+	DBG3("[trace] Kernel token event rule %" PRIu64 " allocated", local_kernel_token_event_rule->token);
+error:
+	*kernel_token_event_rule = local_kernel_token_event_rule;
+	return ret;
+	
+}
+
+/*
+ * Initialize a kernel trigger from an event rule.
+ */
+enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct lttng_event_rule *rule,
+		struct lttng_kernel_trigger *kernel_trigger)
+{
+	enum lttng_error_code ret;
+	enum lttng_event_rule_status;
+	const char *name = NULL;
+
+	/* TODO: do this for now but have disucssion on if this could be the
+	 * responsability of the event_rule itself ala
+	 * "lttng_even_rule_generate_kernel_trigger"
+	 */
+	switch (lttng_event_rule_get_type(rule)) {
+	case LTTNG_EVENT_RULE_TYPE_KPROBE:
+		kernel_trigger->instrumentation = LTTNG_KERNEL_KPROBE;
+		kernel_trigger->u.kprobe.addr = lttng_event_rule_kprobe_get_address(rule);
+		kernel_trigger->u.kprobe.offset = lttng_event_rule_kprobe_get_offset(rule);
+		strncpy(kernel_trigger->u.kprobe.symbol_name,
+				lttng_event_rule_kprobe_get_symbol_name(rule), LTTNG_KERNEL_SYM_NAME_LEN);
+		kernel_trigger->u.kprobe.symbol_name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
+		(void) lttng_event_rule_kprobe_get_name(rule, &name);
+		break;
+	case LTTNG_EVENT_RULE_TYPE_UPROBE:
+	{
+		assert("Not implemented" && 0);
+		break;
+	}
+	case LTTNG_EVENT_RULE_TYPE_KRETPROBE:
+		kernel_trigger->instrumentation = LTTNG_KERNEL_KRETPROBE;
+		kernel_trigger->u.kretprobe.addr = lttng_event_rule_kretprobe_get_address(rule);
+		kernel_trigger->u.kretprobe.offset = lttng_event_rule_kretprobe_get_offset(rule);
+		strncpy(kernel_trigger->u.kretprobe.symbol_name,
+				lttng_event_rule_kretprobe_get_symbol_name(rule), LTTNG_KERNEL_SYM_NAME_LEN);
+		kernel_trigger->u.kretprobe.symbol_name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
+		(void) lttng_event_rule_kretprobe_get_name(rule, &name);
+		break;
+	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
+		/* TODO: assert his is a kernel domain event-rule */
+		kernel_trigger->instrumentation = LTTNG_KERNEL_TRACEPOINT;
+		(void) lttng_event_rule_tracepoint_get_pattern(rule, &name);
+		break;
+	case LTTNG_EVENT_RULE_TYPE_SYSCALL:
+		kernel_trigger->instrumentation = LTTNG_KERNEL_SYSCALL;
+		(void) lttng_event_rule_tracepoint_get_pattern(rule, &name);
+		break;
+	default:
+		ERR("Unknown kernel event rule instrumentation type (%d)", lttng_event_rule_get_type(rule));
+		ret = LTTNG_ERR_INVALID;
+		goto error;
+	}
+
+	/*
+	 * WTF is LTTNG_EVENT_ALL??? and LTTNG_EVENT_FUNTION_ENTRY?????
+	 */
+
+	/* Copy event name */
+	strncpy(kernel_trigger->name, name, LTTNG_KERNEL_SYM_NAME_LEN);
+	kernel_trigger->name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
+
+error:
+	return ret;
+}
+/*
  * Allocate and initialize a kernel metadata.
  *
  * Return pointer to structure or NULL.
@@ -607,6 +744,35 @@ void trace_kernel_destroy_event(struct ltt_kernel_event *event)
 	free(event);
 }
 
+/*
+ * Cleanup kernel event structure.
+ */
+void trace_kernel_destroy_token_event_rule(struct ltt_kernel_token_event_rule *event)
+{
+	/* TODO: review in depth to ensure adequate disposing */
+	assert(event);
+
+	/* Remove from event list */
+	cds_list_del(&event->list);
+
+	if (event->fd >= 0) {
+		int ret;
+
+		DBG("[trace] Closing ,token event rule fd %d", event->fd);
+		/* Close kernel fd */
+		ret = close(event->fd);
+		if (ret) {
+			PERROR("close");
+		}
+	} else {
+		DBG("[trace] Tearing down token event rule (no associated fd)");
+	}
+
+	lttng_event_rule_put(event->event_rule);
+	free(event->filter);
+
+	free(event);
+}
 /*
  * Cleanup kernel context structure.
  */

@@ -97,7 +97,7 @@ enum lttng_event_rule_status lttng_event_rule_syscall_set_pattern(
 }
 
 enum lttng_event_rule_status lttng_event_rule_syscall_get_pattern(
-		const struct lttng_event_rule *rule, const char *pattern)
+		const struct lttng_event_rule *rule, const char **pattern)
 {
 	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
 }

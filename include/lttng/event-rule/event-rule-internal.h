@@ -81,4 +81,8 @@ bool lttng_event_rule_get(struct lttng_event_rule *rule);
 LTTNG_HIDDEN
 void lttng_event_rule_put(struct lttng_event_rule *rule);
 
+LTTNG_HIDDEN
+enum lttng_domain_type lttng_event_rule_get_domain_type(
+		const struct lttng_event_rule *rule);
+
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

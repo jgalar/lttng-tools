@@ -417,6 +417,21 @@ int kernctl_stop_session(int fd)
 			LTTNG_KERNEL_SESSION_STOP);
 }
 
+int kernctl_create_trigger_group(int fd)
+{
+		return LTTNG_IOCTL_NO_CHECK(fd, LTTNG_KERNEL_TRIGGER_GROUP_CREATE);
+}
+
+int kernctl_create_trigger_group_notification_fd(int group_fd)
+{
+		return LTTNG_IOCTL_NO_CHECK(group_fd, LTTNG_KERNEL_TRIGGER_GROUP_NOTIFICATION_FD);
+}
+
+int kernctl_create_trigger(int group_fd, struct lttng_kernel_trigger *trigger)
+{
+		return LTTNG_IOCTL_NO_CHECK(group_fd, LTTNG_KERNEL_TRIGGER_CREATE, trigger);
+}
+
 int kernctl_filter(int fd, struct lttng_filter_bytecode *filter)
 {
 	struct lttng_kernel_filter_bytecode *kb;

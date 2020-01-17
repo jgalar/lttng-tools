@@ -47,4 +47,16 @@ ssize_t lttng_event_rule_kretprobe_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_event_rule **rule);
 
+LTTNG_HIDDEN
+uint64_t lttng_event_rule_kretprobe_get_address(
+		const struct lttng_event_rule *rule);
+
+LTTNG_HIDDEN
+uint64_t lttng_event_rule_kretprobe_get_offset(
+		const struct lttng_event_rule *rule);
+
+LTTNG_HIDDEN
+const char *lttng_event_rule_kretprobe_get_symbol_name(
+		const struct lttng_event_rule *rule);
+
 #endif /* LTTNG_EVENT_RULE_KRETPROBE_INTERNAL_H */

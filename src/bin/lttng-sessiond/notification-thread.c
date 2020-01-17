@@ -29,6 +29,9 @@
 #include "health-sessiond.h"
 #include "thread.h"
 
+#include "kernel.h"
+#include <common/kernel-ctl/kernel-ctl.h>
+
 #include <urcu.h>
 #include <urcu/list.h>
 #include <urcu/rculfhash.h>
@@ -70,6 +73,10 @@ void notification_thread_handle_destroy(
 			PERROR("close kernel consumer channel monitoring pipe");
 		}
 	}
+
+	if (handle->event_trigger_sources.kernel_tracer >= 0) {
+		(void) kernel_destroy_trigger_group_notification_fd(handle->event_trigger_sources.kernel_tracer);
+	}
 end:
 	free(handle);
 }
@@ -87,6 +94,8 @@ struct notification_thread_handle *notification_thread_handle_create(
 	if (!handle) {
 		goto end;
 	}
+
+	handle->event_trigger_sources.kernel_tracer = -1;
 
 	sem_init(&handle->ready, 0, 0);
 
@@ -136,12 +145,23 @@ struct notification_thread_handle *notification_thread_handle_create(
 		handle->channel_monitoring_pipes.kernel_consumer = -1;
 	}
 
+	if (kernel_tracer_is_initialized()) {
+		/*
+		 * TODO: only do if we know that it is supported by the tracer
+		 * Figure out error handling for this path inside called
+		 * function also.
+		 */
+		ret = kernel_create_trigger_group_notification_fd(&handle->event_trigger_sources.kernel_tracer);
+		if (ret < 0) {
+			handle->event_trigger_sources.kernel_tracer = -1;
+		}
+	}
+
 	CDS_INIT_LIST_HEAD(&handle->event_trigger_sources.list);
 	ret = pthread_mutex_init(&handle->event_trigger_sources.lock, NULL);
 	if (ret) {
 		goto error;
 	}
-	handle->event_trigger_sources.kernel_tracer = -1;
 end:
 	return handle;
 error:

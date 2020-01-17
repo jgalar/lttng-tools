@@ -5374,6 +5374,11 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 		condition = lttng_trigger_get_condition(trigger);
 		(void) lttng_condition_event_rule_get_rule_no_const(condition, &event_rule);
 
+		if (lttng_event_rule_get_domain_type(event_rule) == LTTNG_DOMAIN_KERNEL) {
+			/* Skip kernel related trigger */
+			continue;
+		}
+
 		/* Iterate over all known token trigger */
 		ua_token = find_ust_app_token_event_rule(app->tokens_ht, token);
 		if (!ua_token) {

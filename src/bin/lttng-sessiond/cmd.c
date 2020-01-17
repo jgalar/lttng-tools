@@ -27,6 +27,11 @@
 #include <lttng/location-internal.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition.h>
+#include <lttng/condition/condition-internal.h>
+#include <lttng/condition/event-rule.h>
+#include <lttng/condition/event-rule-internal.h>
+#include <lttng/event-rule/event-rule.h>
+#include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/action/action.h>
 #include <lttng/channel.h>
 #include <lttng/channel-internal.h>
@@ -4318,10 +4323,65 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		goto end;
 	}
 
+	/* Prepare internal trigger object if needed on reception */
+	/* TODO maybe extract this somewhere else */
+	{
+		struct lttng_condition *condition = NULL;
+		condition = lttng_trigger_get_condition(trigger);
+		if (!condition) {
+			ret = LTTNG_ERR_INVALID_TRIGGER;
+			goto end;
+		}
+
+		if (lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT) {
+			/* Make sure filter and all event rule manipulation are
+			 * done on the lttng-sessiond side. JUL etc. Ensure that
+			 * this not prevent "comparison" across call to prevent
+			 * duplication of trigger with equal condition
+			 */
+			/* TODO */
+			ret = LTTNG_OK;
+		}
+	}
+
+	/* Inform the notification thread */
 	ret = notification_thread_command_register_trigger(notification_thread,
 			trigger);
 
-	ust_app_global_update_all_tokens();
+	/* Synchronize tracers, only if needed */
+	/* TODO: maybe extract somewhere else */
+	{
+		struct lttng_condition *condition = NULL;
+		condition = lttng_trigger_get_condition(trigger);
+		if (!condition) {
+			ret = LTTNG_ERR_INVALID_TRIGGER;
+			goto end;
+		}
+
+		if (lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT) {
+			const struct lttng_event_rule *rule = NULL;
+			(void) lttng_condition_event_rule_get_rule(condition, &rule);
+			if (!rule) {
+				ret = LTTNG_ERR_INVALID_TRIGGER;
+				goto end;
+			}
+			if (lttng_event_rule_get_domain_type(rule) == LTTNG_DOMAIN_KERNEL) {
+				/* TODO: get the token value from the
+				 * notification thread and only perform an
+				 * enable and a disable.... This is NOT
+				 * OPTIMIZED AT ALL
+				 */
+				kernel_update_tokens();
+			} else {
+				/* TODO: get the token value from the
+				 * notification thread and only perform an
+				 * enable and a disable.... This is NOT
+				 * OPTIMIZED AT ALL
+				 */
+				ust_app_global_update_all_tokens();
+			}
+		}
+	}
 
 	/* Ownership of trigger was transferred. */
 	trigger = NULL;
@@ -4369,6 +4429,8 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 	ret = notification_thread_command_unregister_trigger(notification_thread,
 			trigger);
 
+	/* TODO: mirror what is done on the register side */
+	kernel_update_tokens();
 	ust_app_global_update_all_tokens();
 end:
 	lttng_trigger_destroy(trigger);

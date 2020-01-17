@@ -117,6 +117,13 @@
 #define LTTNG_KERNEL_TRACER_ABI_VERSION		\
 	_IOR(0xF6, 0x4B, struct lttng_kernel_tracer_abi_version)
 
+#define LTTNG_KERNEL_TRIGGER_GROUP_CREATE _IO(0xF6, 0x4C)
+
+/* Trigger group file descriptor ioctl */
+#define LTTNG_KERNEL_TRIGGER_GROUP_NOTIFICATION_FD _IO(0xF6, 0x30)
+#define LTTNG_KERNEL_TRIGGER_CREATE \
+	_IOW(0xF6, 0x31, struct lttng_kernel_trigger)
+
 /* Session FD ioctl */
 #define LTTNG_KERNEL_METADATA			\
 	_IOW(0xF6, 0x54, struct lttng_kernel_channel)
