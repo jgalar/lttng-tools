@@ -9,8 +9,15 @@
 #include <lttng/condition/event-rule.h>
 #include <lttng/event-rule/event-rule-tracepoint.h>
 
+#ifdef LTTNG_EMBED_HELP
+static const char help_msg[] =
+#include <lttng-create-trigger.1.h>
+;
+#endif
+
 enum {
 	OPT_HELP,
+	OPT_LIST_OPTIONS,
 
 	OPT_CONDITION,
 	OPT_ACTION,
@@ -816,6 +823,7 @@ end:
 static const
 struct argpar_opt_descr create_trigger_options[] = {
 	{ OPT_HELP, 'h', "help", false },
+	{ OPT_LIST_OPTIONS, '\0', "list-options", false },
 	{ OPT_CONDITION, '\0', "condition", false },
 	{ OPT_ACTION, '\0', "action", false },
 	ARGPAR_OPT_DESCR_SENTINEL,
@@ -892,9 +900,15 @@ int cmd_create_trigger(int argc, const char **argv)
 
 		switch (item_opt->descr->id) {
 		case OPT_HELP:
-			printf("Help!\n");
+			SHOW_HELP();
 			ret = 0;
-			break;
+			goto end;
+
+		case OPT_LIST_OPTIONS:
+			list_cmd_options_argpar(stdout, create_trigger_options);
+			ret = 0;
+			goto end;
+
 		case OPT_CONDITION:
 		{
 			if (condition) {
@@ -985,11 +999,11 @@ int cmd_create_trigger(int argc, const char **argv)
 
 	ret = lttng_register_trigger(trigger);
 	if (ret) {
-		printf("Ça l'a pas marché.\n");
+		fprintf(stderr, "Failed to register trigger.\n");
 		goto error;
 	}
 
-	printf("Ça l'a marché.\n");
+	printf("Trigger registered successfully.\n");
 
 	goto end;
 
