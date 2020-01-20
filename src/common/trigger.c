@@ -78,11 +78,10 @@ struct lttng_condition *lttng_trigger_get_condition(
 	return trigger ? trigger->condition : NULL;
 }
 
-LTTNG_HIDDEN
 const struct lttng_condition *lttng_trigger_get_const_condition(
 		const struct lttng_trigger *trigger)
 {
-	return trigger->condition;
+	return trigger ? trigger->condition : NULL;
 }
 
 
@@ -97,11 +96,10 @@ struct lttng_action *lttng_trigger_get_action(
 	return trigger ? trigger->action : NULL;
 }
 
-LTTNG_HIDDEN
 const struct lttng_action *lttng_trigger_get_const_action(
 		const struct lttng_trigger *trigger)
 {
-	return trigger->action;
+	return trigger ? trigger->action : NULL;
 }
 
 static void trigger_destroy_ref(struct urcu_ref *ref)
