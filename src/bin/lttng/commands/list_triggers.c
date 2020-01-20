@@ -4,6 +4,8 @@
 
 #include "common/argpar/argpar.h"
 #include "common/mi-lttng.h"
+#include "lttng/action/action.h"
+#include "lttng/action/action-internal.h"
 #include "lttng/condition/condition-internal.h"
 #include "lttng/condition/event-rule.h"
 #include "lttng/domain-internal.h"
