@@ -31,6 +31,7 @@ lttng_SOURCES = command.h conf.c conf.h commands/start.c \
 				commands/clear.c \
 				commands/add_trigger.c \
 				commands/list_triggers.c \
+				commands/remove_trigger.c \
 				utils.c utils.h lttng.c \
 				uprobe.c uprobe.h
 

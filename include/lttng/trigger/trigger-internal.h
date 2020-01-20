@@ -69,11 +69,11 @@ ssize_t lttng_trigger_create_from_payload(struct lttng_payload_view *view,
 		struct lttng_trigger **trigger);
 
 LTTNG_HIDDEN
-int lttng_trigger_serialize(struct lttng_trigger *trigger,
+int lttng_trigger_serialize(const struct lttng_trigger *trigger,
 		struct lttng_payload *payload);
 
 LTTNG_HIDDEN
-bool lttng_trigger_validate(struct lttng_trigger *trigger);
+bool lttng_trigger_validate(const struct lttng_trigger *trigger);
 
 LTTNG_HIDDEN
 int lttng_trigger_assign_name(struct lttng_trigger *dst,
