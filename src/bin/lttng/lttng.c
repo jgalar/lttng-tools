@@ -69,6 +69,7 @@ static struct cmd_struct commands[] =  {
 	{ "clear", cmd_clear},
 	{ "create-trigger", cmd_create_trigger},
 	{ "destroy", cmd_destroy},
+	{ "destroy-trigger", cmd_destroy_trigger},
 	{ "disable-channel", cmd_disable_channels},
 	{ "disable-event", cmd_disable_events},
 	{ "enable-channel", cmd_enable_channels},

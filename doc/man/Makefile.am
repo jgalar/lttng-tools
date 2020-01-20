@@ -38,6 +38,7 @@ MAN1_NAMES = \
 	lttng-disable-rotation \
 	lttng-clear \
 	lttng-create-trigger \
+	lttng-destroy-trigger \
 	lttng-list-triggers
 
 MAN3_NAMES =

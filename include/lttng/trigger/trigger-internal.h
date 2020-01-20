@@ -67,12 +67,12 @@ ssize_t lttng_trigger_create_from_buffer(const struct lttng_buffer_view *view,
 		struct lttng_trigger **trigger);
 
 LTTNG_HIDDEN
-int lttng_trigger_serialize(struct lttng_trigger *trigger,
+int lttng_trigger_serialize(const struct lttng_trigger *trigger,
 		struct lttng_dynamic_buffer *buf,
 		int *fd_to_send);
 
 LTTNG_HIDDEN
-bool lttng_trigger_validate(struct lttng_trigger *trigger);
+bool lttng_trigger_validate(const struct lttng_trigger *trigger);
 
 LTTNG_HIDDEN
 int lttng_trigger_assign(struct lttng_trigger *dst,

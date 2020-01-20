@@ -36,7 +36,7 @@ static void lttng_trigger_set_internal_object_ownership(
 }
 
 LTTNG_HIDDEN
-bool lttng_trigger_validate(struct lttng_trigger *trigger)
+bool lttng_trigger_validate(const struct lttng_trigger *trigger)
 {
 	bool valid;
 
@@ -235,7 +235,7 @@ error:
  * for the detailed format.
  */
 LTTNG_HIDDEN
-int lttng_trigger_serialize(struct lttng_trigger *trigger,
+int lttng_trigger_serialize(const struct lttng_trigger *trigger,
 		struct lttng_dynamic_buffer *buf,
 		int *fd_to_send)
 {

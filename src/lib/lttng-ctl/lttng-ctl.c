@@ -2993,7 +2993,7 @@ end:
 	return ret;
 }
 
-int lttng_unregister_trigger(struct lttng_trigger *trigger)
+int lttng_unregister_trigger(const struct lttng_trigger *trigger)
 {
 	int ret;
 	struct lttcomm_session_msg lsm;
