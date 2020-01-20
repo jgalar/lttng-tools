@@ -39,6 +39,13 @@ extern struct lttng_action *lttng_action_stop_session_create(void);
 extern enum lttng_action_status lttng_action_stop_session_set_session_name(
 		struct lttng_action *action, const char *session_name);
 
+/*
+ * Get the session name of an lttng_action object of type
+ * LTTNG_ACTION_TYPE_STOP_SESSION.
+ */
+extern enum lttng_action_status lttng_action_stop_session_get_session_name(
+		const struct lttng_action *action, const char **session_name);
+
 #ifdef __cplusplus
 }
 #endif

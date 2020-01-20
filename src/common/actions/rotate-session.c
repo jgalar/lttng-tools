@@ -42,6 +42,14 @@ struct lttng_action_rotate_session_comm {
 } LTTNG_PACKED;
 
 static struct lttng_action_rotate_session *action_rotate_session_from_action(
+		struct lttng_action *action)
+{
+	assert(action);
+
+	return container_of(action, struct lttng_action_rotate_session, parent);
+}
+
+static const struct lttng_action_rotate_session *action_rotate_session_from_action_const(
 		const struct lttng_action *action)
 {
 	assert(action);
@@ -76,10 +84,10 @@ end:
 static bool lttng_action_rotate_session_is_equal(const struct lttng_action *_a, const struct lttng_action *_b)
 {
 	bool is_equal = false;
-	struct lttng_action_rotate_session *a, *b;
+	const struct lttng_action_rotate_session *a, *b;
 
-	a = action_rotate_session_from_action(_a);
-	b = action_rotate_session_from_action(_b);
+	a = action_rotate_session_from_action_const(_a);
+	b = action_rotate_session_from_action_const(_b);
 
 	/* Action is not valid if this is not true. */
 	assert(a->session_name);
@@ -210,7 +218,7 @@ end:
 	return action;
 }
 
-extern enum lttng_action_status lttng_action_rotate_session_set_session_name(
+enum lttng_action_status lttng_action_rotate_session_set_session_name(
 		struct lttng_action *action, const char *session_name)
 {
 	struct lttng_action_rotate_session *action_rotate_session;
@@ -230,6 +238,26 @@ extern enum lttng_action_status lttng_action_rotate_session_set_session_name(
 		status = LTTNG_ACTION_STATUS_ERROR;
 		goto end;
 	}
+
+	status = LTTNG_ACTION_STATUS_OK;
+end:
+	return status;
+}
+
+enum lttng_action_status lttng_action_rotate_session_get_session_name(
+		const struct lttng_action *action, const char **session_name)
+{
+	const struct lttng_action_rotate_session *action_rotate_session;
+	enum lttng_action_status status;
+
+	if (!action || !session_name) {
+		status = LTTNG_ACTION_STATUS_INVALID;
+		goto end;
+	}
+
+	action_rotate_session = action_rotate_session_from_action_const(action);
+
+	*session_name = action_rotate_session->session_name;
 
 	status = LTTNG_ACTION_STATUS_OK;
 end:

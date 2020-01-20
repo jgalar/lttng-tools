@@ -1083,7 +1083,7 @@ end:
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_exclusions_count(
-		struct lttng_event_rule *rule, unsigned int *count)
+		const struct lttng_event_rule *rule, unsigned int *count)
 {
 	struct lttng_event_rule_tracepoint *tracepoint;
 	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
@@ -1101,7 +1101,7 @@ end:
 }
 
 enum lttng_event_rule_status lttng_event_rule_tracepoint_get_exclusion_at_index(
-		struct lttng_event_rule *rule,
+		const struct lttng_event_rule *rule,
 		unsigned int index,
 		const char **exclusion)
 {

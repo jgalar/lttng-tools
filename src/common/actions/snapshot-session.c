@@ -364,6 +364,7 @@ enum lttng_action_status lttng_action_snapshot_session_get_session_name(
 	}
 
 end:
+
 	return status;
 }
 

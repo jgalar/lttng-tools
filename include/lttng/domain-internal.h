@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 EfficiOS, Inc.
+ * Copyright (C) 2020 - EfficiOS, inc.
  *
  * This library is free software; you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License, version 2.1 only,
@@ -15,25 +15,21 @@
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef LTTNG_ACTION_GROUP_INTERNAL_H
-#define LTTNG_ACTION_GROUP_INTERNAL_H
+#ifndef LTTNG_DOMAIN_INTERNAL_H
+#define LTTNG_DOMAIN_INTERNAL_H
 
-#include <sys/types.h>
+#include "lttng/domain.h"
+#include "common/macros.h"
 
-#include <common/macros.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct lttng_action;
-struct lttng_buffer_view;
-
-/*
- * Create an action group from a buffer view.
- *
- * On success, return the number of bytes consumed from `view`, and the created
- * group in `*group`.  On failure, return -1.
- */
 LTTNG_HIDDEN
-extern ssize_t lttng_action_group_create_from_buffer(
-		const struct lttng_buffer_view *view,
-		struct lttng_action **group);
+const char *lttng_domain_type_str(enum lttng_domain_type domain_type);
 
-#endif /* LTTNG_ACTION_GROUP_INTERNAL_H */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LTTNG_DOMAIN_INTERNAL_H */

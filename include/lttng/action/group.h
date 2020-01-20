@@ -41,6 +41,13 @@ extern struct lttng_action *lttng_action_group_create(void);
 extern enum lttng_action_status lttng_action_group_add_action(
 		struct lttng_action *group, struct lttng_action *action);
 
+extern enum lttng_action_status lttng_action_group_get_count(
+		const struct lttng_action *group, unsigned int *count);
+
+extern const struct lttng_action *lttng_action_group_get_at_index_const(
+		const struct lttng_action *group,
+		unsigned int index);
+
 #ifdef __cplusplus
 }
 #endif

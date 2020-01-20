@@ -1,0 +1,167 @@
+#!/bin/bash
+#
+# Copyright (C) - 2020 EfficiOS, inc
+#
+# This library is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; version 2.1 of the License.
+#
+# This library is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+# Test the `lttng list-trigger` command line interface.
+
+CURDIR="$(dirname "$0")"
+TESTDIR="$CURDIR/../../.."
+
+# shellcheck source=../../../utils/utils.sh
+source "$TESTDIR/utils/utils.sh"
+
+plan_tests 19
+
+FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
+
+tmp_stdout=$(mktemp -t test_list_triggers_cli_stdout.XXXXXX)
+tmp_stderr=$(mktemp -t test_list_triggers_cli_stderr.XXXXXX)
+tmp_expected_stdout=$(mktemp -t test_list_triggers_cli_expected_stdout.XXXXXX)
+
+function create_trigger ()
+{
+	"${FULL_LTTNG_BIN}" create-trigger "$@"
+	ok $? "create trigger \`$*\`: exit code is 0"
+}
+
+function list_triggers ()
+{
+	local test_name="$1"
+	local expected_stdout_file="$2"
+
+	"${FULL_LTTNG_BIN}" list-triggers > "${tmp_stdout}" 2> "${tmp_stderr}"
+	ok $? "${test_name}: exit code is 0"
+
+	diff -u "${expected_stdout_file}" "${tmp_stdout}"
+	ok $? "${test_name}: expected stdout"
+
+	diff -u /dev/null "${tmp_stderr}"
+	ok $? "${test_name}: expected stderr"
+}
+
+test_on_event_tracepoint ()
+{
+	# shellcheck disable=SC2119
+	start_lttng_sessiond_notap
+
+	create_trigger --condition on-event -u -a --action notify
+	create_trigger --id ABC --condition on-event aaa -u --filter 'p == 2' --action notify
+	create_trigger --condition on-event 'hello*' -u -x 'hello2,hello3,hello4' --action notify
+	create_trigger --id BCD --condition on-event -u gerboise --loglevel INFO --action notify
+	create_trigger --condition on-event -u lemming --loglevel-only WARNING --action notify
+
+	cat > "${tmp_expected_stdout}" <<- EOF
+	- id: ABC
+	  condition: event rule hit
+	    rule: aaa (type: tracepoint, domain: ust, filter: p == 2)
+	  actions:
+	    notify
+	- id: BCD
+	  condition: event rule hit
+	    rule: gerboise (type: tracepoint, domain: ust, log level <= TRACE_INFO)
+	  actions:
+	    notify
+	- id: TJORAJ1
+	  condition: event rule hit
+	    rule: * (type: tracepoint, domain: ust)
+	  actions:
+	    notify
+	- id: TJORAJ3
+	  condition: event rule hit
+	    rule: hello* (type: tracepoint, domain: ust, exclusions: hello2,hello3,hello4)
+	  actions:
+	    notify
+	- id: TJORAJ5
+	  condition: event rule hit
+	    rule: lemming (type: tracepoint, domain: ust, log level == TRACE_WARNING)
+	  actions:
+	    notify
+	EOF
+
+	list_triggers "on-event, tracepoint event rule" "${tmp_expected_stdout}"
+
+	stop_lttng_sessiond_notap
+}
+
+test_snapshot_action ()
+{
+	start_lttng_sessiond_notap
+
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session file:///some/other/path
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session net://1.2.3.4
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session net://1.2.3.4:1234:1235
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session --ctrl-url=tcp://1.2.3.4:1111 --data-url=tcp://1.2.3.4:1112
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path --max-size=1234
+	create_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path --name=meh
+
+
+	cat > "${tmp_expected_stdout}" <<- EOF
+	- id: TJORAJ1
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`
+	- id: TJORAJ2
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, path: /some/path
+	- id: TJORAJ3
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, path: /some/other/path
+	- id: TJORAJ4
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, url: net://1.2.3.4
+	- id: TJORAJ5
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, url: net://1.2.3.4:1234:1235
+	- id: TJORAJ6
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, control url: tcp://1.2.3.4:1111, data url: tcp://1.2.3.4:1112
+	- id: TJORAJ7
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, path: /some/path, max size: 1234
+	- id: TJORAJ8
+	  condition: event rule hit
+	    rule: some-event (type: tracepoint, domain: ust)
+	  actions:
+	    snapshot session \`ze-session\`, path: /some/path, name: meh
+	EOF
+
+	list_triggers "snapshot action" "${tmp_expected_stdout}"
+
+	stop_lttng_sessiond_notap
+}
+
+test_on_event_tracepoint
+test_snapshot_action
+
+# Cleanup
+rm -f "${tmp_stdout}"
+rm -f "${tmp_stderr}"
+rm -f "${tmp_expected_stdout}"

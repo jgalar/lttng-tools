@@ -45,7 +45,7 @@ const char *lttng_action_type_string(enum lttng_action_type action_type)
 	}
 }
 
-enum lttng_action_type lttng_action_get_type(struct lttng_action *action)
+enum lttng_action_type lttng_action_get_type(const struct lttng_action *action)
 {
 	return action ? action->type : LTTNG_ACTION_TYPE_UNKNOWN;
 }

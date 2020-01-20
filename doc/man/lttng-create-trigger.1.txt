@@ -106,4 +106,5 @@ include::common-cmd-footer.txt[]
 
 SEE ALSO
 --------
+man:lttng-list-triggers(1),
 man:lttng(1)

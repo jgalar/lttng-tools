@@ -2450,7 +2450,7 @@ static bool action_is_notify(const struct lttng_action *action)
 			assert(0);
 		}
 		for (i = 0; i < count; i++) {
-			tmp = lttng_action_group_get_at_index(action, i);
+			tmp = lttng_action_group_get_at_index_const(action, i);
 			assert(tmp);
 			ret = action_is_notify(tmp);
 			if (ret) {
@@ -3832,7 +3832,7 @@ int perform_event_action(struct notification_thread_state *state,
 		unsigned int count = 0;
 		(void) lttng_action_group_get_count(action, &count);
 		for (int i = 0; i < count; i++) {
-			tmp = lttng_action_group_get_at_index(action, i);
+			tmp = lttng_action_group_get_at_index_const(action, i);
 			assert(tmp);
 			ret = perform_event_action(state, trigger, notification, tmp);
 			if (ret < 0) {

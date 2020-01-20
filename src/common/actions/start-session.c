@@ -49,6 +49,14 @@ static struct lttng_action_start_session *action_start_session_from_action(
 	return container_of(action, struct lttng_action_start_session, parent);
 }
 
+static const struct lttng_action_start_session *action_start_session_from_action_const(
+		const struct lttng_action *action)
+{
+	assert(action);
+
+	return container_of(action, struct lttng_action_start_session, parent);
+}
+
 static bool lttng_action_start_session_validate(struct lttng_action *action)
 {
 	bool valid;
@@ -211,7 +219,7 @@ end:
 	return action;
 }
 
-extern enum lttng_action_status lttng_action_start_session_set_session_name(
+enum lttng_action_status lttng_action_start_session_set_session_name(
 		struct lttng_action *action, const char *session_name)
 {
 	struct lttng_action_start_session *action_start_session;
@@ -231,6 +239,26 @@ extern enum lttng_action_status lttng_action_start_session_set_session_name(
 		status = LTTNG_ACTION_STATUS_ERROR;
 		goto end;
 	}
+
+	status = LTTNG_ACTION_STATUS_OK;
+end:
+	return status;
+}
+
+enum lttng_action_status lttng_action_start_session_get_session_name(
+		const struct lttng_action *action, const char **session_name)
+{
+	const struct lttng_action_start_session *action_start_session;
+	enum lttng_action_status status;
+
+	if (!action || !session_name) {
+		status = LTTNG_ACTION_STATUS_INVALID;
+		goto end;
+	}
+
+	action_start_session = action_start_session_from_action_const(action);
+
+	*session_name = action_start_session->session_name;
 
 	status = LTTNG_ACTION_STATUS_OK;
 end:

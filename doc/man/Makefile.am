@@ -37,7 +37,8 @@ MAN1_NAMES = \
 	lttng-enable-rotation \
 	lttng-disable-rotation \
 	lttng-clear \
-	lttng-create-trigger
+	lttng-create-trigger \
+	lttng-list-triggers
 
 MAN3_NAMES =
 MAN8_NAMES = lttng-sessiond lttng-relayd
