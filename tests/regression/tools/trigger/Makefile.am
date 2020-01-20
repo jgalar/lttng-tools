@@ -34,7 +34,8 @@ trigger_SOURCES = trigger.c
 trigger_LDADD = $(LIB_LTTNG_CTL) $(LIBTAP) -lm
 
 noinst_SCRIPTS = test_trigger_ust test_trigger_kernel
-EXTRA_DIST = test_trigger_ust test_trigger_kernel
+EXTRA_DIST = test_trigger_ust test_trigger_kernel \
+	test_create_trigger_cli
 
 all-local:
 	@if [ x"$(srcdir)" != x"$(builddir)" ]; then \

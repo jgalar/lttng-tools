@@ -1,0 +1,210 @@
+#!/bin/bash
+#
+# Copyright (C) - 2020 EfficiOS, inc
+#
+# This library is free software; you can redistribute it and/or modify it under
+# the terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; version 2.1 of the License.
+#
+# This library is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this library; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+
+# Test the `lttng create-trigger` command line interface.
+
+CURDIR="$(dirname "$0")"
+TESTDIR="$CURDIR/../../.."
+
+# shellcheck source=../../../utils/utils.sh
+source "$TESTDIR/utils/utils.sh"
+
+plan_tests 93
+
+FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
+
+# shellcheck disable=SC2119
+start_lttng_sessiond_notap
+
+tmp_stdout=$(mktemp -t test_parse_cli_trigger_stdout.XXXXXX)
+tmp_stderr=$(mktemp -t test_parse_cli_trigger_stderr.XXXXXX)
+
+function test_success ()
+{
+	local test_name="$1"
+	shift
+
+	"${FULL_LTTNG_BIN}" create-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
+	ok $? "${test_name}: exit code is 0"
+
+	diff -u "${tmp_stdout}" <(echo "Trigger registered successfully.")
+	ok $? "${test_name}: expected stdout"
+
+	diff -u "${tmp_stderr}" /dev/null
+	ok $? "${test_name}: expected stderr"
+}
+
+function test_failure ()
+{
+	local test_name="$1"
+	local error_msg="$2"
+
+	shift 2
+
+	"${FULL_LTTNG_BIN}" create-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
+	isnt $? 0 "${test_name}: exit code is not 0"
+
+	diff -u "${tmp_stdout}" /dev/null
+	ok $? "${test_name}: expected stdout"
+
+	diff -u "${tmp_stderr}" <(echo "${error_msg}")
+	ok $? "${test_name}: expected stderr"
+}
+
+# `--condition on-event` successes
+test_success "--condition on-event some-event -u" \
+	--condition on-event some-event -u \
+	--action notify
+test_success "--acontion on-event -a -u" \
+	--condition on-event -a -u \
+	--action notify
+
+# `--action notify` successes
+test_success "--action notify" \
+	--condition on-event some-event-notify -u \
+	--action notify
+
+# `--action start-session` successes
+test_success "--action start-session" \
+	--condition on-event some-event-start-session -u \
+	--action start-session ze-session
+
+# `--action stop-session` successes
+test_success "--action stop-session foo" \
+	--condition on-event some-event-stop-session -u \
+	--action stop-session ze-session
+
+# `--action rotate-session` successes
+test_success "--action rotate-session foo" \
+	--condition on-event some-event-rotate-session -u \
+	--action rotate-session ze-session
+
+# `--action snapshot-session` successes
+test_success "--action snapshot-session foo" \
+	--condition on-event some-event-snapshot-session -u \
+	--action snapshot-session ze-session
+
+test_success "--action snapshot-session with file URI" \
+	--condition on-event some-event-snapshot-session2 -u \
+	--action snapshot-session ze-session /hello
+
+test_success "--action snapshot-session with net URI" \
+	--condition on-event some-event-snapshot-session3 -u \
+	--action snapshot-session ze-session net://1.2.3.4
+
+test_success "--action snapshot-session with ctrl/data URIs" \
+	--condition on-event some-event-snapshot-session4 -u \
+	--action snapshot-session ze-session --ctrl-url=tcp://1.2.3.4:1234 --data-url=tcp://1.2.3.4:1235
+
+# top-level failures
+test_failure "no args" "Missing --condition."
+test_failure "unknown option" \
+	"Unknown option \`--hello\`" \
+	--hello
+test_failure "missing --action" \
+	"Need at least one --action." \
+	--condition on-event hello -u
+test_failure "two --condition" \
+	"A --condition was already given." \
+	--condition on-event aaa -u \
+	--condition on-event bbb -u \
+	--action notify
+
+# `--condition` failures
+test_failure "missing args after --condition" \
+	"Missing condition name." \
+	--condition
+test_failure "unknown --condition" \
+	"Unknown condition name: zoofest" \
+	--condition zoofest
+
+# `--condition on-event` failures
+test_failure "missing args after --condition on-event" \
+	"Error: Need to provide either a tracepoint name or -a/--all." \
+	--condition on-event
+test_failure "missing domain in --condition on-event" \
+	"Error: Please specify a domain (-k/-u/-j)." \
+	--condition on-event -a
+test_failure "extra args after --condition on-event" \
+	"Error: Unexpected argument: bozo" \
+	--condition on-event foo -u bozo
+
+# `--action` failures
+test_failure "missing args after --action" \
+	"Missing action name." \
+	--condition on-event -u -a \
+	--action
+
+# `--action notify` failures
+test_failure "extra arg after --action notify" \
+	"Unexpected argument \`bob\`." \
+	--condition on-event -u -a \
+	--action notify bob
+
+# `--action start-session` failures
+test_failure "missing arg after --action start-session" \
+	"Missing session name." \
+	--condition on-event some-event-start-session -u \
+	--action start-session
+test_failure "extra arg after --action start-session" \
+	"Unexpected argument \`bob\`." \
+	--condition on-event some-event-start-session -u \
+	--action start-session ze-session bob
+
+# `--action stop-session` failures
+test_failure "missing arg after --action stop-session" \
+	"Missing session name." \
+	--condition on-event some-event-stop-session -u \
+	--action stop-session
+test_failure "extra arg after --action stop-session" \
+	"Unexpected argument \`bob\`." \
+	--condition on-event some-event-stop-session -u \
+	--action stop-session ze-session bob
+
+# `--action rotate-session` failures
+test_failure "missing arg after --action rotate-session" \
+	"Missing session name." \
+	--condition on-event some-event-rotate-session -u \
+	--action rotate-session
+test_failure "extra arg after --action rotate-session" \
+	"Unexpected argument \`bob\`." \
+	--condition on-event some-event-rotate-session -u \
+	--action rotate-session ze-session bob
+
+# `--action snapshot-session` failures
+test_failure "missing arg after --action snapshot-session" \
+	"Missing session name." \
+	--condition on-event some-event-snapshot-session -u \
+	--action snapshot-session
+test_failure "extra arg after --action snapshot-session" \
+	"Unexpected argument \`bob\`." \
+	--condition on-event some-event-snapshot-session -u \
+	--action snapshot-session ze-session /dest bob
+test_failure "snapshot-session action, --max-size without destination" \
+	"Can't provide a snapshot output max size without a snapshot output destination." \
+	--condition on-event some-event-snapshot-session -u \
+	--action snapshot-session ze-session --max-size 10M
+test_failure "snapshot-session action, --name without destination" \
+	"Can't provide a snapshot output name without a snapshot output destination." \
+	--condition on-event some-event-snapshot-session -u \
+	--action snapshot-session ze-session --name hallo
+
+
+# Cleanup
+stop_lttng_sessiond_notap
+rm -f "${tmp_stdout}"
+rm -f "${tmp_stderr}"
