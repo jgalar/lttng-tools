@@ -391,6 +391,10 @@ void fini_thread_state(struct notification_thread_state *state)
 		ret = cds_lfht_destroy(state->trigger_tokens_ht, NULL);
 		assert(!ret);
 	}
+	if (state->triggers_by_name_ht) {
+		ret = cds_lfht_destroy(state->triggers_by_name_ht, NULL);
+		assert(!ret);
+	}
 	/*
 	 * Must be destroyed after all channels have been destroyed.
 	 * See comment in struct lttng_session_trigger_list.
@@ -429,7 +433,7 @@ int init_thread_state(struct notification_thread_handle *handle,
 
 	memset(state, 0, sizeof(*state));
 	state->notification_channel_socket = -1;
-	state->token_generator = 1;
+	state->trigger_id.token_generator = 1;
 	lttng_poll_init(&state->events);
 
 	ret = notification_channel_socket_create();
@@ -499,6 +503,11 @@ int init_thread_state(struct notification_thread_handle *handle,
 	state->trigger_tokens_ht = cds_lfht_new(DEFAULT_HT_SIZE,
 			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
 	if (!state->trigger_tokens_ht) {
+		goto error;
+	}
+	state->triggers_by_name_ht = cds_lfht_new(DEFAULT_HT_SIZE,
+			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
+	if (!state->triggers_by_name_ht) {
 		goto error;
 	}
 	mark_thread_as_ready(handle);

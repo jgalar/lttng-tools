@@ -1957,8 +1957,33 @@ error_add_context:
 	}
 	case LTTNG_REGISTER_TRIGGER:
 	{
+		struct lttng_dynamic_buffer payload;
+		/* Do not free the return trigger, ownership was transfered to
+		 * the notification thread. It is solely used to return the
+		 * trigger name to the client on registration */
+		struct lttng_trigger *return_trigger;
+
+		lttng_dynamic_buffer_init(&payload);
 		ret = cmd_register_trigger(cmd_ctx, *sock,
-				notification_thread_handle);
+				notification_thread_handle, &return_trigger);
+		if (ret != LTTNG_OK) {
+			goto error;
+		}
+
+		ret = lttng_trigger_serialize(return_trigger, &payload);
+		if (ret) {
+			ERR("Failed to serialize trigger in reply to \"register trigger\" command");
+			ret = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, payload.data,
+				payload.size);
+		if (ret) {
+			ret = LTTNG_ERR_NOMEM;
+			goto error;
+		}
+		lttng_dynamic_buffer_reset(&payload);
+		ret = LTTNG_OK;
 		break;
 	}
 	case LTTNG_UNREGISTER_TRIGGER:

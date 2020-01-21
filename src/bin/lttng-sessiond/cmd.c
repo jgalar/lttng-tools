@@ -4289,7 +4289,8 @@ end:
 }
 
 int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
-		struct notification_thread_handle *notification_thread)
+		struct notification_thread_handle *notification_thread,
+		struct lttng_trigger **return_trigger)
 {
 	int ret;
 	size_t trigger_len;
@@ -4347,6 +4348,9 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 	/* Inform the notification thread */
 	ret = notification_thread_command_register_trigger(notification_thread,
 			trigger);
+	if (ret != LTTNG_OK) {
+		goto end_notification_thread;
+	}
 
 	/* Synchronize tracers, only if needed */
 	/* TODO: maybe extract somewhere else */
@@ -4383,6 +4387,10 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		}
 	}
 
+	/* Return an image of the updated object to the client */
+	*return_trigger = trigger;
+
+end_notification_thread:
 	/* Ownership of trigger was transferred. */
 	trigger = NULL;
 end:
@@ -4429,9 +4437,41 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 	ret = notification_thread_command_unregister_trigger(notification_thread,
 			trigger);
 
-	/* TODO: mirror what is done on the register side */
-	kernel_update_tokens();
-	ust_app_global_update_all_tokens();
+	/* Synchronize tracers, only if needed */
+	/* TODO: maybe extract somewhere else */
+	{
+		struct lttng_condition *condition = NULL;
+		condition = lttng_trigger_get_condition(trigger);
+		if (!condition) {
+			ret = LTTNG_ERR_INVALID_TRIGGER;
+			goto end;
+		}
+
+		if (lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT) {
+			const struct lttng_event_rule *rule = NULL;
+			(void) lttng_condition_event_rule_get_rule(condition, &rule);
+			if (!rule) {
+				ret = LTTNG_ERR_INVALID_TRIGGER;
+				goto end;
+			}
+			if (lttng_event_rule_get_domain_type(rule) == LTTNG_DOMAIN_KERNEL) {
+				/* TODO: get the token value from the
+				 * notification thread and only perform an
+				 * enable and a disable.... This is NOT
+				 * OPTIMIZED AT ALL
+				 */
+				kernel_update_tokens();
+			} else {
+				/* TODO: get the token value from the
+				 * notification thread and only perform an
+				 * enable and a disable.... This is NOT
+				 * OPTIMIZED AT ALL
+				 */
+				ust_app_global_update_all_tokens();
+			}
+		}
+	}
+
 end:
 	lttng_trigger_destroy(trigger);
 	lttng_dynamic_buffer_reset(&trigger_buffer);

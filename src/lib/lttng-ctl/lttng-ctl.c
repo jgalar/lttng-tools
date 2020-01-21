@@ -2921,8 +2921,12 @@ end:
 int lttng_register_trigger(struct lttng_trigger *trigger)
 {
 	int ret;
+	int reply_ret;
 	struct lttcomm_session_msg lsm;
 	struct lttng_dynamic_buffer buffer;
+	void *reply = NULL;
+	struct lttng_buffer_view reply_view;
+	struct lttng_trigger *reply_trigger = NULL;
 
 	lttng_dynamic_buffer_init(&buffer);
 	if (!trigger) {
@@ -2944,10 +2948,35 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_REGISTER_TRIGGER;
 	lsm.u.trigger.length = (uint32_t) buffer.size;
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, buffer.data,
-			buffer.size, NULL);
+	reply_ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, buffer.data,
+			buffer.size, &reply);
+	if (reply_ret < 0) {
+		ret = reply_ret;
+		goto end;
+	} else if (reply_ret == 0) {
+		/* Socket unexpectedly closed by the session daemon. */
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	reply_view = lttng_buffer_view_init(reply, 0, reply_ret);
+	ret = lttng_trigger_create_from_buffer(&reply_view, &reply_trigger);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	ret = lttng_trigger_assign(trigger, reply_trigger);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	ret = LTTNG_OK;
 end:
+	free(reply);
 	lttng_dynamic_buffer_reset(&buffer);
+	lttng_trigger_destroy(reply_trigger);
 	return ret;
 }
 

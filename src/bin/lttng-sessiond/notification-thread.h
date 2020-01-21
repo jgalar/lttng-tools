@@ -124,9 +124,13 @@ struct notification_thread_handle {
  *             channels through their struct channel_info (ref-counting is used).
  *
  *   - triggers_ht:
- *             associates a condition to a struct lttng_trigger_ht_element.
+ *             associates a trigger to a struct lttng_trigger_ht_element.
  *             The hash table holds the ownership of the
  *             lttng_trigger_ht_elements along with the triggers themselves.
+ *   - triggers_by_name_ht:
+ *             associates a trigger name to a struct lttng_trigger_ht_element.
+ *             The hash table does not hold any ownership and is used strictly
+ *             for lookup on registration.
  *
  * The thread reacts to the following internal events:
  *   1) creation of a tracing channel,
@@ -170,6 +174,7 @@ struct notification_thread_handle {
  *          notification_trigger_clients_ht,
  *    - add trigger to channel_triggers_ht (if applicable),
  *    - add trigger to session_triggers_ht (if applicable),
+ *    - add trigger to triggers_by_name_ht
  *    - add trigger to triggers_ht
  *    - evaluate the trigger's condition right away to react if that condition
  *      is true from the beginning.
@@ -179,6 +184,7 @@ struct notification_thread_handle {
  *      - remove the trigger from the notification_trigger_clients_ht,
  *    - remove trigger from channel_triggers_ht (if applicable),
  *    - remove trigger from session_triggers_ht (if applicable),
+ *    - remove trigger to triggers_by_name_ht
  *    - remove trigger from triggers_ht
  *
  * 5) Reception of a channel monitor sample from the consumer daemon
@@ -223,8 +229,12 @@ struct notification_thread_state {
 	struct cds_lfht *channels_ht;
 	struct cds_lfht *sessions_ht;
 	struct cds_lfht *triggers_ht;
+	struct cds_lfht *triggers_by_name_ht;
 	struct cds_lfht *trigger_tokens_ht;
-	uint64_t token_generator;
+	struct {
+		uint64_t token_generator;
+		uint64_t name_offset;
+	} trigger_id;
 };
 
 /* notification_thread_data takes ownership of the channel monitor pipes. */

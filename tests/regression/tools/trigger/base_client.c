@@ -90,6 +90,9 @@ int main(int argc, char **argv)
 	struct lttng_action *action = NULL;
 
 	struct lttng_trigger *trigger = NULL;
+	struct lttng_trigger *trigger2 = NULL;
+	struct lttng_trigger *trigger3 = NULL;
+	struct lttng_trigger *trigger4 = NULL;
 
 	if (argc < 4) {
 		printf("error: Missing arguments for tests\n");
@@ -147,7 +150,34 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
+	trigger2 = lttng_trigger_create(condition, action);
+	if (!trigger) {
+		printf("error: Could not create trigger\n");
+		ret = 1;
+		goto end;
+	}
+
+	lttng_trigger_set_name(trigger, "TJORAJ2");
+
+	trigger3 = lttng_trigger_create(condition, action);
+	if (!trigger) {
+		printf("error: Could not create trigger\n");
+		ret = 1;
+		goto end;
+	}
+
+	trigger4 = lttng_trigger_create(condition, action);
+	if (!trigger) {
+		printf("error: Could not create trigger\n");
+		ret = 1;
+		goto end;
+	}
+
 	ret = lttng_register_trigger(trigger);
+	ret = lttng_register_trigger(trigger2);
+	ret = lttng_register_trigger(trigger3);
+	ret = lttng_register_trigger(trigger4);
+
 
 	/*
 	 * An equivalent trigger might already be registered if an other app
