@@ -11,6 +11,8 @@
 struct lttng_action;
 struct lttng_condition;
 struct lttng_trigger;
+/* A collection of trigger */
+struct lttng_triggers;
 
 #ifdef __cplusplus
 extern "C" {
@@ -122,6 +124,43 @@ extern int lttng_register_trigger(struct lttng_trigger *trigger);
  * Return 0 on success, a negative LTTng error code on error.
  */
 extern int lttng_unregister_trigger(struct lttng_trigger *trigger);
+
+/*
+ * List current triggers.
+ * 
+ * On success, triggers is allocated.
+ * The trigger collection must be free by the caller with lttng_destroy_triggers
+ *
+ * Returns 0 on success, else a negative LTTng error code.
+ */
+extern int lttng_list_triggers(struct lttng_triggers **triggers);
+
+/*
+ * Get a trigger from the collection at a given index.
+ *
+ * Note that the collection maintains the ownership of the returned trigger.
+ * It must not be destroyed by the user, nor should it be held beyond the
+ * lifetime of the trigger collection.
+ *
+ * Returns a trigger, or NULL on error.
+ */
+extern const struct lttng_trigger *lttng_triggers_get_at_index(
+		const struct lttng_triggers *triggers, unsigned int index);
+
+/*
+ * Get the number of trigger in a tracker id list.
+ *
+ * Return LTTNG_TRIGGER_STATUS_OK on success,
+ * LTTNG_TRIGGER_STATUS_INVALID when passed invalid parameters.
+ */
+extern enum lttng_trigger_status lttng_triggers_get_count(
+		const struct lttng_triggers *triggers, unsigned int *count);
+
+/*
+ * Destroy a trigger collection.
+ */
+extern void lttng_triggers_destroy(struct lttng_triggers *ids);
+
 
 #ifdef __cplusplus
 }

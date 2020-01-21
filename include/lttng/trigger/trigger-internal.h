@@ -26,6 +26,11 @@ struct lttng_trigger {
 	} key;
 };
 
+struct lttng_triggers {
+	struct lttng_trigger **array;
+	unsigned int count;
+};
+
 struct lttng_trigger_comm {
 	/* length excludes its own length. */
 	uint32_t name_length /* Includes '\0' */;
@@ -33,6 +38,13 @@ struct lttng_trigger_comm {
 	/* A name, condition and action object follow. */
 	char payload[];
 } LTTNG_PACKED;
+
+struct lttng_triggers_comm {
+	uint32_t count;
+	uint32_t length;
+	/* Count * lttng_trigger_comm structure */
+	char payload[];
+};
 
 LTTNG_HIDDEN
 ssize_t lttng_trigger_create_from_buffer(const struct lttng_buffer_view *view,
@@ -66,5 +78,31 @@ void lttng_trigger_set_key(struct lttng_trigger *trigger, uint64_t key);
 
 LTTNG_HIDDEN
 int lttng_trigger_generate_name(struct lttng_trigger *trigger, uint64_t offset);
+
+/*
+ * Allocate a new list of lttng_trigger.
+ * The returned object must be freed via lttng_triggers_destroy.
+ */
+LTTNG_HIDDEN
+struct lttng_triggers *lttng_triggers_create(unsigned int count);
+
+/*
+ * Return the non-const pointer of an element at index "index" of a
+ * lttng_triggers.
+ *
+ * The ownership of the lttng_triggers element is NOT transfered.
+ * The returned object can NOT be freed via lttng_trigger_destroy.
+ */
+LTTNG_HIDDEN
+struct lttng_trigger *lttng_triggers_get_pointer_of_index(
+		const struct lttng_triggers *triggers, unsigned int index);
+
+/*
+ * Serialize a trigger collection to a lttng_dynamic_buffer.
+ * Return LTTNG_OK on success, negative lttng error code on error.
+ */
+LTTNG_HIDDEN
+int lttng_triggers_serialize(const struct lttng_triggers *triggers,
+		struct lttng_dynamic_buffer *buffer);
 
 #endif /* LTTNG_TRIGGER_INTERNAL_H */
