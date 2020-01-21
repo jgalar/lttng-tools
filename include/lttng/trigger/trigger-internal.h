@@ -10,6 +10,7 @@
 
 #include <lttng/trigger/trigger.h>
 #include <common/credentials.h>
+#include <common/dynamic-array.h>
 #include <common/macros.h>
 #include <common/optional.h>
 #include <stdint.h>
@@ -36,6 +37,10 @@ struct lttng_trigger {
 	LTTNG_OPTIONAL(uint64_t) tracer_token;
 };
 
+struct lttng_triggers {
+	struct lttng_dynamic_pointer_array array;
+};
+
 struct lttng_trigger_comm {
 	/* length excludes its own length. */
 	uint32_t name_length /* Includes '\0' */;
@@ -43,6 +48,13 @@ struct lttng_trigger_comm {
 	/* A name, condition and action object follow. */
 	char payload[];
 } LTTNG_PACKED;
+
+struct lttng_triggers_comm {
+	uint32_t count;
+	uint32_t length;
+	/* Count * lttng_trigger_comm structure */
+	char payload[];
+};
 
 LTTNG_HIDDEN
 ssize_t lttng_trigger_create_from_payload(struct lttng_payload_view *view,
@@ -86,6 +98,43 @@ void lttng_trigger_get(struct lttng_trigger *trigger);
 
 LTTNG_HIDDEN
 void lttng_trigger_put(struct lttng_trigger *trigger);
+
+/*
+ * Allocate a new list of lttng_trigger.
+ * The returned object must be freed via lttng_triggers_destroy.
+ */
+LTTNG_HIDDEN
+struct lttng_triggers *lttng_triggers_create(void);
+
+/*
+ * Return the non-const pointer of an element at index "index" of a
+ * lttng_triggers.
+ *
+ * The ownership of the lttng_triggers element is NOT transfered.
+ * The returned object can NOT be freed via lttng_trigger_destroy.
+ */
+LTTNG_HIDDEN
+struct lttng_trigger *lttng_triggers_get_pointer_of_index(
+		const struct lttng_triggers *triggers, unsigned int index);
+
+/*
+ * Add a trigger to the triggers object.
+ */
+LTTNG_HIDDEN
+int lttng_triggers_add(
+		struct lttng_triggers *triggers, struct lttng_trigger *trigger);
+
+/*
+ * Serialize a trigger collection to a lttng_payload object.
+ * Return LTTNG_OK on success, negative lttng error code on error.
+ */
+LTTNG_HIDDEN
+int lttng_triggers_serialize(const struct lttng_triggers *triggers,
+		struct lttng_payload *payload);
+
+LTTNG_HIDDEN
+ssize_t lttng_triggers_create_from_payload(struct lttng_payload_view *view,
+		struct lttng_triggers **triggers);
 
 LTTNG_HIDDEN
 const struct lttng_credentials *lttng_trigger_get_credentials(

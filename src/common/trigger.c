@@ -12,6 +12,7 @@
 #include <common/payload.h>
 #include <common/payload-view.h>
 #include <common/error.h>
+#include <common/dynamic-array.h>
 #include <common/optional.h>
 #include <assert.h>
 #include <inttypes.h>
@@ -322,7 +323,7 @@ end:
 	return status;
 }
 
-enum lttng_trigger_status lttng_trigger_get_name(struct lttng_trigger *trigger, const char **name)
+enum lttng_trigger_status lttng_trigger_get_name(const struct lttng_trigger *trigger, const char **name)
 {
 	enum lttng_trigger_status status = LTTNG_TRIGGER_STATUS_OK;
 
@@ -405,6 +406,193 @@ void lttng_trigger_put(struct lttng_trigger *trigger)
 	}
 
 	urcu_ref_put(&trigger->ref , trigger_destroy_ref);
+}
+
+static void delete_trigger_array_element(void *ptr)
+{
+	struct lttng_trigger *trigger = ptr;
+	lttng_trigger_destroy(trigger);
+}
+
+LTTNG_HIDDEN
+struct lttng_triggers *lttng_triggers_create(void)
+{
+	struct lttng_triggers *triggers = NULL;
+
+	triggers = zmalloc(sizeof(*triggers));
+	if (!triggers) {
+		goto error;
+	}
+
+	lttng_dynamic_pointer_array_init(&triggers->array, delete_trigger_array_element);
+
+	return triggers;
+error:
+	free(triggers);
+	return NULL;
+}
+
+LTTNG_HIDDEN
+struct lttng_trigger *lttng_triggers_get_pointer_of_index(
+		const struct lttng_triggers *triggers, unsigned int index)
+{
+	assert(triggers);
+	if (index >= lttng_dynamic_pointer_array_get_count(&triggers->array)) {
+		return NULL;
+	}
+	return lttng_dynamic_pointer_array_get_pointer(&triggers->array, index);
+}
+
+LTTNG_HIDDEN
+int lttng_triggers_add(
+		struct lttng_triggers *triggers, struct lttng_trigger *trigger)
+{
+	assert(triggers);
+	assert(trigger);
+
+	return lttng_dynamic_pointer_array_add_pointer(&triggers->array, trigger);
+}
+
+const struct lttng_trigger *lttng_triggers_get_at_index(
+		const struct lttng_triggers *triggers, unsigned int index)
+{
+	assert(triggers);
+	return lttng_triggers_get_pointer_of_index(triggers, index);
+}
+
+enum lttng_trigger_status lttng_triggers_get_count(const struct lttng_triggers *triggers, unsigned int *count)
+{
+	enum lttng_trigger_status status = LTTNG_TRIGGER_STATUS_OK;
+
+	if (!triggers || !count) {
+		status = LTTNG_TRIGGER_STATUS_INVALID;
+		goto end;
+	}
+
+	*count = lttng_dynamic_pointer_array_get_count(&triggers->array);
+end:
+	return status;
+}
+
+void lttng_triggers_destroy(struct lttng_triggers *triggers)
+{
+	if (!triggers) {
+		return;
+	}
+
+	lttng_dynamic_pointer_array_reset(&triggers->array);
+	free(triggers);
+}
+
+int lttng_triggers_serialize(const struct lttng_triggers *triggers,
+		struct lttng_payload *payload)
+{
+	int ret;
+	unsigned int count;
+	size_t header_offset, size_before_payload;
+	struct lttng_triggers_comm triggers_comm = { 0 };
+	struct lttng_triggers_comm *header;
+	struct lttng_trigger *trigger;
+	enum lttng_trigger_status status;
+
+	header_offset = payload->buffer.size;
+
+	status = lttng_triggers_get_count(triggers, &count);
+	if (status != LTTNG_TRIGGER_STATUS_OK) {
+		ret = LTTNG_ERR_INVALID;
+		goto end;
+	}
+
+	triggers_comm.count = count;
+
+	ret = lttng_dynamic_buffer_append(&payload->buffer, &triggers_comm,
+			sizeof(triggers_comm));
+	if (ret) {
+		goto end;
+	}
+
+	size_before_payload = payload->buffer.size;
+
+	for (int i = 0; i < count; i++) {
+		trigger = lttng_triggers_get_pointer_of_index(triggers, i);
+		if (!trigger) {
+			assert(0);
+		}
+
+		ret = lttng_trigger_serialize(trigger, payload);
+		if (ret) {
+			goto end;
+		}
+	}
+
+	/* Update payload size. */
+	header = (struct lttng_triggers_comm *) ((char *) payload->buffer.data + header_offset);
+	header->length = payload->buffer.size - size_before_payload;
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+ssize_t lttng_triggers_create_from_payload(
+		struct lttng_payload_view *src_view,
+		struct lttng_triggers **triggers)
+{
+	ssize_t ret, offset = 0, trigger_size, triggers_size = 0;
+	const struct lttng_triggers_comm *triggers_comm;
+	struct lttng_triggers *local_triggers = NULL;
+
+	if (!src_view || !triggers) {
+		ret = -1;
+		goto error;
+	}
+
+	/* lttng_trigger_comms header */
+	triggers_comm = (const struct lttng_triggers_comm *) src_view->buffer.data;
+	offset += sizeof(*triggers_comm);
+
+	local_triggers = lttng_triggers_create();
+	if (!local_triggers) {
+		ret = -1;
+		goto error;
+	}
+
+	for (int i = 0; i < triggers_comm->count; i++) {
+		struct lttng_trigger *trigger = NULL;
+		struct lttng_payload_view trigger_view =
+			lttng_payload_view_from_view(src_view, offset, -1);
+		trigger_size = lttng_trigger_create_from_payload(&trigger_view,
+				&trigger);
+		if (trigger_size  < 0) {
+			ret = trigger_size;
+			goto error;
+		}
+		
+		/* Pass ownership of the trigger to the collection */
+		ret = lttng_triggers_add(local_triggers, trigger);
+		if (ret < 0) {
+			assert(0);
+		}
+		trigger = NULL;
+
+		offset += trigger_size;
+		triggers_size += trigger_size;
+	}
+
+	/* Unexpected size of inner-elements; the buffer is corrupted. */
+	if ((ssize_t) triggers_comm->length != triggers_size) {
+		ret = -1;
+		goto error;
+	}
+
+	/* Pass ownership to caller */
+	*triggers = local_triggers;
+	local_triggers = NULL;
+
+	ret = offset;
+error:
+
+	lttng_triggers_destroy(local_triggers);
+	return ret;
 }
 
 LTTNG_HIDDEN
