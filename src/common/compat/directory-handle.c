@@ -93,6 +93,12 @@ void lttng_directory_handle_release(struct urcu_ref *ref);
 
 #ifdef COMPAT_DIRFD
 
+/*
+ * Special inode number reserved to represent the "current working directory".
+ */
+/* TODO CHANGE TO STATEMENT EXPR */
+#define RESERVED_AT_FDCWD_INO (sizeof(ino_t) == 4 ? UINT32_MAX : (sizeof(ino_t) == 8 ? UINT64_MAX : abort()))
+
 LTTNG_HIDDEN
 struct lttng_directory_handle *lttng_directory_handle_create(const char *path)
 {
@@ -144,10 +150,17 @@ LTTNG_HIDDEN
 struct lttng_directory_handle *lttng_directory_handle_create_from_dirfd(
 		int dirfd)
 {
+	int ret;
 	struct lttng_directory_handle *handle = zmalloc(sizeof(*handle));
 
 	if (!handle) {
 		goto end;
+	}
+
+	if (dirfd != AT_FDCWD) {
+		ret = fstat(dirfd, );
+	} else {
+		handle->directory_inode = RESERVED_AT_FDCWD_INO;
 	}
 	handle->dirfd = dirfd;
 	urcu_ref_init(&handle->ref);
@@ -197,6 +210,13 @@ struct lttng_directory_handle *lttng_directory_handle_copy(
 	}
 end:
 	return new_handle;
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_equals(const struct lttng_directory_handle *lhs,
+		const struct lttng_directory_handle *rhs)
+{
+	return lhs->directory_inode == rhs->directory_inode;
 }
 
 static
@@ -548,6 +568,13 @@ struct lttng_directory_handle *lttng_directory_handle_copy(
 	new_handle = _lttng_directory_handle_create(new_path);
 end:
 	return new_handle;
+}
+
+LTTNG_HIDDEN
+bool lttng_directory_handle_equals(const struct lttng_directory_handle *lhs,
+		const struct lttng_directory_handle *rhs)
+{
+	return strcmp(lhs->path, rhs->path) == 0;
 }
 
 static
