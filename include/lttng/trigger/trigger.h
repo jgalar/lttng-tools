@@ -32,6 +32,11 @@ enum lttng_trigger_status {
 	LTTNG_TRIGGER_STATUS_UNSUPPORTED = -5,
 };
 
+enum lttng_trigger_firing_policy_type {
+	LTTNG_TRIGGER_FIRE_EVERY_N = 0,
+	LTTNG_TRIGGER_FIRE_ONCE_AFTER_N = 1,
+};
+
 /*
  * Create a trigger object associating a condition and an action.
  *
@@ -101,6 +106,21 @@ extern enum lttng_trigger_status lttng_trigger_get_name(
  */
 extern enum lttng_trigger_status lttng_trigger_set_name(
 		struct lttng_trigger *trigger, const char *name);
+
+/*
+ * Set the trigger firing policy.
+ *
+ * This is optional. By default a trigger is set to fire each time the
+ * associated condition occurs.
+ *
+ * Threshold is the number of time the condition must be hit before the policy is
+ * enacted.
+ *
+ * Return LTTNG_TRIGGER_STATUS_OK on success, LTTNG_TRIGGER_STATUS_INVALID
+ * if invalid parameters are passed.
+ */
+extern enum lttng_trigger_status lttng_trigger_set_firing_policy(
+		struct lttng_trigger *trigger, enum lttng_trigger_firing_policy_type policy_type, unsigned long long threshold);
 
 /*
  * Destroy (frees) a trigger object.

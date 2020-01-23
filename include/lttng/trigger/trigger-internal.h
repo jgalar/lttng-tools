@@ -30,6 +30,11 @@ struct lttng_trigger {
 		struct lttng_credentials credentials;
 		bool set;
 	} creds;
+	struct {
+		enum lttng_trigger_firing_policy_type type;
+		uint64_t threshold;
+		uint64_t current_count;
+	} firing_policy;
 };
 
 struct lttng_triggers {
@@ -40,6 +45,8 @@ struct lttng_trigger_comm {
 	/* length excludes its own length. */
 	uint32_t name_length /* Includes '\0' */;
 	uint32_t length;
+	uint8_t policy_type;
+	uint64_t policy_threshold;
 	/* A name, condition and action object follow. */
 	char payload[];
 } LTTNG_PACKED;

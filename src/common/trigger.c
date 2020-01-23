@@ -44,6 +44,8 @@ struct lttng_trigger *lttng_trigger_create(
 		goto end;
 	}
 
+	trigger->firing_policy.type = LTTNG_TRIGGER_FIRE_EVERY_N;
+	trigger->firing_policy.threshold = 1;
 	trigger->condition = condition;
 	trigger->action = action;
 
@@ -128,6 +130,8 @@ ssize_t lttng_trigger_create_from_buffer(
 	struct lttng_buffer_view action_view;
 	struct lttng_buffer_view name_view;
 	const char *name = NULL;
+	unsigned long long firing_threshold;
+	enum lttng_trigger_firing_policy_type firing_policy;
 
 	if (!src_view || !trigger) {
 		ret = -1;
@@ -138,6 +142,8 @@ ssize_t lttng_trigger_create_from_buffer(
 	trigger_comm = (const struct lttng_trigger_comm *) src_view->data;
 	offset += sizeof(*trigger_comm);
 
+	firing_policy = trigger_comm->policy_type;
+	firing_threshold = trigger_comm->policy_threshold;
 	if (trigger_comm->name_length != 0) {
 		name_view = lttng_buffer_view_from_view(
 				src_view, offset, trigger_comm->name_length);
@@ -192,6 +198,12 @@ ssize_t lttng_trigger_create_from_buffer(
 		}
 	}
 
+	status = lttng_trigger_set_firing_policy(*trigger, firing_policy, firing_threshold);
+	if (status != LTTNG_TRIGGER_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
 	ret = offset;
 end:
 	return ret;
@@ -223,6 +235,8 @@ int lttng_trigger_serialize(struct lttng_trigger *trigger,
 	}
 
 	trigger_comm.name_length = size_name;
+	trigger_comm.policy_type = (uint8_t) trigger->firing_policy.type;
+	trigger_comm.policy_threshold = (uint64_t) trigger->firing_policy.threshold;
 
 	ret = lttng_dynamic_buffer_append(buf, &trigger_comm,
 			sizeof(trigger_comm));
@@ -592,4 +606,24 @@ void lttng_trigger_set_credentials(
 	trigger->creds.credentials.uid = uid;
 	trigger->creds.credentials.gid = gid;
 	trigger->creds.set = true;
+}
+
+enum lttng_trigger_status lttng_trigger_set_firing_policy(
+		struct lttng_trigger *trigger,
+		enum lttng_trigger_firing_policy_type policy_type,
+		unsigned long long threshold)
+{
+	enum lttng_trigger_status ret = LTTNG_TRIGGER_STATUS_OK;
+	assert(trigger);
+
+	if (threshold < 1) {
+		ret = LTTNG_TRIGGER_STATUS_INVALID;
+		goto end;
+	}
+
+	trigger->firing_policy.type = policy_type;
+	trigger->firing_policy.threshold = threshold;
+
+end:
+	return ret;
 }
