@@ -86,7 +86,7 @@ extern struct lttng_action *lttng_trigger_get_action(
  * or LTTNG_TRIGGER_STATUS_UNSET if a name was not set prior to this call.
  */
 extern enum lttng_trigger_status lttng_trigger_get_name(
-		struct lttng_trigger *trigger, const char **name);
+		const struct lttng_trigger *trigger, const char **name);
 
 /*
  * Set the trigger name.

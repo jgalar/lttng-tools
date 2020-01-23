@@ -29,6 +29,7 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_ADD_APPLICATION,
 	NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION,
 	NOTIFICATION_COMMAND_TYPE_GET_TOKENS,
+	NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 };
 
@@ -76,6 +77,9 @@ struct notification_thread_command {
 		struct {
 			struct cds_lfht *ht;
 		} get_tokens;
+		struct {
+			struct lttng_triggers *triggers;
+		} list_triggers;
 	} reply;
 
 	/* lttng_waiter on which to wait for command reply (optional). */
@@ -122,6 +126,11 @@ enum lttng_error_code notification_thread_command_add_application(
 enum lttng_error_code notification_thread_command_get_tokens(
 		struct notification_thread_handle *handle,
 		struct cds_lfht **trigger_tokens_ht);
+
+/* TODO: for now we borrow with no refcount the trigger. THIS IS DANGEROUS */
+enum lttng_error_code notification_thread_command_list_triggers(
+		struct notification_thread_handle *handle,
+		struct lttng_triggers **triggers);
 
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle);

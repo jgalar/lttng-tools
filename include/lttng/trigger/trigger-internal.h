@@ -98,11 +98,31 @@ struct lttng_trigger *lttng_triggers_get_pointer_of_index(
 		const struct lttng_triggers *triggers, unsigned int index);
 
 /*
+ * TODO:
+ */
+LTTNG_HIDDEN
+int lttng_triggers_set_pointer_of_index(
+		const struct lttng_triggers *triggers, unsigned int index, struct lttng_trigger *trigger);
+
+/*
  * Serialize a trigger collection to a lttng_dynamic_buffer.
  * Return LTTNG_OK on success, negative lttng error code on error.
  */
 LTTNG_HIDDEN
 int lttng_triggers_serialize(const struct lttng_triggers *triggers,
 		struct lttng_dynamic_buffer *buffer);
+
+/*
+ * Free only the collection structure, not the triggers 
+ * TODO: this is needed only on sessiond side, the use of refcount on the
+ * trigger object would mostly resolve the need for this.
+ */
+LTTNG_HIDDEN
+void lttng_triggers_destroy_array(struct lttng_triggers *triggers);
+
+LTTNG_HIDDEN
+ssize_t lttng_triggers_create_from_buffer(const struct lttng_buffer_view *view,
+		struct lttng_triggers **triggers);
+
 
 #endif /* LTTNG_TRIGGER_INTERNAL_H */

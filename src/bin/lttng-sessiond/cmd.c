@@ -4478,6 +4478,29 @@ end:
 	return ret;
 }
 
+int cmd_list_triggers(struct command_ctx *cmd_ctx, int sock,
+		struct notification_thread_handle *notification_thread,
+		struct lttng_triggers **return_triggers)
+{
+	int ret = 0;
+	enum lttng_error_code ret_code;
+	struct lttng_triggers *triggers = NULL;
+
+	/* Get list of token trigger from the notification thread here */
+	ret_code = notification_thread_command_list_triggers(notification_thread_handle, &triggers);
+	if (ret_code != LTTNG_OK) {
+		ret = ret_code;
+		goto end;
+	}
+
+	/* Return a "view" of the current triggers */
+	*return_triggers = triggers;
+	triggers = NULL;
+	ret = LTTNG_OK;
+end:
+	lttng_triggers_destroy_array(triggers);
+	return ret;
+}
 /*
  * Send relayd sockets from snapshot output to consumer. Ignore request if the
  * snapshot output is *not* set with a remote destination.

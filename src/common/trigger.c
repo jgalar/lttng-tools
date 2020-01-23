@@ -278,7 +278,7 @@ end:
 	return status;
 }
 
-enum lttng_trigger_status lttng_trigger_get_name(struct lttng_trigger *trigger, const char **name)
+enum lttng_trigger_status lttng_trigger_get_name(const struct lttng_trigger *trigger, const char **name)
 {
 	enum lttng_trigger_status status = LTTNG_TRIGGER_STATUS_OK;
 
@@ -393,6 +393,20 @@ struct lttng_trigger *lttng_triggers_get_pointer_of_index(
 	}
 
 	return triggers->array[index];
+}
+
+LTTNG_HIDDEN
+int lttng_triggers_set_pointer_of_index(
+		const struct lttng_triggers *triggers, unsigned int index, struct lttng_trigger *trigger)
+{
+	assert(triggers);
+	assert(trigger);
+	if (index >= triggers->count) {
+		return -1;
+	}
+
+	triggers->array[index] = trigger;
+	return 0;
 }
 
 const struct lttng_trigger *lttng_triggers_get_at_index(
@@ -523,7 +537,6 @@ ssize_t lttng_triggers_create_from_buffer(
 
 	for (int i = 0; i < triggers_comm->count; i++) {
 		struct lttng_trigger *trigger = NULL;
-		struct lttng_trigger *array_trigger;
 		trigger_view = lttng_buffer_view_from_view(src_view, offset, -1);
 		trigger_size = lttng_trigger_create_from_buffer(&trigger_view,
 				&trigger);
@@ -533,13 +546,11 @@ ssize_t lttng_triggers_create_from_buffer(
 			goto error;
 		}
 		
-		array_trigger = lttng_triggers_get_pointer_of_index(local_triggers, i);
-		if (!array_trigger) {
+		/* Pass ownership of the trigger to the collection */
+		ret = lttng_triggers_set_pointer_of_index(local_triggers, i, trigger);
+		if (ret < 0) {
 			assert(0);
 		}
-
-		/* Pass ownership of the trigger to the collection */
-		array_trigger = trigger;
 		trigger = NULL;
 
 		offset += trigger_size;
@@ -547,7 +558,7 @@ ssize_t lttng_triggers_create_from_buffer(
 	}
 
 	/* Unexpected size of inner-elements; the buffer is corrupted. */
-	if ((ssize_t) triggers_comm->length != trigger_size) {
+	if ((ssize_t) triggers_comm->length != triggers_size) {
 		ret = -1;
 		goto error;
 	}

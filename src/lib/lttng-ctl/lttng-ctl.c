@@ -3013,6 +3013,49 @@ end:
 	return ret;
 }
 
+/*
+ * Ask the session daemon for all registered triggers.
+ * Allocate a lttng_triggers collection.
+ * On error, returns a negative value.
+ */
+int lttng_list_triggers(struct lttng_triggers **triggers)
+{
+	int ret;
+	int reply_ret;
+	struct lttcomm_session_msg lsm;
+	struct lttng_buffer_view reply_view;
+	struct lttng_triggers *local_triggers = NULL;
+	void *reply = NULL;
+
+	memset(&lsm, 0, sizeof(lsm));
+	lsm.cmd_type = LTTNG_LIST_TRIGGERS;
+
+	reply_ret = lttng_ctl_ask_sessiond(&lsm, &reply);
+	if (reply_ret < 0) {
+		ret = -reply_ret;
+		goto end;
+	} else if (reply_ret == 0) {
+		/* Socket unexpectedly closed by the session daemon. */
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	reply_view = lttng_buffer_view_init(reply, 0, reply_ret);
+	ret = lttng_triggers_create_from_buffer(&reply_view, &local_triggers);
+	if (ret < 0) {
+		ret = -LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	*triggers = local_triggers;
+	local_triggers = NULL;
+	ret = LTTNG_OK;
+end:
+	free(reply);
+	free(local_triggers);
+	return ret;
+}
+
 static int lttng_track_untrack_id(struct lttng_handle *handle,
 		enum lttng_tracker_type tracker_type,
 		const struct lttng_tracker_id *id,

@@ -1952,6 +1952,59 @@ end:
 	*_cmd_result = cmd_result;
 	return ret;
 }
+
+static
+int handle_notification_thread_command_list_triggers(
+	struct notification_thread_handle *handle,
+	struct notification_thread_state *state,
+	struct lttng_triggers **triggers,
+	enum lttng_error_code *_cmd_result)
+{
+	int ret = 0, i = 0;
+	enum lttng_error_code cmd_result = LTTNG_OK;
+	struct cds_lfht_iter iter;
+	struct lttng_trigger_ht_element *trigger_ht_element;
+	struct lttng_triggers *local_triggers = NULL;
+	
+	long scb, sca;
+	unsigned long count;
+
+	rcu_read_lock();
+	cds_lfht_count_nodes(state->triggers_ht, &scb, &count, &sca);
+
+	/* TODO check downcasting */
+	local_triggers = lttng_triggers_create((unsigned int) count);
+	if (!local_triggers) {
+		cmd_result = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	cds_lfht_for_each_entry (state->triggers_ht, &iter,
+			trigger_ht_element, node) {
+		/*
+		 * Share the trigger not the ownership
+		 * TODO: either refcout the trigger or copy it.
+		 * */
+		ret = lttng_triggers_set_pointer_of_index(local_triggers, i, trigger_ht_element->trigger);
+		if (ret < 0) {
+			ret = -1;
+			goto end;
+		}
+
+		i++;
+	}
+
+	/* Passing ownership up */
+	*triggers = local_triggers;
+	local_triggers = NULL;
+
+end:
+	rcu_read_unlock();
+	lttng_triggers_destroy_array(local_triggers);
+	*_cmd_result = cmd_result;
+	return ret;
+}
+
 static
 int condition_is_supported(struct lttng_condition *condition)
 {
@@ -2671,6 +2724,21 @@ int handle_notification_thread_command(
 		cmd->reply_code = LTTNG_OK;
 		ret = 0;
 		break;
+	case NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS:
+	{
+		struct lttng_triggers *triggers = NULL;
+		ret = handle_notification_thread_command_list_triggers(
+				handle,
+				state,
+				&triggers,
+				&cmd->reply_code);
+		if (ret < 0) {
+			goto error_unlock;
+		}
+		cmd->reply.list_triggers.triggers = triggers;
+		ret = 0;
+		break;
+	}
 	case NOTIFICATION_COMMAND_TYPE_QUIT:
 		DBG("[notification-thread] Received quit command");
 		cmd->reply_code = LTTNG_OK;
