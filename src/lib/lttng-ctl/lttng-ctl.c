@@ -3101,6 +3101,52 @@ end:
 }
 
 /*
+ * Ask the session daemon for all registered triggers.
+ * Allocate a lttng_triggers collection.
+ * On error, returns a negative value.
+ */
+int lttng_list_triggers(struct lttng_triggers **triggers)
+{
+	int ret;
+	struct lttcomm_session_msg lsm;
+	struct lttng_payload_view lsm_view =
+			lttng_payload_view_init_from_buffer(
+				(const char *) &lsm, 0, sizeof(lsm));
+	struct lttng_triggers *local_triggers = NULL;
+	struct lttng_payload reply;
+
+	lttng_payload_init(&reply);
+
+	memset(&lsm, 0, sizeof(lsm));
+	lsm.cmd_type = LTTNG_LIST_TRIGGERS;
+
+	ret = lttng_ctl_ask_sessiond_payload(&lsm_view, &reply);
+	if (ret < 0) {
+		goto end;
+	}
+
+	{
+		struct lttng_payload_view reply_view =
+				lttng_payload_view_from_payload(
+						&reply, 0, reply.buffer.size);
+		ret = lttng_triggers_create_from_payload(
+				&reply_view, &local_triggers);
+		if (ret < 0) {
+			ret = -LTTNG_ERR_FATAL;
+			goto end;
+		}
+	}
+
+	*triggers = local_triggers;
+	local_triggers = NULL;
+	ret = 0;
+end:
+	lttng_payload_reset(&reply);
+	lttng_triggers_destroy(local_triggers);
+	return ret;
+}
+
+/*
  * lib constructor.
  */
 static void __attribute__((constructor)) init(void)

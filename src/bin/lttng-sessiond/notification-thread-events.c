@@ -1954,6 +1954,69 @@ end:
 }
 
 static
+int handle_notification_thread_command_list_triggers(
+	struct notification_thread_handle *handle,
+	struct notification_thread_state *state,
+	uid_t uid,
+	gid_t gid,
+	struct lttng_triggers **triggers,
+	enum lttng_error_code *_cmd_result)
+{
+	int ret = 0, i = 0;
+	enum lttng_error_code cmd_result = LTTNG_OK;
+	struct cds_lfht_iter iter;
+	struct lttng_trigger_ht_element *trigger_ht_element;
+	struct lttng_triggers *local_triggers = NULL;
+	const struct lttng_credentials *creds;
+
+	long scb, sca;
+	unsigned long count;
+
+	rcu_read_lock();
+	cds_lfht_count_nodes(state->triggers_ht, &scb, &count, &sca);
+
+	/* TODO check downcasting */
+	local_triggers = lttng_triggers_create();
+	if (!local_triggers) {
+		cmd_result = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	cds_lfht_for_each_entry (state->triggers_ht, &iter,
+			trigger_ht_element, node) {
+		/* Only return the trigger for which the requestion client have
+		 * access. For now the root user can only list its own
+		 * triggers.
+		 * TODO: root user behavior
+		 */
+		creds = lttng_trigger_get_credentials(trigger_ht_element->trigger);
+		if ((uid != creds->uid) || (gid != creds->gid)) {
+			continue;
+		}
+
+		ret = lttng_triggers_add(local_triggers, trigger_ht_element->trigger);
+		if (ret < 0) {
+			ret = -1;
+			goto end;
+		}
+		/* Ownership is shared with the lttng_triggers object */
+		lttng_trigger_get(trigger_ht_element->trigger);
+
+		i++;
+	}
+
+	/* Passing ownership up */
+	*triggers = local_triggers;
+	local_triggers = NULL;
+
+end:
+	rcu_read_unlock();
+	lttng_triggers_destroy(local_triggers);
+	*_cmd_result = cmd_result;
+	return ret;
+}
+
+static
 int condition_is_supported(struct lttng_condition *condition)
 {
 	int ret;
@@ -2615,6 +2678,20 @@ int handle_notification_thread_command(
 				cmd->parameters.session_rotation.location,
 				&cmd->reply_code);
 		break;
+	case NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS:
+	{
+		struct lttng_triggers *triggers = NULL;
+		ret = handle_notification_thread_command_list_triggers(
+				handle,
+				state,
+				cmd->parameters.list_triggers.uid,
+				cmd->parameters.list_triggers.gid,
+				&triggers,
+				&cmd->reply_code);
+		cmd->reply.list_triggers.triggers = triggers;
+		ret = 0;
+		break;
+	}
 	case NOTIFICATION_COMMAND_TYPE_QUIT:
 		DBG("[notification-thread] Received quit command");
 		cmd->reply_code = LTTNG_OK;

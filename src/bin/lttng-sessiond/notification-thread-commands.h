@@ -27,6 +27,7 @@ enum notification_thread_command_type {
 	NOTIFICATION_COMMAND_TYPE_REMOVE_CHANNEL,
 	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_ONGOING,
 	NOTIFICATION_COMMAND_TYPE_SESSION_ROTATION_COMPLETED,
+	NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS,
 	NOTIFICATION_COMMAND_TYPE_QUIT,
 	NOTIFICATION_COMMAND_TYPE_CLIENT_COMMUNICATION_UPDATE,
 };
@@ -64,6 +65,12 @@ struct notification_thread_command {
 			uint64_t trace_archive_chunk_id;
 			struct lttng_trace_archive_location *location;
 		} session_rotation;
+		/* List triggers */
+		struct {
+			/* Credential */
+			uid_t uid;
+			gid_t gid;
+		} list_triggers;
 		/* Client communication update. */
 		struct {
 			notification_client_id id;
@@ -72,6 +79,11 @@ struct notification_thread_command {
 
 	} parameters;
 
+	union {
+		struct {
+			struct lttng_triggers *triggers;
+		} list_triggers;
+	} reply;
 	/* lttng_waiter on which to wait for command reply (optional). */
 	struct lttng_waiter reply_waiter;
 	enum lttng_error_code reply_code;
@@ -107,6 +119,13 @@ enum lttng_error_code notification_thread_command_session_rotation_completed(
 		const char *session_name, uid_t session_uid, gid_t session_gid,
 		uint64_t trace_archive_chunk_id,
 		struct lttng_trace_archive_location *location);
+
+/* TODO: for now we borrow with no refcount the trigger. THIS IS DANGEROUS */
+enum lttng_error_code notification_thread_command_list_triggers(
+		struct notification_thread_handle *handle,
+		uid_t uid,
+		gid_t gid,
+		struct lttng_triggers **triggers);
 
 void notification_thread_command_quit(
 		struct notification_thread_handle *handle);
