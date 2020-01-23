@@ -50,6 +50,9 @@ struct lttng_trigger *lttng_trigger_create(
 
 	urcu_ref_init(&trigger->ref);
 
+	trigger->firing_policy.type = LTTNG_TRIGGER_FIRE_EVERY_N;
+	trigger->firing_policy.threshold = 1;
+
 	lttng_condition_get(condition);
 	trigger->condition = condition;
 
@@ -132,6 +135,8 @@ ssize_t lttng_trigger_create_from_payload(
 	struct lttng_action *action = NULL;
 	const struct lttng_trigger_comm *trigger_comm;
 	const char *name = NULL;
+	unsigned long long firing_threshold;
+	enum lttng_trigger_firing_policy_type firing_policy;
 
 	if (!src_view || !trigger) {
 		ret = -1;
@@ -142,6 +147,8 @@ ssize_t lttng_trigger_create_from_payload(
 	trigger_comm = (typeof(trigger_comm)) src_view->buffer.data;
 	offset += sizeof(*trigger_comm);
 
+	firing_policy = trigger_comm->policy_type;
+	firing_threshold = trigger_comm->policy_threshold;
 	if (trigger_comm->name_length != 0) {
 		/* Name */
 		struct lttng_payload_view name_view =
@@ -218,6 +225,12 @@ ssize_t lttng_trigger_create_from_payload(
 		}
 	}
 
+	status = lttng_trigger_set_firing_policy(*trigger, firing_policy, firing_threshold);
+	if (status != LTTNG_TRIGGER_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
 	ret = offset;
 
 error:
@@ -247,6 +260,8 @@ int lttng_trigger_serialize(struct lttng_trigger *trigger,
 	}
 
 	trigger_comm.name_length = size_name;
+	trigger_comm.policy_type = (uint8_t) trigger->firing_policy.type;
+	trigger_comm.policy_threshold = (uint64_t) trigger->firing_policy.threshold;
 
 	header_offset = payload->buffer.size;
 	ret = lttng_dynamic_buffer_append(&payload->buffer, &trigger_comm,
@@ -279,23 +294,6 @@ int lttng_trigger_serialize(struct lttng_trigger *trigger,
 	header->length = payload->buffer.size - size_before_payload;
 end:
 	return ret;
-}
-
-LTTNG_HIDDEN
-bool lttng_trigger_is_equal(
-		const struct lttng_trigger *a, const struct lttng_trigger *b)
-{
-	/*
-	 * Name is not taken into account since it is cosmetic only.
-	 */
-	if (!lttng_condition_is_equal(a->condition, b->condition)) {
-		return false;
-	}
-	if (!lttng_action_is_equal(a->action, b->action)) {
-		return false;
-	}
-
-	return true;
 }
 
 enum lttng_trigger_status lttng_trigger_set_name(struct lttng_trigger *trigger, const char* name)
@@ -412,6 +410,37 @@ static void delete_trigger_array_element(void *ptr)
 {
 	struct lttng_trigger *trigger = ptr;
 	lttng_trigger_destroy(trigger);
+}
+
+LTTNG_HIDDEN
+bool lttng_trigger_is_equal(
+		const struct lttng_trigger *a, const struct lttng_trigger *b)
+{
+	/* TODO: Optimization: for now a trigger with a firing policy that is
+	 * not the same even if the conditions and actions is the same is
+	 * treated as a "completely" different trigger. In a perfect world we
+	 * would simply add a supplemental counter internally (sessiond side) to
+	 * remove overhead on the tracer side.
+	 */
+	if (a->firing_policy.type != b->firing_policy.type) {
+		return false;
+	}
+
+	if (a->firing_policy.threshold != b->firing_policy.threshold) {
+		return false;
+	}
+
+	/*
+	 * Name is not taken into account since it is cosmetic only.
+	 */
+	if (!lttng_condition_is_equal(a->condition, b->condition)) {
+		return false;
+	}
+	if (!lttng_action_is_equal(a->action, b->action)) {
+		return false;
+	}
+
+	return true;
 }
 
 LTTNG_HIDDEN
@@ -609,4 +638,58 @@ void lttng_trigger_set_credentials(
 {
 	assert(creds);
 	LTTNG_OPTIONAL_SET(&trigger->creds, *creds);
+}
+
+enum lttng_trigger_status lttng_trigger_set_firing_policy(
+		struct lttng_trigger *trigger,
+		enum lttng_trigger_firing_policy_type policy_type,
+		unsigned long long threshold)
+{
+	enum lttng_trigger_status ret = LTTNG_TRIGGER_STATUS_OK;
+	assert(trigger);
+
+	if (threshold < 1) {
+		ret = LTTNG_TRIGGER_STATUS_INVALID;
+		goto end;
+	}
+
+	trigger->firing_policy.type = policy_type;
+	trigger->firing_policy.threshold = threshold;
+
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+bool lttng_trigger_is_ready_to_fire(struct lttng_trigger *trigger)
+{
+	assert(trigger);
+	bool ready_to_fire = false;
+
+	trigger->firing_policy.current_count++;
+
+	switch (trigger->firing_policy.type) {
+	case LTTNG_TRIGGER_FIRE_EVERY_N:
+		if (trigger->firing_policy.current_count == trigger->firing_policy.threshold) {
+			trigger->firing_policy.current_count = 0;
+			ready_to_fire = true;
+		}
+		break;
+	case LTTNG_TRIGGER_FIRE_ONCE_AFTER_N:
+		if (trigger->firing_policy.current_count == trigger->firing_policy.threshold) {
+			/* TODO: remove the trigger of at least deactivate it on
+			 * the tracers side to remove any work overhead on the
+			 * traced application or kernel since the trigger will
+			 * never fire again.
+			 * Still this branch should be left here since event
+			 * could still be in the pipe. These will be discarded.
+			 */
+			ready_to_fire = true;
+		}
+		break;
+	default:
+		assert(0);
+	};
+
+	return ready_to_fire;
 }
