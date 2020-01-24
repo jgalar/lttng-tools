@@ -74,7 +74,7 @@ extern enum lttng_condition_status lttng_condition_event_rule_get_rule(
 extern enum lttng_evaluation_status
 lttng_evaluation_event_rule_get_trigger_name(
 		const struct lttng_evaluation *evaluation,
-		const char *name);
+		const char **name);
 
 #ifdef __cplusplus
 }

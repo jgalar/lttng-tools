@@ -28,6 +28,15 @@
 	)
 
 static
+bool is_event_rule_evaluation(const struct lttng_evaluation *evaluation)
+{
+	enum lttng_condition_type type = lttng_evaluation_get_type(evaluation);
+
+	return type == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT;
+}
+
+
+static
 bool lttng_condition_event_rule_validate(
 		const struct lttng_condition *condition);
 static
@@ -375,4 +384,24 @@ struct lttng_evaluation *lttng_evaluation_event_rule_create(const char *trigger_
 	hit->parent.destroy = lttng_evaluation_event_rule_destroy;
 end:
 	return &hit->parent;
+}
+
+enum lttng_evaluation_status
+lttng_evaluation_event_rule_get_trigger_name(
+		const struct lttng_evaluation *evaluation,
+		const char **name)
+{
+	struct lttng_evaluation_event_rule *hit;
+	enum lttng_evaluation_status status = LTTNG_EVALUATION_STATUS_OK;
+
+	if (!evaluation || !is_event_rule_evaluation(evaluation) || !name) {
+		status = LTTNG_EVALUATION_STATUS_INVALID;
+		goto end;
+	}
+
+	hit = container_of(evaluation, struct lttng_evaluation_event_rule,
+			parent);
+	*name = hit->name;
+end:
+	return status;
 }

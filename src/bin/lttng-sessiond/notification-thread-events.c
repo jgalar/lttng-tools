@@ -3692,6 +3692,105 @@ end:
 	return ret;
 }
 
+int perform_event_action_notify(struct notification_thread_state *state,
+		const struct lttng_trigger *trigger,
+		const struct lttng_ust_trigger_notification *notification,
+		const struct lttng_action *action)
+{
+	int ret;
+	struct notification_client_list *client_list;
+	struct lttng_evaluation *evaluation = NULL;
+	const struct lttng_credentials *creds = lttng_trigger_get_credentials(trigger);
+	/*
+	 * Check if any client is subscribed to the result of this
+	 * evaluation.
+	 */
+	rcu_read_lock();
+	client_list = get_client_list_from_condition(state, trigger->condition);
+	assert(client_list);
+	if (cds_list_empty(&client_list->list)) {
+		ret = 0;
+		goto end;
+	}
+
+	evaluation = lttng_evaluation_event_rule_create(trigger->name);
+	if (!evaluation) {
+		ERR("Failed to create event rule hit evaluation");
+		ret = -1;
+		goto end;
+	}
+
+	/* Dispatch evaluation result to all clients.
+	 * Note that here the passed credentials are the one from the trigger,
+	 * this is because there is no internal object binded to the trigger per
+	 * see and the credential validation is done at the registration level
+	 * for the event rule based trigger. For a channel the credential
+	 * validation can only be done on notify since the trigger can be
+	 * registered before the channel/session creation.
+	 */
+	ret = send_evaluation_to_clients(trigger,
+			evaluation, client_list, state,
+			creds->uid,
+			creds->gid);
+	lttng_evaluation_destroy(evaluation);
+	if (caa_unlikely(ret)) {
+		goto end;
+	}
+end:
+	rcu_read_unlock();
+	return ret;
+
+}
+
+/* This can be called recursively, pass NULL for action on the first iteration */
+int perform_event_action(struct notification_thread_state *state,
+		const struct lttng_trigger *trigger,
+		const struct lttng_ust_trigger_notification *notification,
+		const struct lttng_action *action)
+{
+	int ret = 0;
+	enum lttng_action_type action_type;
+
+	assert(trigger);
+
+	if (!action) {
+		action = lttng_trigger_get_const_action(trigger);
+	}
+
+	action_type = lttng_action_get_type_const(action);
+	DBG("Handling action %s for trigger id %s (%" PRIu64 ")",
+			lttng_action_type_string(action_type), trigger->name,
+			trigger->key.value);
+
+	switch (action_type) {
+	case LTTNG_ACTION_TYPE_GROUP:
+	{
+		/* Recurse into the group */
+		const struct lttng_action *tmp = NULL;
+		unsigned int count = 0;
+		(void) lttng_action_group_get_count(action, &count);
+		for (int i = 0; i < count; i++) {
+			tmp = lttng_action_group_get_at_index(action, i);
+			assert(tmp);
+			ret = perform_event_action(state, trigger, notification, tmp);
+			if (ret < 0) {
+				goto end;
+			}
+		}
+		break;
+	}
+	case LTTNG_ACTION_TYPE_NOTIFY:
+	{
+		ret = perform_event_action_notify(state, trigger, notification, action);
+		break;
+	}
+	default:
+		break;
+	}
+end:
+	return ret;
+}
+
 int handle_notification_thread_event(struct notification_thread_state *state,
 		int pipe,
 		enum lttng_domain_type domain)
@@ -3701,8 +3800,6 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
 	struct notification_trigger_tokens_ht_element *element;
-	enum lttng_action_type action_type;
-	const struct lttng_action *action;
 
 	/* Only ust is supported for now */
 	/* TODO split this into ust and kernel since received struct will not be
@@ -3748,22 +3845,7 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 			struct notification_trigger_tokens_ht_element,
 			node);
 
-	action = lttng_trigger_get_const_action(element->trigger);
-	action_type = lttng_action_get_type_const(action);
-	ERR("JORAJ: message from event source %d value:%" PRIu64 " action type: %s", pipe,
-			notification.id, lttng_action_type_string(action_type));
-	/* Debugging only */
-	if (action_type == LTTNG_ACTION_TYPE_GROUP) {
-		unsigned int nb_action = 0;
-		(void) lttng_action_group_get_count(action, &nb_action);
-		for (int i = 0; i < nb_action; i++) {
-			const struct lttng_action *p_action = NULL;
-			p_action = lttng_action_group_get_at_index(action, i);
-			assert(p_action);
-			ERR("JORAJ: message from event source %d value:%" PRIu64 " action type internal index: %d value: %s", pipe,
-					notification.id, i, lttng_action_type_string(lttng_action_get_type_const(p_action)));
-		}
-	}
+	perform_event_action(state, element->trigger, &notification, NULL);
 
 	ret = 0;
 

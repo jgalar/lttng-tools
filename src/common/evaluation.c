@@ -9,6 +9,7 @@
 #include <lttng/condition/buffer-usage-internal.h>
 #include <lttng/condition/session-consumed-size-internal.h>
 #include <lttng/condition/session-rotation-internal.h>
+#include <lttng/condition/event-rule-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
 #include <stdbool.h>
@@ -101,6 +102,13 @@ ssize_t lttng_evaluation_create_from_buffer(
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
 		ret = lttng_evaluation_session_rotation_completed_create_from_buffer(
 				&evaluation_view, evaluation);
+		if (ret < 0) {
+			goto end;
+		}
+		evaluation_size += ret;
+		break;
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+		ret = lttng_evaluation_event_rule_create_from_buffer(&evaluation_view, evaluation);
 		if (ret < 0) {
 			goto end;
 		}
