@@ -4265,15 +4265,18 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 {
 	int ret;
 	struct lttng_ust_trigger_notification ust_notification;
+	struct lttng_evaluation *evaluation = NULL;
 	uint64_t kernel_notification;
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
 	struct notification_trigger_tokens_ht_element *element;
-	enum lttng_action_type action_type;
-	const struct lttng_action *action;
+	enum lttng_trigger_status status;
 	struct lttng_trigger_notification notification;
 	void *reception_buffer;
 	size_t reception_size;
+	enum action_executor_status executor_status;
+	struct notification_client_list *client_list = NULL;
+	const char *trigger_name;
 
 	notification.type = domain;
 
@@ -4327,7 +4330,7 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 			hash_key_u64(&notification.id, lttng_ht_seed), match_trigger_token,
 			&notification.id, &iter);
 	node = cds_lfht_iter_get_node(&iter);
-	if (caa_likely(!node)) {
+	if (caa_unlikely(!node)) {
 		/* TODO: is this an error? This might happen if the receive side
 		 * is slow to process event from source and that the trigger was
 		 * removed but the app still kicking. This yield another
@@ -4347,28 +4350,88 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 			struct notification_trigger_tokens_ht_element,
 			node);
 
-	if (lttng_trigger_is_ready_to_fire(element->trigger)) {
-		action = lttng_trigger_get_const_action(element->trigger);
-		action_type = lttng_action_get_type_const(action);
-		DBG("Message from event source %d value:%" PRIu64 " action type: %s", pipe,
-				notification.id, lttng_action_type_string(action_type));
-		/* Debugging only */
-		if (action_type == LTTNG_ACTION_TYPE_GROUP) {
-			unsigned int nb_action = 0;
-			(void) lttng_action_group_get_count(action, &nb_action);
-			for (int i = 0; i < nb_action; i++) {
-				const struct lttng_action *p_action = NULL;
-				p_action = lttng_action_group_get_at_index(action, i);
-				assert(p_action);
-				DBG("Message from event source %d value:%" PRIu64 " action type internal index: %d value: %s", pipe,
-						notification.id, i, lttng_action_type_string(lttng_action_get_type_const(p_action)));
-			}
-		}
+	if (!lttng_trigger_is_ready_to_fire(element->trigger)) {
+		ret = 0;
+		goto end_unlock;
 	}
 
-	ret = 0;
+	status = lttng_trigger_get_name(element->trigger, &trigger_name);
+	assert(status == LTTNG_TRIGGER_STATUS_OK);
+
+	evaluation = lttng_evaluation_event_rule_create(trigger_name);
+	if (evaluation == NULL) {
+		ERR("Failed to create evaluation");
+		ret = -1;
+		goto end_unlock;
+	}
+
+	client_list = get_client_list_from_condition(state,
+			lttng_trigger_get_const_condition(element->trigger));
+	executor_status = action_executor_enqueue(state->executor,
+			element->trigger, evaluation, NULL, client_list);
+	switch (executor_status) {
+	case ACTION_EXECUTOR_STATUS_OK:
+		ret = 0;
+		break;
+	case ACTION_EXECUTOR_STATUS_OVERFLOW:
+	{
+		struct notification_client_list_element *client_list_element,
+				*tmp;
+
+		/*
+		 * Not a fatal error; this is expected and simply means the
+		 * executor has too much work queued already.
+		 */
+		ret = 0;
+
+		if (!client_list) {
+			break;
+		}
+
+		/* Warn clients that a notification (or more) was dropped. */
+		pthread_mutex_lock(&client_list->lock);
+		cds_list_for_each_entry_safe(client_list_element, tmp,
+				&client_list->list, node) {
+			enum client_transmission_status transmission_status;
+			struct notification_client *client =
+					client_list_element->client;
+
+			pthread_mutex_lock(&client->lock);
+			ret = client_notification_overflow(client);
+			if (ret) {
+				/* Fatal error. */
+				goto next_client;
+			}
+
+			transmission_status =
+					client_flush_outgoing_queue(client);
+			ret = client_handle_transmission_status(
+					client, transmission_status, state);
+			if (ret) {
+				/* Fatal error. */
+				goto next_client;
+			}
+next_client:
+			pthread_mutex_unlock(&client->lock);
+			if (ret) {
+				break;
+			}
+		}
+		pthread_mutex_unlock(&client_list->lock);
+		break;
+	}
+	case ACTION_EXECUTOR_STATUS_ERROR:
+		/* Fatal error, shut down everything. */
+		ERR("Fatal error encoutered while enqueuing action");
+		ret = -1;
+		goto end_unlock;
+	default:
+		/* Unhandled error. */
+		abort();
+	}
 
 end_unlock:
+	notification_client_list_put(client_list);
 	rcu_read_unlock();
 end:
 	return ret;
