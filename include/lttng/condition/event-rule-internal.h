@@ -21,6 +21,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <common/buffer-view.h>
 #include <common/macros.h>
+#include <lttng/condition/evaluation-internal.h>
 
 struct lttng_condition_event_rule {
 	struct lttng_condition parent;
@@ -31,6 +32,17 @@ struct lttng_condition_event_rule_comm {
 	/* length excludes its own length */
 	uint32_t length;
 	/* rule */
+	char payload[];
+} LTTNG_PACKED;
+
+struct lttng_evaluation_event_rule {
+	struct lttng_evaluation parent;
+	char *name;
+};
+
+struct lttng_evaluation_event_rule_comm {
+	uint32_t trigger_name_length;
+	/* Trigger name */
 	char payload[];
 } LTTNG_PACKED;
 
@@ -45,5 +57,13 @@ enum lttng_condition_status
 lttng_condition_event_rule_get_rule_no_const(
 		const struct lttng_condition *condition,
 		struct lttng_event_rule **rule);
+
+LTTNG_HIDDEN
+struct lttng_evaluation *lttng_evaluation_event_rule_create(const char* trigger_name);
+
+LTTNG_HIDDEN
+ssize_t lttng_evaluation_event_rule_create_from_buffer(
+		const struct lttng_buffer_view *view,
+		struct lttng_evaluation **_evaluation);
 
 #endif /* LTTNG_CONDITION_event_rule_INTERNAL_H */

@@ -20,14 +20,15 @@
 
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/condition/condition.h>
+#include <lttng/condition/evaluation.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
+/*
  * TODO: overall desciption of an event rule condition.
- * */
+ */
 
 /*
  * Create a newly allocated event rule condition.
@@ -53,8 +54,30 @@ extern struct lttng_condition *lttng_condition_event_rule_create(
 extern enum lttng_condition_status lttng_condition_event_rule_get_rule(
 		const struct lttng_condition *condition, const struct lttng_event_rule **rule);
 
+/**
+ * lttng_evaluation_event_rule_hit are specialised lttng_evaluations which
+ * allow users to query a number of properties resulting from the evaluation
+ * of a condition which evaluated to true.
+ *
+ * The evaluation of a event rule hit yields two different results:
+ *    TEMPORARY - The name of the triggers associated with the condition.
+ *    TODO - The captured event payload if any
+ */
+
+/*
+ * Get the trigger name property of a event rule hit evaluation.
+ *
+ * Returns LTTNG_EVALUATION_STATUS_OK on success and a trigger name
+ * or LTTNG_EVALUATION_STATUS_INVALID if
+ * an invalid parameter is passed.
+ */
+extern enum lttng_evaluation_status
+lttng_evaluation_event_rule_get_trigger_name(
+		const struct lttng_evaluation *evaluation,
+		const char *name);
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* LTTNG_CONDITION_BUFFER_USAGE_H */
+#endif /* LTTNG_CONDITION_EVENT_RULE_H */

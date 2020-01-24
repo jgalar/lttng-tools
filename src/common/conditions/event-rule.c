@@ -264,3 +264,115 @@ lttng_condition_event_rule_get_rule(
 	*rule = no_const_rule;
 	return status;
 }
+
+LTTNG_HIDDEN
+ssize_t lttng_evaluation_event_rule_create_from_buffer(
+		const struct lttng_buffer_view *view,
+		struct lttng_evaluation **_evaluation)
+{
+	ssize_t ret, offset = 0;
+	const char *name;
+	struct lttng_evaluation *evaluation = NULL;
+	const struct lttng_evaluation_event_rule_comm *comm = 
+		(const struct lttng_evaluation_event_rule_comm *) view->data;
+	struct lttng_buffer_view current_view;
+
+	if (!_evaluation) {
+		ret = -1;
+		goto error;
+	}
+
+	if (view->size < sizeof(*comm)) {
+		ret = -1;
+		goto error;
+	}
+
+	/* Map the name, view of the payload */
+	offset += sizeof(*comm);
+	current_view = lttng_buffer_view_from_view(view, offset, comm->trigger_name_length);
+	name = current_view.data;
+	if (!name) {
+		ret = -1;
+		goto error;
+	}
+
+	if (comm->trigger_name_length == 1 ||
+			name[comm->trigger_name_length - 1] != '\0' ||
+			strlen(name) != comm->trigger_name_length - 1) {
+		/*
+		 * Check that the name is not NULL, is NULL-terminated, and
+		 * does not contain a NULL before the last byte.
+		 */
+		ret = -1;
+		goto error;
+	}
+
+	offset += comm->trigger_name_length;
+
+	evaluation = lttng_evaluation_event_rule_create(name);
+	if (!evaluation) {
+		ret = -1;
+		goto error;
+	}
+
+	*_evaluation = evaluation;
+	evaluation = NULL;
+	ret = offset;
+
+error:
+	lttng_evaluation_destroy(evaluation);
+	return ret;
+}
+
+static
+int lttng_evaluation_event_rule_serialize(
+		const struct lttng_evaluation *evaluation,
+		struct lttng_dynamic_buffer *buf)
+{
+	int ret = 0;
+	struct lttng_evaluation_event_rule *hit;
+	struct lttng_evaluation_event_rule_comm comm;
+
+	hit = container_of(evaluation, struct lttng_evaluation_event_rule,
+			parent);
+	comm.trigger_name_length = strlen(hit->name) + 1;
+	ret = lttng_dynamic_buffer_append(buf, &comm, sizeof(comm));
+	if (ret) {
+		goto end;
+	}
+	ret = lttng_dynamic_buffer_append(buf, hit->name, comm.trigger_name_length);
+end:
+	return ret;
+}
+
+static
+void lttng_evaluation_event_rule_destroy(
+		struct lttng_evaluation *evaluation)
+{
+	struct lttng_evaluation_event_rule *hit;
+
+	hit = container_of(evaluation, struct lttng_evaluation_event_rule,
+			parent);
+	free(hit->name);
+	free(hit);
+}
+
+LTTNG_HIDDEN
+struct lttng_evaluation *lttng_evaluation_event_rule_create(const char *trigger_name)
+{
+	struct lttng_evaluation_event_rule *hit;
+
+	hit = zmalloc(sizeof(struct lttng_evaluation_event_rule));
+	if (!hit) {
+		goto end;
+	}
+
+	/* TODO errir handling */
+	hit->name = strdup(trigger_name);
+
+	hit->parent.type = LTTNG_CONDITION_TYPE_EVENT_RULE_HIT;
+	hit->parent.serialize = lttng_evaluation_event_rule_serialize;
+	hit->parent.destroy = lttng_evaluation_event_rule_destroy;
+end:
+	return &hit->parent;
+}
