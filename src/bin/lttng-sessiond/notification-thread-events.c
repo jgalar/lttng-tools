@@ -542,6 +542,8 @@ enum lttng_object_type get_condition_binding_object(
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
 		return LTTNG_OBJECT_TYPE_SESSION;
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+		return LTTNG_OBJECT_TYPE_NONE;
 	default:
 		return LTTNG_OBJECT_TYPE_UNKNOWN;
 	}
@@ -958,6 +960,7 @@ int evaluate_condition_for_client(const struct lttng_trigger *trigger,
 				&evaluation, &object_uid, &object_gid);
 		break;
 	case LTTNG_OBJECT_TYPE_NONE:
+		DBG("[notification-thread] Newly subscribed-to condition not binded to object, nothing to evaluate");
 		ret = 0;
 		goto end;
 	case LTTNG_OBJECT_TYPE_UNKNOWN:
@@ -2342,6 +2345,41 @@ void generate_trigger_name(struct notification_thread_state *state, struct lttng
 	} while (taken || state->trigger_id.name_offset == UINT32_MAX);
 }
 
+static bool action_is_notify(const struct lttng_action *action)
+{
+	/* TODO for action groups we need to iterate over all of them */
+	enum lttng_action_type type = lttng_action_get_type_const(action);
+	bool ret = false;
+	enum lttng_action_status status;
+	const struct lttng_action *tmp;
+	unsigned int i, count;
+
+	switch (type) {
+	case LTTNG_ACTION_TYPE_NOTIFY:
+		ret = true;
+		break;
+	case LTTNG_ACTION_TYPE_GROUP:
+		status = lttng_action_group_get_count(action, &count);
+		if (status != LTTNG_ACTION_STATUS_OK) {
+			assert(0);
+		}
+		for (i = 0; i < count; i++) {
+			tmp = lttng_action_group_get_at_index(action, i);
+			assert(tmp);
+			ret = action_is_notify(tmp);
+			if (ret) {
+				break;
+			}
+		}
+		break;
+	default:
+		ret = false;
+		break;
+	}
+
+	return ret;
+}
+
 /*
  * TODO: REVIEW THIS COMMENT.
  * FIXME A client's credentials are not checked when registering a trigger, nor
@@ -2480,7 +2518,7 @@ int handle_notification_thread_command_register_trigger(
 	trigger_ht_element = NULL;
 	free_trigger = false;
 
-	if (lttng_action_get_type(action) == LTTNG_ACTION_TYPE_NOTIFY) {
+	if (action_is_notify(action)) {
 		ret = action_notify_register_trigger(state, trigger);
 		if (ret < 0) {
 			/* TODO should cmd_result be set here? */
