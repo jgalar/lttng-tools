@@ -6,9 +6,10 @@
 #include "common/dynamic-array.h"
 #include "common/string-utils/string-utils.h"
 #include "common/utils.h"
-#include <lttng/condition/event-rule.h>
+#include "lttng/condition/event-rule.h"
+#include "lttng/event-internal.h"
 #include <lttng/event-rule/event-rule-internal.h>
-#include <lttng/event-rule/event-rule-tracepoint.h>
+#include "lttng/event-rule/event-rule-tracepoint.h"
 
 #ifdef LTTNG_EMBED_HELP
 static const char help_msg[] =
@@ -26,6 +27,8 @@ enum {
 	OPT_ALL,
 	OPT_FILTER,
 	OPT_EXCLUDE,
+	OPT_LOGLEVEL,
+	OPT_LOGLEVEL_ONLY,
 
 	OPT_USERSPACE,
 	OPT_KERNEL,
@@ -49,6 +52,8 @@ static const struct argpar_opt_descr event_rule_opt_descrs[] = {
 	{ OPT_ALL, 'a', "all", false },
 	{ OPT_FILTER, 'f', "filter", true },
 	{ OPT_EXCLUDE, 'x', "exclude", true },
+	{ OPT_LOGLEVEL, '\0', "loglevel", true },
+	{ OPT_LOGLEVEL_ONLY, '\0', "loglevel-only", true },
 
 	/* Domains */
 	{ OPT_USERSPACE, 'u', "userspace", false },
@@ -134,6 +139,33 @@ int create_exclusion_list_and_validate(const char *event_name,
 		const char *exclusions_arg,
 		char ***exclusion_list);
 
+/*
+ * Parse `str` as a log level in domain `domain_type`.  Return -1 if the string
+ * is not recognized as a valid log level.
+ */
+static
+int parse_loglevel_string(const char *str, enum lttng_domain_type domain_type)
+{
+
+	switch (domain_type) {
+	case LTTNG_DOMAIN_UST:
+		return loglevel_str_to_value(str);
+
+	case LTTNG_DOMAIN_LOG4J:
+		return loglevel_log4j_str_to_value(str);
+
+	case LTTNG_DOMAIN_JUL:
+		return loglevel_jul_str_to_value(str);
+
+	case LTTNG_DOMAIN_PYTHON:
+		return loglevel_python_str_to_value(str);
+
+	default:
+		/* Invalid domain type. */
+		abort();
+	}
+}
+
 static
 struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 {
@@ -157,6 +189,10 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 	/* Exclude */
 	char *exclude = NULL;
 	char **exclusion_list = NULL;
+
+	/* Log level */
+	char *loglevel_str = NULL;
+	bool loglevel_only = false;
 
 	state = argpar_state_create(*argc, *argv, event_rule_opt_descrs);
 	if (!state) {
@@ -269,6 +305,15 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 				}
 				break;
 
+			case OPT_LOGLEVEL:
+			case OPT_LOGLEVEL_ONLY:
+				if (!assign_string(&loglevel_str, item_opt->arg, "--loglevel/--loglevel-only")) {
+					goto error;
+				}
+
+				loglevel_only = item_opt->descr->id == OPT_LOGLEVEL_ONLY;
+				break;
+
 			default:
 				abort();
 			}
@@ -374,6 +419,11 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		}
 	}
 
+	if (loglevel_str && event_rule_type != LTTNG_EVENT_RULE_TYPE_TRACEPOINT) {
+		fprintf(stderr, "Log levels are only application to tracepoint event rules.\n");
+		goto error;
+	}
+
 	if (event_rule_type == LTTNG_EVENT_RULE_TYPE_TRACEPOINT) {
 		enum lttng_event_rule_status event_rule_status;
 
@@ -416,6 +466,37 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 				goto error;
 			}
 		}
+
+		if (loglevel_str) {
+			int loglevel;
+
+			if (domain_type == LTTNG_DOMAIN_KERNEL) {
+				fprintf(stderr, "Log levels are not supported by the kernel tracer.\n");
+				goto error;
+			}
+
+			loglevel = parse_loglevel_string(
+				loglevel_str, domain_type);
+			if (loglevel < 0) {
+				fprintf(stderr, "Failed to parse `%s` as a log level.\n", loglevel_str);
+				goto error;
+			}
+
+			if (loglevel_only) {
+				event_rule_status =
+					lttng_event_rule_tracepoint_set_loglevel(
+						er, loglevel);
+			} else {
+				event_rule_status =
+					lttng_event_rule_tracepoint_set_loglevel_range(
+						er, loglevel);
+			}
+
+			if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+				fprintf(stderr, "Failed to set log level.\n");
+				goto error;
+			}
+		}
 	} else {
 		fprintf(stderr, "parse_event_rule: I only support tracepoints at the moment.\n");
 		goto error;
@@ -432,6 +513,7 @@ end:
 	argpar_state_destroy(state);
 	free(filter);
 	free(exclude);
+	free(loglevel_str);
 	strutils_free_null_terminated_array_of_strings(exclusion_list);
 	return er;
 }

@@ -36,4 +36,19 @@ struct lttng_event_extended {
 LTTNG_HIDDEN
 struct lttng_event *lttng_event_copy(const struct lttng_event *event);
 
+// FIXME: the implementation of these should be moved to some common file,
+// they should not be in the enable_events.c file.
+
+LTTNG_HIDDEN
+int loglevel_str_to_value(const char *inputstr);
+
+LTTNG_HIDDEN
+int loglevel_log4j_str_to_value(const char *inputstr);
+
+LTTNG_HIDDEN
+int loglevel_jul_str_to_value(const char *inputstr);
+
+LTTNG_HIDDEN
+int loglevel_python_str_to_value(const char *inputstr);
+
 #endif /* LTTNG_EVENT_INTERNAL_H */
