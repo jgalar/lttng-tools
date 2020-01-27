@@ -2980,7 +2980,7 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 		goto end;
 	}
 
-	ret = LTTNG_OK;
+	ret = 0;
 end:
 	free(reply);
 	lttng_dynamic_buffer_reset(&buffer);
@@ -3057,7 +3057,7 @@ int lttng_list_triggers(struct lttng_triggers **triggers)
 
 	*triggers = local_triggers;
 	local_triggers = NULL;
-	ret = LTTNG_OK;
+	ret = 0;
 end:
 	free(reply);
 	free(local_triggers);
