@@ -9,10 +9,15 @@
 #define LTTNG_CREDENTIALS_H
 
 #include <sys/types.h>
+#include <assert.h>
+#include <stdbool.h>
 
 struct lttng_credentials {
 	uid_t uid;
 	gid_t gid;
 };
+
+bool lttng_credentials_is_equal(const struct lttng_credentials *a,
+		const struct lttng_credentials *b);
 
 #endif /* LTTNG_CREDENTIALS_H */

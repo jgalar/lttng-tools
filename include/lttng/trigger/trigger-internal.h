@@ -26,6 +26,10 @@ struct lttng_trigger {
 		bool set;
 		uint64_t value;
 	} key;
+	struct { /* internal use only */
+		struct lttng_credentials credentials;
+		bool set;
+	} creds;
 };
 
 struct lttng_triggers {
@@ -124,6 +128,14 @@ void lttng_triggers_destroy_array(struct lttng_triggers *triggers);
 LTTNG_HIDDEN
 ssize_t lttng_triggers_create_from_buffer(const struct lttng_buffer_view *view,
 		struct lttng_triggers **triggers);
+
+LTTNG_HIDDEN
+const struct lttng_credentials *lttng_trigger_get_credentials(
+		const struct lttng_trigger *trigger);
+
+LTTNG_HIDDEN
+void lttng_trigger_set_credentials(
+		struct lttng_trigger *trigger, uid_t uid, gid_t git);
 
 
 #endif /* LTTNG_TRIGGER_INTERNAL_H */

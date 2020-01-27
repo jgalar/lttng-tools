@@ -70,6 +70,12 @@ struct notification_thread_command {
 		struct {
 			int read_side_trigger_event_application_pipe;
 		} application;
+		/* List triggers */
+		struct {
+			/* Credential */
+			uid_t uid;
+			gid_t gid;
+		} list_triggers;
 
 	} parameters;
 
@@ -130,6 +136,8 @@ enum lttng_error_code notification_thread_command_get_tokens(
 /* TODO: for now we borrow with no refcount the trigger. THIS IS DANGEROUS */
 enum lttng_error_code notification_thread_command_list_triggers(
 		struct notification_thread_handle *handle,
+		uid_t uid,
+		gid_t gid,
 		struct lttng_triggers **triggers);
 
 void notification_thread_command_quit(

@@ -45,7 +45,7 @@ libcommon_la_SOURCES = \
 	conditions/session-consumed-size.c \
 	conditions/session-rotation.c \
 	context.c context.h \
-	credentials.h \
+	credentials.c credentials.h \
 	daemonize.c daemonize.h \
 	defaults.c \
 	dynamic-array.c dynamic-array.h \

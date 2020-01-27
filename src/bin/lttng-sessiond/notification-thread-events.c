@@ -332,13 +332,29 @@ int match_channel_info(struct cds_lfht_node *node, const void *key)
 static
 int match_trigger(struct cds_lfht_node *node, const void *key)
 {
+	bool match = false;
 	struct lttng_trigger *trigger_key = (struct lttng_trigger *) key;
 	struct lttng_trigger_ht_element *trigger_ht_element;
+	const struct lttng_credentials *creds_key;
+	const struct lttng_credentials *creds_node;
 
 	trigger_ht_element = caa_container_of(node, struct lttng_trigger_ht_element,
 			node);
 
-	return !!lttng_trigger_is_equal(trigger_key, trigger_ht_element->trigger);
+	match = lttng_trigger_is_equal(trigger_key, trigger_ht_element->trigger);
+	if (!match) {
+		goto end;
+	}
+
+	/* Validate credential */
+	/* TODO: this could be moved to lttng_trigger_equal depending on how we
+	 * handle root behaviour on disable and listing.
+	 */
+	creds_key = lttng_trigger_get_credentials(trigger_key);
+	creds_node = lttng_trigger_get_credentials(trigger_ht_element->trigger);
+	match = lttng_credentials_is_equal(creds_key, creds_node);
+end:
+	return !!match;
 }
 
 static
@@ -1960,6 +1976,8 @@ static
 int handle_notification_thread_command_list_triggers(
 	struct notification_thread_handle *handle,
 	struct notification_thread_state *state,
+	uid_t uid,
+	gid_t gid,
 	struct lttng_triggers **triggers,
 	enum lttng_error_code *_cmd_result)
 {
@@ -1968,6 +1986,7 @@ int handle_notification_thread_command_list_triggers(
 	struct cds_lfht_iter iter;
 	struct lttng_trigger_ht_element *trigger_ht_element;
 	struct lttng_triggers *local_triggers = NULL;
+	const struct lttng_credentials *creds;
 	
 	long scb, sca;
 	unsigned long count;
@@ -1984,6 +2003,15 @@ int handle_notification_thread_command_list_triggers(
 
 	cds_lfht_for_each_entry (state->triggers_ht, &iter,
 			trigger_ht_element, node) {
+		/* Only return the trigger for which the requestion client have
+		 * access. For now the root user can only list its own
+		 * triggers.
+		 * TODO: root user behavior
+		 */
+		creds = lttng_trigger_get_credentials(trigger_ht_element->trigger);
+		if ((uid != creds->uid) || (gid != creds->gid)) {
+			continue;
+		}
 		/*
 		 * Share the trigger not the ownership
 		 * TODO: either refcout the trigger or copy it.
@@ -2588,6 +2616,9 @@ int handle_notification_thread_command_unregister_trigger(
 	rcu_read_lock();
 
 	/* TODO change hashing for trigger */
+	/* TODO Disabling for the root user is not complete, for now the root
+	 * user cannot disable the trigger from another user.
+	 */
 	cds_lfht_lookup(state->triggers_ht,
 			lttng_condition_hash(condition),
 			match_trigger,
@@ -2768,6 +2799,8 @@ int handle_notification_thread_command(
 		ret = handle_notification_thread_command_list_triggers(
 				handle,
 				state,
+				cmd->parameters.list_triggers.uid,
+				cmd->parameters.list_triggers.gid,
 				&triggers,
 				&cmd->reply_code);
 		if (ret < 0) {
@@ -3559,7 +3592,7 @@ int send_evaluation_to_clients(const struct lttng_trigger *trigger,
 		const struct lttng_evaluation *evaluation,
 		struct notification_client_list* client_list,
 		struct notification_thread_state *state,
-		uid_t channel_uid, gid_t channel_gid)
+		uid_t object_uid, gid_t object_gid)
 {
 	int ret = 0;
 	struct lttng_dynamic_buffer msg_buffer;
@@ -3571,6 +3604,7 @@ int send_evaluation_to_clients(const struct lttng_trigger *trigger,
 	struct lttng_notification_channel_message msg_header = {
 		.type = (int8_t) LTTNG_NOTIFICATION_CHANNEL_MESSAGE_TYPE_NOTIFICATION,
 	};
+	const struct lttng_credentials *trigger_creds = lttng_trigger_get_credentials(trigger);
 
 	lttng_dynamic_buffer_init(&msg_buffer);
 
@@ -3596,10 +3630,24 @@ int send_evaluation_to_clients(const struct lttng_trigger *trigger,
 		struct notification_client *client =
 				client_list_element->client;
 
-		if (client->uid != channel_uid && client->gid != channel_gid &&
+		if (client->uid != object_uid && client->gid != object_gid &&
 				client->uid != 0) {
 			/* Client is not allowed to monitor this channel. */
-			DBG("[notification-thread] Skipping client at it does not have the permission to receive notification for this channel");
+			DBG("[notification-thread] Skipping client at it does not have the object permission to receive notification for this trigger");
+			continue;
+		}
+
+		/* TODO: what is the behavior for root client on non root
+		 * trigger? Since multiple triggers (different user) can have the same condition
+		 * but with different action group that can have each a notify.
+		 * Does the root client receive multiple notification for all
+		 * those triggers with the same condition or only notification
+		 * for triggers the root user configured?
+		 * For now we do the later. All users including the root user
+		 * can only receive notification from trigger it registered.
+		 */
+		if (client->uid != trigger_creds->uid && client->gid != trigger_creds->gid) {
+			DBG("[notification-thread] Skipping client at it does not have the permission to receive notification for this trigger");
 			continue;
 		}
 

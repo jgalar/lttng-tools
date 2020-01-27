@@ -46,6 +46,9 @@ struct lttng_trigger *lttng_trigger_create(
 
 	trigger->condition = condition;
 	trigger->action = action;
+
+	trigger->creds.set = false;
+
 end:
 	return trigger;
 }
@@ -572,4 +575,21 @@ error:
 
 	lttng_triggers_destroy(local_triggers);
 	return ret;
+}
+
+LTTNG_HIDDEN
+const struct lttng_credentials *lttng_trigger_get_credentials(
+		const struct lttng_trigger *trigger)
+{
+	assert(trigger->creds.set);
+	return &(trigger->creds.credentials);
+}
+
+LTTNG_HIDDEN
+void lttng_trigger_set_credentials(
+		struct lttng_trigger *trigger, uid_t uid, gid_t gid)
+{
+	trigger->creds.credentials.uid = uid;
+	trigger->creds.credentials.gid = gid;
+	trigger->creds.set = true;
 }

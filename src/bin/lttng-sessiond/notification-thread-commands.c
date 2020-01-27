@@ -288,6 +288,8 @@ end:
 
 enum lttng_error_code notification_thread_command_list_triggers(
 		struct notification_thread_handle *handle,
+		uid_t uid,
+		gid_t gid,
 		struct lttng_triggers **triggers)
 {
 	int ret;
@@ -300,6 +302,8 @@ enum lttng_error_code notification_thread_command_list_triggers(
 	init_notification_thread_command(&cmd);
 
 	cmd.type = NOTIFICATION_COMMAND_TYPE_LIST_TRIGGERS;
+	cmd.parameters.list_triggers.uid = uid;
+	cmd.parameters.list_triggers.gid = gid;
 
 	ret = run_command_wait(handle, &cmd);
 	if (ret) {

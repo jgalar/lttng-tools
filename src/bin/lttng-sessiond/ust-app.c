@@ -5365,12 +5365,25 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 		struct lttng_condition *condition;
 		struct lttng_event_rule *event_rule;
 		struct lttng_trigger *trigger;
+		const struct lttng_credentials *trigger_creds;
 		uint64_t token;
 		struct ust_app_token_event_rule *ua_token;
 
 		/* TODO: error checking and type checking */
 		token = trigger_token_element->token;
 		trigger = trigger_token_element->trigger;
+
+		trigger_creds = lttng_trigger_get_credentials(trigger);
+
+		/* Check if the triggers apply to the app
+		 * Triggers from the root user apply to all ust app
+		 */
+		if (app->uid != trigger_creds->uid &&
+				app->gid != trigger_creds->gid &&
+				trigger_creds != 0) {
+			continue;
+		}
+
 		condition = lttng_trigger_get_condition(trigger);
 		(void) lttng_condition_event_rule_get_rule_no_const(condition, &event_rule);
 
