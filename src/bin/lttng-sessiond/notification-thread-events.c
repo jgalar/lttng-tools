@@ -1976,7 +1976,7 @@ int handle_notification_thread_command_list_triggers(
 	cds_lfht_count_nodes(state->triggers_ht, &scb, &count, &sca);
 
 	/* TODO check downcasting */
-	local_triggers = lttng_triggers_create((unsigned int) count);
+	local_triggers = lttng_triggers_create();
 	if (!local_triggers) {
 		cmd_result = LTTNG_ERR_NOMEM;
 		goto end;
@@ -1988,7 +1988,7 @@ int handle_notification_thread_command_list_triggers(
 		 * Share the trigger not the ownership
 		 * TODO: either refcout the trigger or copy it.
 		 * */
-		ret = lttng_triggers_set_pointer_of_index(local_triggers, i, trigger_ht_element->trigger);
+		ret = lttng_triggers_add(local_triggers, trigger_ht_element->trigger);
 		if (ret < 0) {
 			ret = -1;
 			goto end;

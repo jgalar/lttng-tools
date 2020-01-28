@@ -12,6 +12,8 @@
 #include <common/macros.h>
 #include <common/buffer-view.h>
 #include <common/dynamic-buffer.h>
+#include <common/dynamic-array.h>
+#include <common/credentials.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
@@ -27,8 +29,7 @@ struct lttng_trigger {
 };
 
 struct lttng_triggers {
-	struct lttng_trigger **array;
-	unsigned int count;
+	struct lttng_dynamic_pointer_array array;
 };
 
 struct lttng_trigger_comm {
@@ -84,7 +85,7 @@ int lttng_trigger_generate_name(struct lttng_trigger *trigger, uint64_t offset);
  * The returned object must be freed via lttng_triggers_destroy.
  */
 LTTNG_HIDDEN
-struct lttng_triggers *lttng_triggers_create(unsigned int count);
+struct lttng_triggers *lttng_triggers_create(void);
 
 /*
  * Return the non-const pointer of an element at index "index" of a
@@ -101,8 +102,8 @@ struct lttng_trigger *lttng_triggers_get_pointer_of_index(
  * TODO:
  */
 LTTNG_HIDDEN
-int lttng_triggers_set_pointer_of_index(
-		const struct lttng_triggers *triggers, unsigned int index, struct lttng_trigger *trigger);
+int lttng_triggers_add(
+		struct lttng_triggers *triggers, struct lttng_trigger *trigger);
 
 /*
  * Serialize a trigger collection to a lttng_dynamic_buffer.

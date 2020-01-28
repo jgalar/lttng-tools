@@ -9,6 +9,7 @@
 #include <lttng/condition/condition-internal.h>
 #include <lttng/action/action-internal.h>
 #include <common/error.h>
+#include <common/dynamic-array.h>
 #include <assert.h>
 #include <inttypes.h>
 
@@ -361,7 +362,8 @@ bool lttng_trigger_is_equal(
 	return true;
 }
 
-struct lttng_triggers *lttng_triggers_create(unsigned int count)
+LTTNG_HIDDEN
+struct lttng_triggers *lttng_triggers_create(void)
 {
 	struct lttng_triggers *triggers = NULL;
 
@@ -370,12 +372,7 @@ struct lttng_triggers *lttng_triggers_create(unsigned int count)
 		goto error;
 	}
 
-	triggers->array = zmalloc(sizeof(struct lttng_trigger *) * count);
-	if (!triggers->array) {
-		goto error;
-	}
-
-	triggers->count = count;
+	lttng_dynamic_pointer_array_init(&triggers->array, NULL);
 
 	return triggers;
 error:
@@ -388,25 +385,20 @@ struct lttng_trigger *lttng_triggers_get_pointer_of_index(
 		const struct lttng_triggers *triggers, unsigned int index)
 {
 	assert(triggers);
-	if (index >= triggers->count) {
+	if (index >= lttng_dynamic_pointer_array_get_count(&triggers->array)) {
 		return NULL;
 	}
-
-	return triggers->array[index];
+	return lttng_dynamic_pointer_array_get_pointer(&triggers->array, index);
 }
 
 LTTNG_HIDDEN
-int lttng_triggers_set_pointer_of_index(
-		const struct lttng_triggers *triggers, unsigned int index, struct lttng_trigger *trigger)
+int lttng_triggers_add(
+		struct lttng_triggers *triggers, struct lttng_trigger *trigger)
 {
 	assert(triggers);
 	assert(trigger);
-	if (index >= triggers->count) {
-		return -1;
-	}
 
-	triggers->array[index] = trigger;
-	return 0;
+	return lttng_dynamic_pointer_array_add_pointer(&triggers->array, trigger);
 }
 
 const struct lttng_trigger *lttng_triggers_get_at_index(
@@ -425,7 +417,7 @@ enum lttng_trigger_status lttng_triggers_get_count(const struct lttng_triggers *
 		goto end;
 	}
 
-	*count = triggers->count;
+	*count = lttng_dynamic_pointer_array_get_count(&triggers->array);
 end:
 	return status;
 }
@@ -442,12 +434,13 @@ void lttng_triggers_destroy_array(struct lttng_triggers *triggers)
 		return;
 	}
 
-	free(triggers->array);
+	lttng_dynamic_pointer_array_reset(&triggers->array);
 	free(triggers);
 }
 
 void lttng_triggers_destroy(struct lttng_triggers *triggers)
 {
+	struct lttng_trigger *trigger;
 	/*
 	 * The collection own the complete trigger object, including its sub
 	 * structure, in comparison to a regular trigger.
@@ -456,8 +449,15 @@ void lttng_triggers_destroy(struct lttng_triggers *triggers)
 		return;
 	}
 
-	for (int i = 0; i < triggers->count; i++) {
-		lttng_trigger_destroy_full(triggers->array[i]);
+	/* TODO: this is done this way because there is no refcount on the
+	 * triggers object for now and that in certain case the triggers object
+	 * does not own the internal trigger objects. When r3efcount is
+	 * implemented for the trigger object we should use the
+	 * lttng_trigger_destroy_full as a dynamic array destructor
+	 */
+	for (size_t i = 0; i < lttng_dynamic_pointer_array_get_count(&triggers->array); i++) {
+		trigger = lttng_dynamic_pointer_array_steal_pointer(&triggers->array, i);
+		lttng_trigger_destroy_full(trigger);
 	}
 	lttng_triggers_destroy_array(triggers);
 }
@@ -529,7 +529,7 @@ ssize_t lttng_triggers_create_from_buffer(
 	triggers_comm = (const struct lttng_triggers_comm *) src_view->data;
 	offset += sizeof(*triggers_comm);
 
-	local_triggers = lttng_triggers_create(triggers_comm->count);
+	local_triggers = lttng_triggers_create();
 	if (!local_triggers) {
 		ret = -1;
 		goto error;
@@ -547,7 +547,7 @@ ssize_t lttng_triggers_create_from_buffer(
 		}
 		
 		/* Pass ownership of the trigger to the collection */
-		ret = lttng_triggers_set_pointer_of_index(local_triggers, i, trigger);
+		ret = lttng_triggers_add(local_triggers, trigger);
 		if (ret < 0) {
 			assert(0);
 		}
