@@ -33,12 +33,16 @@
 
 #include <lttng/action/action.h>
 #include <lttng/action/start-session.h>
+#include <lttng/action/notify.h>
 #include <lttng/condition/condition.h>
 #include <lttng/condition/event-rule.h>
 #include <lttng/event-rule/event-rule-tracepoint.h>
 #include <lttng/domain.h>
 #include <lttng/trigger/trigger.h>
 #include <lttng/lttng-error.h>
+#include <lttng/endpoint.h>
+#include <lttng/notification/channel.h>
+#include <lttng/notification/notification.h>
 
 const char *session_name = NULL;
 enum lttng_domain_type domain_type = LTTNG_DOMAIN_NONE;
@@ -89,10 +93,10 @@ int main(int argc, char **argv)
 	enum lttng_action_status action_status;
 	struct lttng_action *action = NULL;
 
+	enum lttng_notification_channel_status nc_status;
+	struct lttng_notification_channel *notification_channel = NULL;
+
 	struct lttng_trigger *trigger = NULL;
-	struct lttng_trigger *trigger2 = NULL;
-	struct lttng_trigger *trigger3 = NULL;
-	struct lttng_trigger *trigger4 = NULL;
 
 	if (argc < 4) {
 		printf("error: Missing arguments for tests\n");
@@ -129,16 +133,9 @@ int main(int argc, char **argv)
 	/* Ownership was passed to condition */
 	event_rule = NULL;
 
-	action = lttng_action_start_session_create();
+	action = lttng_action_notify_create();
 	if (!action) {
 		printf("error: Could not create action notify\n");
-		ret = 1;
-		goto end;
-	}
-
-	action_status = lttng_action_start_session_set_session_name(action, session_name);
-	if (action_status != LTTNG_ACTION_STATUS_OK) {
-		printf("error: Could not set session name for action");
 		ret = 1;
 		goto end;
 	}
@@ -150,35 +147,15 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
-	trigger2 = lttng_trigger_create(condition, action);
-	if (!trigger) {
-		printf("error: Could not create trigger\n");
-		ret = 1;
-		goto end;
-	}
-
-	lttng_trigger_set_name(trigger, "TJORAJ2");
-
-	trigger3 = lttng_trigger_create(condition, action);
-	if (!trigger) {
-		printf("error: Could not create trigger\n");
-		ret = 1;
-		goto end;
-	}
-
-	trigger4 = lttng_trigger_create(condition, action);
-	if (!trigger) {
-		printf("error: Could not create trigger\n");
-		ret = 1;
-		goto end;
-	}
-
 	ret = lttng_register_trigger(trigger);
-	ret = lttng_register_trigger(trigger2);
-	ret = lttng_register_trigger(trigger3);
-	ret = lttng_register_trigger(trigger4);
 
-
+	notification_channel = lttng_notification_channel_create(
+			lttng_session_daemon_notification_endpoint);
+	if (!notification_channel) {
+		printf("error: Could not create notification channel\n");
+		ret = 1;
+		goto end;
+	}
 	/*
 	 * An equivalent trigger might already be registered if an other app
 	 * registered an equivalent trigger.
@@ -189,6 +166,63 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
+	nc_status = lttng_notification_channel_subscribe(notification_channel, condition);
+	if (nc_status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
+		printf("error: Could not subscribe\n");
+		ret = 1;
+		goto end;
+	}
+
+	for (;;) {
+		struct lttng_notification *notification;
+		enum lttng_notification_channel_status status;
+		const struct lttng_evaluation *notification_evaluation;
+		const struct lttng_condition *notification_condition;
+		const char *name;
+
+		/* Receive the next notification. */
+		status = lttng_notification_channel_get_next_notification(
+				notification_channel,
+				&notification);
+
+		switch (status) {
+		case LTTNG_NOTIFICATION_CHANNEL_STATUS_OK:
+			break;
+		case LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED:
+			ret = 1;
+			printf("error: No drop should be observed during this test app\n");
+			goto end;
+		case LTTNG_NOTIFICATION_CHANNEL_STATUS_CLOSED:
+			/*
+			 * The notification channel has been closed by the
+			 * session daemon. This is typically caused by a session
+			 * daemon shutting down (cleanly or because of a crash).
+			 */
+			printf("error: Notification channel was closed\n");
+			ret = 1;
+			goto end;
+		default:
+			/* Unhandled conditions / errors. */
+			printf("error: Unknown notification channel status\n");
+			ret = 1;
+			goto end;
+		}
+
+		notification_condition = lttng_notification_get_condition(notification);
+		notification_evaluation = lttng_notification_get_evaluation(notification);
+		switch (lttng_evaluation_get_type(notification_evaluation)) {
+		case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+			lttng_evaluation_event_rule_get_trigger_name(notification_evaluation, &name);
+			printf("Received nootification from trigger \"%s\"\n", name);
+			break;
+		default:
+			printf("error: Wrong notification evaluation type \n");
+			break;
+
+		}
+
+		lttng_notification_destroy(notification);
+	}
 end:
 	if (trigger) {
 		lttng_unregister_trigger(trigger);
