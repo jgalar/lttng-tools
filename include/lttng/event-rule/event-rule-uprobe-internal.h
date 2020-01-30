@@ -26,22 +26,14 @@
 struct lttng_event_rule_uprobe {
 	struct lttng_event_rule parent;
 	char *name;
-	char *filter_expression;
 	struct lttng_userspace_probe_location *location;
-
-	/* internal use only */
-	struct {
-		char *filter;
-		struct lttng_filter_bytecode *bytecode;
-	} internal_filter;
 };
 
 struct lttng_event_rule_uprobe_comm {
 	uint32_t name_len;
-	uint32_t filter_expression_len;
 	uint32_t source_symbol_len;
 	uint32_t length;
-	/*name, filter expression, location object */
+	/*name, location object */
 	char payload[];
 } LTTNG_PACKED;
 
