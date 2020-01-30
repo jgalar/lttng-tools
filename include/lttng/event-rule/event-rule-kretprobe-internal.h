@@ -32,6 +32,13 @@ struct lttng_event_rule_kretprobe {
 		uint64_t offset;
 		char *symbol_name;
 	} probe;
+
+	/* internal use only */
+	struct {
+		char *filter;
+		struct lttng_filter_bytecode *bytecode;
+	} internal_filter;
+
 };
 
 struct lttng_event_rule_kretprobe_comm {

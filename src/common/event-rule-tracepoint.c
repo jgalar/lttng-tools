@@ -19,6 +19,7 @@
 #include <lttng/event-rule/event-rule-tracepoint-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
+#include <common/runas.h>
 #include <assert.h>
 
 #define IS_TRACEPOINT_EVENT_RULE(rule) ( \
@@ -43,6 +44,8 @@ void lttng_event_rule_tracepoint_destroy(struct lttng_event_rule *rule)
 		free(tracepoint->exclusions.values[i]);
 	}
 	free(tracepoint->exclusions.values);
+	free(tracepoint->internal_filter.filter);
+	free(tracepoint->internal_filter.bytecode);
 	free(tracepoint);
 }
 
@@ -220,6 +223,193 @@ end:
 	return is_equal;
 }
 
+/*
+ * On success ret is 0;
+ *
+ * On error ret is negative.
+ *
+ * An event with NO loglevel and the name is * will return NULL.
+ */
+static int generate_agent_filter(
+		const struct lttng_event_rule *rule,
+		char **_agent_filter)
+{
+	int err;
+	int ret = 0;
+	char *agent_filter = NULL;
+	const char *pattern;
+	const char *filter;
+	enum lttng_loglevel_type loglevel_type;
+	enum lttng_event_rule_status status;
+
+	assert(rule);
+	assert(_agent_filter);
+
+	status = lttng_event_rule_tracepoint_get_pattern(rule, &pattern);
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	status = lttng_event_rule_tracepoint_get_filter(rule, &filter);
+	if (status == LTTNG_EVENT_RULE_STATUS_UNSET) {
+		filter = NULL;
+	} else if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	status = lttng_event_rule_tracepoint_get_loglevel_type(rule, &loglevel_type);
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ret = -1;
+		goto end;
+	}
+
+	/* Don't add filter for the '*' event. */
+	if (strcmp(pattern, "*") != 0) {
+		if (filter) {
+			err = asprintf(&agent_filter, "(%s) && (logger_name == \"%s\")", filter,
+					pattern);
+		} else {
+			err = asprintf(&agent_filter, "logger_name == \"%s\"", pattern);
+		}
+		if (err < 0) {
+			PERROR("asprintf");
+			ret = -1;
+			goto end;
+		}
+	}
+
+	if (loglevel_type != LTTNG_EVENT_LOGLEVEL_ALL) {
+		char *op;
+		int loglevel_value;
+
+		status = lttng_event_rule_tracepoint_get_loglevel(rule, &loglevel_value);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+
+		if (loglevel_type == LTTNG_EVENT_LOGLEVEL_RANGE) {
+			op = ">=";
+		} else {
+			op = "==";
+		}
+
+		if (filter || agent_filter) {
+			char *new_filter;
+
+			err = asprintf(&new_filter, "(%s) && (int_loglevel %s %d)",
+					agent_filter ? agent_filter : filter, op,
+					loglevel_value);
+			if (agent_filter) {
+				free(agent_filter);
+			}
+			agent_filter = new_filter;
+		} else {
+			err = asprintf(&agent_filter, "int_loglevel %s %d", op,
+					loglevel_value);
+		}
+		if (err < 0) {
+			PERROR("asprintf");
+			ret = -1;
+			goto end;
+		}
+	}
+
+	*_agent_filter = agent_filter;
+	agent_filter = NULL;
+
+end:
+	free(agent_filter);
+	return ret;
+}
+
+static
+enum lttng_error_code lttng_event_rule_tracepoint_populate(struct lttng_event_rule *rule, uid_t uid, gid_t gid)
+{
+	int ret;
+	enum lttng_error_code ret_code;
+	struct lttng_event_rule_tracepoint *tracepoint;
+	enum lttng_domain_type domain_type;
+	enum lttng_event_rule_status status;
+	const char *filter;
+	struct lttng_filter_bytecode *bytecode = NULL;
+
+	assert(rule);
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+
+	status = lttng_event_rule_tracepoint_get_filter(rule, &filter);
+	if (status == LTTNG_EVENT_RULE_STATUS_UNSET) {
+		filter = NULL;
+	} else if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ret_code = LTTNG_ERR_FILTER_INVAL;
+		goto end;
+	}
+
+	if (filter && filter[0] == '\0') {
+		ret_code = LTTNG_ERR_FILTER_INVAL;
+		goto error;
+	}
+
+	status = lttng_event_rule_tracepoint_get_domain_type(rule, &domain_type);
+	if (status !=  LTTNG_EVENT_RULE_STATUS_OK) {
+		ret = LTTNG_ERR_UNK;
+		goto error;
+	}
+
+	switch (domain_type) {
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_PYTHON:
+	{
+		char *agent_filter;
+		ret = generate_agent_filter(rule, &agent_filter);
+		if (ret) {
+			ret_code = LTTNG_ERR_FILTER_INVAL;
+			goto error;
+		}
+		tracepoint->internal_filter.filter = agent_filter;
+		break;
+	}
+	default:
+	{
+		if (filter) {
+			tracepoint->internal_filter.filter = strdup(filter);
+			if (tracepoint->internal_filter.filter == NULL) {
+				ret_code = LTTNG_ERR_NOMEM;
+				goto error;
+			}
+		} else {
+			tracepoint->internal_filter.filter = NULL;
+		}
+		break;
+	}
+	}
+
+	if (tracepoint->internal_filter.filter == NULL) {
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+
+	ret = run_as_generate_filter_bytecode(tracepoint->internal_filter.filter, uid, gid, &bytecode);
+	if (ret) {
+		ret_code = LTTNG_ERR_FILTER_INVAL;
+		goto end;
+	}
+
+	tracepoint->internal_filter.bytecode = bytecode;
+	bytecode = NULL;
+
+error:
+end:
+	free(bytecode);
+	return ret_code;
+
+}
+
 struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_type domain_type)
 {
 	struct lttng_event_rule_tracepoint *rule;
@@ -238,6 +428,7 @@ struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_ty
 	rule->parent.serialize = lttng_event_rule_tracepoint_serialize;
 	rule->parent.equal = lttng_event_rule_tracepoint_is_equal;
 	rule->parent.destroy = lttng_event_rule_tracepoint_destroy;
+	rule->parent.populate = lttng_event_rule_tracepoint_populate;
 
 	rule->domain = domain_type;
 	rule->loglevel.type = LTTNG_EVENT_LOGLEVEL_ALL;

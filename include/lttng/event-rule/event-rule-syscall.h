@@ -79,7 +79,7 @@ extern enum lttng_event_rule_status lttng_event_rule_syscall_set_filter(
  * was not set prior to this call.
  */
 extern enum lttng_event_rule_status lttng_event_rule_syscall_get_filter(
-		const struct lttng_event_rule *rule, const char *expression);
+		const struct lttng_event_rule *rule, const char **expression);
 
 #ifdef __cplusplus
 }

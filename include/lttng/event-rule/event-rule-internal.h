@@ -23,6 +23,7 @@
 #include <common/dynamic-buffer.h>
 #include <common/macros.h>
 #include <lttng/event-rule/event-rule.h>
+#include <lttng/lttng-error.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -39,6 +40,8 @@ typedef bool (*event_rule_equal_cb)(const struct lttng_event_rule *a,
 typedef ssize_t (*event_rule_create_from_buffer_cb)(
 		const struct lttng_buffer_view *view,
 		struct lttng_event_rule **event_rule);
+typedef enum lttng_error_code (*event_rule_populate_cb)(
+		struct lttng_event_rule *event_rule, uid_t uid, gid_t gid);
 
 struct lttng_event_rule {
 	struct urcu_ref ref;
@@ -47,6 +50,7 @@ struct lttng_event_rule {
 	event_rule_serialize_cb serialize;
 	event_rule_equal_cb equal;
 	event_rule_destroy_cb destroy;
+	event_rule_populate_cb populate;
 };
 
 struct lttng_event_rule_comm {
@@ -84,5 +88,9 @@ void lttng_event_rule_put(struct lttng_event_rule *rule);
 LTTNG_HIDDEN
 enum lttng_domain_type lttng_event_rule_get_domain_type(
 		const struct lttng_event_rule *rule);
+
+LTTNG_HIDDEN
+enum lttng_error_code lttng_event_rule_populate(
+		struct lttng_event_rule *rule, uid_t uid, gid_t gid);
 
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

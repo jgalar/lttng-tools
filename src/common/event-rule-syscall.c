@@ -19,6 +19,7 @@
 #include <lttng/event-rule/event-rule-syscall-internal.h>
 #include <common/macros.h>
 #include <common/error.h>
+#include <common/runas.h>
 #include <assert.h>
 
 #define IS_SYSCALL_EVENT_RULE(rule) ( \
@@ -64,6 +65,61 @@ bool lttng_event_rule_syscall_is_equal(const struct lttng_event_rule *_a,
 	return false;
 }
 
+static
+enum lttng_error_code lttng_event_rule_syscall_populate(struct lttng_event_rule *rule, uid_t uid, gid_t gid)
+{
+	int ret;
+	enum lttng_error_code ret_code = LTTNG_OK;
+	struct lttng_event_rule_syscall *syscall;
+	enum lttng_event_rule_status status;
+	const char *filter;
+	struct lttng_filter_bytecode *bytecode = NULL;
+
+	assert(rule);
+
+	syscall = container_of(rule, struct lttng_event_rule_syscall,
+			parent);
+
+	/* Generate the filter bytecode */
+	status = lttng_event_rule_syscall_get_filter(rule, &filter);
+	if (status == LTTNG_EVENT_RULE_STATUS_UNSET) {
+		filter = NULL;
+	} else if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		ret_code = LTTNG_ERR_FILTER_INVAL;
+		goto end;
+	}
+
+	if (filter && filter[0] == '\0') {
+		ret_code = LTTNG_ERR_FILTER_INVAL;
+		goto error;
+	}
+
+	if (filter == NULL) {
+		/* Nothing to do */
+		ret_code = LTTNG_OK;
+		goto end;
+	}
+
+	syscall->internal_filter.filter = strdup(filter);
+	if (syscall->internal_filter.filter == NULL) {
+		ret_code = LTTNG_ERR_NOMEM;
+		goto end;
+	}
+
+	ret = run_as_generate_filter_bytecode(syscall->internal_filter.filter, uid, gid, &bytecode);
+	if (ret) {
+		ret_code = LTTNG_ERR_FILTER_INVAL;
+	}
+
+	syscall->internal_filter.bytecode = bytecode;
+	bytecode = NULL;
+
+error:
+end:
+	free(bytecode);
+	return ret_code;
+}
+
 struct lttng_event_rule *lttng_event_rule_syscall_create()
 {
 	struct lttng_event_rule_syscall *rule;
@@ -78,6 +134,7 @@ struct lttng_event_rule *lttng_event_rule_syscall_create()
 	rule->parent.serialize = lttng_event_rule_syscall_serialize;
 	rule->parent.equal = lttng_event_rule_syscall_is_equal;
 	rule->parent.destroy = lttng_event_rule_syscall_destroy;
+	rule->parent.populate = lttng_event_rule_syscall_populate;
 	return &rule->parent;
 }
 
@@ -109,7 +166,7 @@ enum lttng_event_rule_status lttng_event_rule_syscall_set_filter(
 }
 
 enum lttng_event_rule_status lttng_event_rule_syscall_get_filter(
-		const struct lttng_event_rule *rule, const char *expression)
+		const struct lttng_event_rule *rule, const char **expression)
 {
 	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
 }

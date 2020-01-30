@@ -49,6 +49,12 @@ struct lttng_event_rule_tracepoint {
 		char **values;
 		unsigned int count;
 	} exclusions;
+
+	/* internal use only */
+	struct {
+		char *filter;
+		struct lttng_filter_bytecode *bytecode;
+	} internal_filter;
 };
 
 struct lttng_event_rule_tracepoint_comm {

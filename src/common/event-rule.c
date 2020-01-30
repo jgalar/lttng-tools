@@ -231,3 +231,10 @@ void lttng_event_rule_put(struct lttng_event_rule *event_rule)
 	assert(event_rule->ref.refcount);
 	urcu_ref_put(&event_rule->ref, lttng_event_rule_release);
 }
+
+LTTNG_HIDDEN
+enum lttng_error_code lttng_event_rule_populate(struct lttng_event_rule *rule, uid_t uid, gid_t gid)
+{
+	assert(rule->populate);
+	return rule->populate(rule, uid, gid);
+}

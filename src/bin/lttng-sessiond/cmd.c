@@ -4288,6 +4288,44 @@ end:
 	return ret;
 }
 
+/* TODO: is this the best place to perform this? (code wise) */
+/* On successThis returns lttng_error code.*/
+static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigger)
+{
+	enum lttng_error_code ret;
+	/* Internal object of the trigger might have to "generate" and
+	 * "populate" internal field e.g filter bytecode
+	 */
+	struct lttng_condition *condition = NULL;
+	condition = lttng_trigger_get_condition(trigger);
+	if (!condition) {
+		ret = LTTNG_ERR_INVALID_TRIGGER;
+		goto end;
+	}
+
+	switch (lttng_condition_get_type(condition)) {
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+	{
+		struct lttng_event_rule *event_rule;
+		const struct lttng_credentials *credential = lttng_trigger_get_credentials(trigger);
+		lttng_condition_event_rule_get_rule_no_const(
+				condition, &event_rule);
+		ret = lttng_event_rule_populate(event_rule, credential->uid, credential->gid);
+		if (ret != LTTNG_OK) {
+			goto end;
+		}
+		break;
+	}
+	default:
+	{
+		ret = LTTNG_OK;
+		break;
+	}
+	}
+end:
+	return ret;
+}
+
 int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		struct notification_thread_handle *notification_thread,
 		struct lttng_trigger **return_trigger)
@@ -4325,24 +4363,9 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 	}
 
 	/* Prepare internal trigger object if needed on reception */
-	/* TODO maybe extract this somewhere else */
-	{
-		struct lttng_condition *condition = NULL;
-		condition = lttng_trigger_get_condition(trigger);
-		if (!condition) {
-			ret = LTTNG_ERR_INVALID_TRIGGER;
-			goto end;
-		}
-
-		if (lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT) {
-			/* Make sure filter and all event rule manipulation are
-			 * done on the lttng-sessiond side. JUL etc. Ensure that
-			 * this not prevent "comparison" across call to prevent
-			 * duplication of trigger with equal condition
-			 */
-			/* TODO */
-			ret = LTTNG_OK;
-		}
+	ret = prepare_trigger_object(trigger);
+	if (ret) {
+		goto end;
 	}
 
 	/* Set the trigger credential */
