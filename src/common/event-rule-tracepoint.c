@@ -912,6 +912,7 @@ enum lttng_event_rule_status lttng_event_rule_tracepoint_set_exclusions(
 	char **exclusions_copy = NULL;
 	struct lttng_event_rule_tracepoint *tracepoint;
 	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+	enum lttng_domain_type domain_type;
 
 	/* TODO: validate that the passed exclusions are valid? */
 
@@ -923,6 +924,22 @@ enum lttng_event_rule_status lttng_event_rule_tracepoint_set_exclusions(
 
 	tracepoint = container_of(
 			rule, struct lttng_event_rule_tracepoint, parent);
+
+	(void) lttng_event_rule_tracepoint_get_domain_type(rule, &domain_type);
+
+	switch (domain_type) {
+	case LTTNG_DOMAIN_KERNEL:
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+		status = LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
+		goto end;
+	case LTTNG_DOMAIN_UST:
+		/* Exclusions supported */
+		break;
+	default:
+		assert(0);
+	}
 
 	exclusions_copy = zmalloc(sizeof(char *) * count);
 	if (!exclusions_copy) {
