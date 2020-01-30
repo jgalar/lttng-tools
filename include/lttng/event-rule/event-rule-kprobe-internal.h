@@ -26,26 +26,17 @@
 struct lttng_event_rule_kprobe {
 	struct lttng_event_rule parent;
 	char *name;
-	char *filter_expression;
 	struct {
 		uint64_t address;
 		uint64_t offset;
 		char *symbol_name;
 	} probe;
-
-	/* internal use only */
-	struct {
-		char *filter;
-		struct lttng_filter_bytecode *bytecode;
-	} internal_filter;
-
 };
 
 struct lttng_event_rule_kprobe_comm {
 	uint32_t name_len;
-	uint32_t filter_expression_len;
 	uint32_t probe_symbol_len;
-	/*name, filter expression, source symbol_name */
+	/*name, source symbol_name */
 	char payload[];
 } LTTNG_PACKED;
 

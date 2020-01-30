@@ -65,32 +65,6 @@ extern enum lttng_event_rule_status lttng_event_rule_kprobe_set_name(
 extern enum lttng_event_rule_status lttng_event_rule_kprobe_get_name(
 		const struct lttng_event_rule *rule, const char **name);
 
-/*
- * Set the filter expression of a kprobe event rule.
- *
- * The expression is copied.
- *
- * Return LTTNG_EVENT_RULE_STATUS_OK on success, LTTNG_EVENT_RULE_STATUS_INVALID
- * if invalid parameters are passed.
- */
-extern enum lttng_event_rule_status lttng_event_rule_kprobe_set_filter(
-		struct lttng_event_rule *rule, const char *expression);
-
-/*
- * Get the filter expression of a kprobe event rule.
- *
- * The caller does not assume the ownership of the returned filter expression.
- * The filter expression shall only only be used for the duration of the event
- * rule's lifetime, or before a different filter expression is set.
- *
- * Returns LTTNG_EVENT_RULE_STATUS_OK and a pointer to the event rule's filter
- * expression on success, LTTNG_EVENT_RULE_STATUS_INVALID if an invalid
- * parameter is passed, or LTTNG_EVENT_RULE_STATUS_UNSET if a filter expression
- * was not set prior to this call.
- */
-extern enum lttng_event_rule_status lttng_event_rule_kprobe_get_filter(
-		const struct lttng_event_rule *rule, const char **expression);
-
 #ifdef __cplusplus
 }
 #endif

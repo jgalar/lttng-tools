@@ -68,56 +68,22 @@ bool lttng_event_rule_kprobe_is_equal(const struct lttng_event_rule *_a,
 static
 enum lttng_error_code lttng_event_rule_kprobe_populate(struct lttng_event_rule *rule, uid_t uid, gid_t gid)
 {
-	int ret;
-	enum lttng_error_code ret_code;
-	struct lttng_event_rule_kprobe *kprobe;
-	enum lttng_event_rule_status status;
-	const char *filter;
-	struct lttng_filter_bytecode *bytecode = NULL;
+	/* Nothing to do */
+	return LTTNG_OK;
+}
 
-	assert(rule);
+static
+char *lttng_event_rule_kprobe_get_filter(struct lttng_event_rule *rule)
+{
+	/* Not supported */
+	return NULL;
+}
 
-	kprobe = container_of(rule, struct lttng_event_rule_kprobe,
-			parent);
-
-	/* Generate the filter bytecode */
-	status = lttng_event_rule_kprobe_get_filter(rule, &filter);
-	if (status == LTTNG_EVENT_RULE_STATUS_UNSET) {
-		filter = NULL;
-	} else if (status != LTTNG_EVENT_RULE_STATUS_OK) {
-		ret = -1;
-		goto end;
-	}
-
-	if (filter && filter[0] == '\0') {
-		ret_code = LTTNG_ERR_FILTER_INVAL;
-		goto error;
-	}
-
-	if (filter == NULL) {
-		/* Nothing to do */
-		ret = LTTNG_OK;
-		goto end;
-	}
-
-	kprobe->internal_filter.filter = strdup(filter);
-	if (kprobe->internal_filter.filter == NULL) {
-		ret_code = LTTNG_ERR_NOMEM;
-		goto end;
-	}
-
-	ret = run_as_generate_filter_bytecode(kprobe->internal_filter.filter, uid, gid, &bytecode);
-	if (ret) {
-		ret_code = LTTNG_ERR_FILTER_INVAL;
-	}
-
-	kprobe->internal_filter.bytecode = bytecode;
-	bytecode = NULL;
-
-error:
-end:
-	free(bytecode);
-	return ret_code;
+static
+struct lttng_filter_bytecode *lttng_event_rule_kprobe_get_filter_bytecode(struct lttng_event_rule *rule)
+{
+	/* Not supported */
+	return NULL;
 }
 
 struct lttng_event_rule *lttng_event_rule_kprobe_create()
@@ -135,6 +101,8 @@ struct lttng_event_rule *lttng_event_rule_kprobe_create()
 	rule->parent.equal = lttng_event_rule_kprobe_is_equal;
 	rule->parent.destroy = lttng_event_rule_kprobe_destroy;
 	rule->parent.populate = lttng_event_rule_kprobe_populate;
+	rule->parent.get_filter = lttng_event_rule_kprobe_get_filter;
+	rule->parent.get_filter_bytecode = lttng_event_rule_kprobe_get_filter_bytecode;
 	return &rule->parent;
 }
 
@@ -161,18 +129,6 @@ enum lttng_event_rule_status lttng_event_rule_kprobe_set_name(
 
 enum lttng_event_rule_status lttng_event_rule_kprobe_get_name(
 		const struct lttng_event_rule *rule, const char **name)
-{
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
-}
-
-enum lttng_event_rule_status lttng_event_rule_kprobe_set_filter(
-		struct lttng_event_rule *rule, const char *expression)
-{
-	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
-}
-
-enum lttng_event_rule_status lttng_event_rule_kprobe_get_filter(
-		const struct lttng_event_rule *rule, const char **expression)
 {
 	return LTTNG_EVENT_RULE_STATUS_UNSUPPORTED;
 }
