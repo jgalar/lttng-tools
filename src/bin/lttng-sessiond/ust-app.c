@@ -1190,6 +1190,9 @@ static struct ust_app_token_event_rule *alloc_ust_app_token_event_rule(
 	}
 
 	ua_token->event_rule = event_rule;
+	ua_token->filter = lttng_event_rule_get_filter_bytecode(event_rule);
+
+	/* TODO Event exclusion */
 
 	DBG3("UST app token event rule %" PRIu64 " allocated", ua_token->token);
 

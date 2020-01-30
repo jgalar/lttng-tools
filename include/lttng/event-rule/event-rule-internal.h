@@ -42,6 +42,9 @@ typedef ssize_t (*event_rule_create_from_buffer_cb)(
 		struct lttng_event_rule **event_rule);
 typedef enum lttng_error_code (*event_rule_populate_cb)(
 		struct lttng_event_rule *event_rule, uid_t uid, gid_t gid);
+typedef char *(*event_rule_get_filter_cb)(struct lttng_event_rule *event_rule);
+typedef struct lttng_filter_bytecode *(*event_rule_get_filter_bytecode_cb)(
+		struct lttng_event_rule *event_rule);
 
 struct lttng_event_rule {
 	struct urcu_ref ref;
@@ -51,6 +54,9 @@ struct lttng_event_rule {
 	event_rule_equal_cb equal;
 	event_rule_destroy_cb destroy;
 	event_rule_populate_cb populate;
+	/* Optional */
+	event_rule_get_filter_cb get_filter;
+	event_rule_get_filter_bytecode_cb get_filter_bytecode;
 };
 
 struct lttng_event_rule_comm {
@@ -92,5 +98,19 @@ enum lttng_domain_type lttng_event_rule_get_domain_type(
 LTTNG_HIDDEN
 enum lttng_error_code lttng_event_rule_populate(
 		struct lttng_event_rule *rule, uid_t uid, gid_t gid);
+
+/* If not present return NULL
+ * Caller DO NOT own the returned object
+ */
+LTTNG_HIDDEN
+char *lttng_event_rule_get_filter(
+		struct lttng_event_rule *rule);
+
+/* If not present return NULL
+ * Caller DO NOT own the returned object
+ */
+LTTNG_HIDDEN
+struct lttng_filter_bytecode *lttng_event_rule_get_filter_bytecode(
+		struct lttng_event_rule *rule);
 
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

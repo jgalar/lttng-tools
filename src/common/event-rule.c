@@ -238,3 +238,25 @@ enum lttng_error_code lttng_event_rule_populate(struct lttng_event_rule *rule, u
 	assert(rule->populate);
 	return rule->populate(rule, uid, gid);
 }
+
+/* If not present return NULL
+ * Caller DO NOT own the returned object
+ */
+LTTNG_HIDDEN
+char *lttng_event_rule_get_filter(
+		struct lttng_event_rule *rule)
+{
+	assert(rule->get_filter);
+	return rule->get_filter(rule);
+}
+
+/* If not present return NULL
+ * Caller DO NOT own the returned object
+ */
+LTTNG_HIDDEN
+struct lttng_filter_bytecode *lttng_event_rule_get_filter_bytecode(
+		struct lttng_event_rule *rule)
+{
+	assert(rule->get_filter_bytecode);
+	return rule->get_filter_bytecode(rule);
+}

@@ -356,7 +356,7 @@ enum lttng_error_code lttng_event_rule_tracepoint_populate(struct lttng_event_ru
 
 	status = lttng_event_rule_tracepoint_get_domain_type(rule, &domain_type);
 	if (status !=  LTTNG_EVENT_RULE_STATUS_OK) {
-		ret = LTTNG_ERR_UNK;
+		ret_code = LTTNG_ERR_UNK;
 		goto error;
 	}
 
@@ -402,12 +402,33 @@ enum lttng_error_code lttng_event_rule_tracepoint_populate(struct lttng_event_ru
 
 	tracepoint->internal_filter.bytecode = bytecode;
 	bytecode = NULL;
+	ret_code = LTTNG_OK;
 
 error:
 end:
 	free(bytecode);
 	return ret_code;
 
+}
+
+static char *lttng_event_rule_tracepoint_get_internal_filter(struct lttng_event_rule *rule)
+{
+	struct lttng_event_rule_tracepoint *tracepoint;
+	assert(rule);
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	return tracepoint->internal_filter.filter;
+}
+
+static struct lttng_filter_bytecode *lttng_event_rule_tracepoint_get_internal_filter_bytecode(struct lttng_event_rule *rule)
+{
+	struct lttng_event_rule_tracepoint *tracepoint;
+	assert(rule);
+
+	tracepoint = container_of(rule, struct lttng_event_rule_tracepoint,
+			parent);
+	return tracepoint->internal_filter.bytecode;
 }
 
 struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_type domain_type)
@@ -429,6 +450,8 @@ struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_ty
 	rule->parent.equal = lttng_event_rule_tracepoint_is_equal;
 	rule->parent.destroy = lttng_event_rule_tracepoint_destroy;
 	rule->parent.populate = lttng_event_rule_tracepoint_populate;
+	rule->parent.get_filter = lttng_event_rule_tracepoint_get_internal_filter;
+	rule->parent.get_filter_bytecode = lttng_event_rule_tracepoint_get_internal_filter_bytecode;
 
 	rule->domain = domain_type;
 	rule->loglevel.type = LTTNG_EVENT_LOGLEVEL_ALL;

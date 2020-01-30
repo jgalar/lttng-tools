@@ -673,7 +673,7 @@ int _generate_filter_bytecode(struct run_as_data *data,
 	/* Copy the lttng_bytecode_filter object to the return structure */
 	memcpy(ret_value->u.generate_filter_bytecode.bytecode,
 			&ctx->bytecode->b,
-			sizeof(&ctx->bytecode->b) +
+			sizeof(ctx->bytecode->b) +
 					bytecode_get_len(&ctx->bytecode->b));
 
 end:
@@ -727,6 +727,11 @@ int do_send_fds(int sock, const int *fds, unsigned int fd_count)
 	ssize_t len;
 	unsigned int i;
 
+	if (fd_count == 0) {
+		/* Nothing to send */
+		return 0;
+	}
+
 	for (i = 0; i < fd_count; i++) {
 		if (fds[i] < 0) {
 			ERR("Attempt to send invalid file descriptor to master (fd = %i)",
@@ -746,6 +751,11 @@ int do_recv_fds(int sock, int *fds, unsigned int fd_count)
 	int ret = 0;
 	unsigned int i;
 	ssize_t len;
+
+	if (fd_count == 0) {
+		/* Nothing to receive */
+		goto end;
+	}
 
 	len = lttcomm_recv_fds_unix_sock(sock, fds, fd_count);
 	if (len == 0) {
@@ -1824,7 +1834,7 @@ int run_as_generate_filter_bytecode(const char *filter_expression,
 	view_bytecode = (const struct lttng_filter_bytecode *) run_as_ret.u.generate_filter_bytecode.bytecode;
 
 	local_bytecode = zmalloc(sizeof(*local_bytecode) + view_bytecode->len);
-	if (local_bytecode) {
+	if (!local_bytecode) {
 		ret = -ENOMEM;
 		goto error;
 	}

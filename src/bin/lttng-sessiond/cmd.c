@@ -4362,14 +4362,14 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		goto end;
 	}
 
-	/* Prepare internal trigger object if needed on reception */
-	ret = prepare_trigger_object(trigger);
-	if (ret) {
-		goto end;
-	}
-
 	/* Set the trigger credential */
 	lttng_trigger_set_credentials(trigger, cmd_ctx->creds.uid, cmd_ctx->creds.gid);
+
+	/* Prepare internal trigger object if needed on reception */
+	ret = prepare_trigger_object(trigger);
+	if (ret != LTTNG_OK) {
+		goto end;
+	}
 
 	/* Inform the notification thread */
 	ret = notification_thread_command_register_trigger(notification_thread,

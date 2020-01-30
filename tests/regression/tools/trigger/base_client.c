@@ -124,6 +124,13 @@ int main(int argc, char **argv)
 		goto end;
 	}
 
+	event_rule_status = lttng_event_rule_tracepoint_set_filter(event_rule, "message=='Hello World'");
+	if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+		printf("error: Could not set pattern\n");
+		ret = 1;
+		goto end;
+	}
+
 	condition = lttng_condition_event_rule_create(event_rule);
 	if (!condition) {
 		printf("error: Could not create condition\n");
