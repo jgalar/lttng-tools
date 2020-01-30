@@ -2059,7 +2059,6 @@ int kernel_create_token_event_rule(struct lttng_event_rule *rule, uint64_t token
 
 	assert(rule);
 
-	/* We pass ownership of filter_expression and filter */
 	ret = trace_kernel_create_token_event_rule(rule, token, &event);
 	if (ret != LTTNG_OK) {
 		goto error;

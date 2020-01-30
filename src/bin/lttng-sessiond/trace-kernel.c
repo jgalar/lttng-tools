@@ -543,6 +543,8 @@ enum lttng_error_code trace_kernel_create_token_event_rule(
 	}
 
 	local_kernel_token_event_rule->event_rule = event_rule;
+	/* The event rule still own the filter and bytecode */
+	local_kernel_token_event_rule->filter = lttng_event_rule_get_filter_bytecode(event_rule);
 
 	DBG3("[trace] Kernel token event rule %" PRIu64 " allocated", local_kernel_token_event_rule->token);
 error:
@@ -769,8 +771,6 @@ void trace_kernel_destroy_token_event_rule(struct ltt_kernel_token_event_rule *e
 	}
 
 	lttng_event_rule_put(event->event_rule);
-	free(event->filter);
-
 	free(event);
 }
 /*
