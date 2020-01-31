@@ -144,6 +144,41 @@ void lttng_userspace_probe_location_destroy(
 	}
 }
 
+static
+bool lttng_userspace_probe_location_function_is_equal(const struct lttng_userspace_probe_location *_a,
+		const struct lttng_userspace_probe_location *_b)
+{
+	bool is_equal = false;
+	struct lttng_userspace_probe_location_function *a, *b;
+
+	a = container_of(_a, struct lttng_userspace_probe_location_function, parent);
+	b = container_of(_b, struct lttng_userspace_probe_location_function, parent);
+
+	/* The binary_fd is not checked since it does not hold "immutable"
+	 * information.
+	 */
+
+	if (a->instrumentation_type != b->instrumentation_type) {
+		goto end;
+	}
+
+	assert(a->function_name);
+	assert(b->function_name);
+	if (strcmp(a->function_name, b->function_name)) {
+		goto end;
+	}
+
+	assert(a->binary_path);
+	assert(b->binary_path);
+	if (strcmp(a->binary_path, b->binary_path)) {
+		goto end;
+	}
+
+	is_equal = true;
+end:
+	return is_equal;
+}
+
 static struct lttng_userspace_probe_location *
 lttng_userspace_probe_location_function_create_no_check(const char *binary_path,
 		const char *function_name,
@@ -192,6 +227,7 @@ lttng_userspace_probe_location_function_create_no_check(const char *binary_path,
 	ret = &location->parent;
 	ret->lookup_method = lookup_method;
 	ret->type = LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION;
+	ret->equal = lttng_userspace_probe_location_function_is_equal;
 	goto end;
 
 error:
@@ -204,6 +240,43 @@ error:
 	}
 end:
 	return ret;
+}
+
+static
+bool lttng_userspace_probe_location_tracepoint_is_equal(const struct lttng_userspace_probe_location *_a,
+		const struct lttng_userspace_probe_location *_b)
+{
+	bool is_equal = false;
+	struct lttng_userspace_probe_location_tracepoint *a, *b;
+
+	a = container_of(_a, struct lttng_userspace_probe_location_tracepoint, parent);
+	b = container_of(_b, struct lttng_userspace_probe_location_tracepoint, parent);
+
+	/* The binary_fd is not checked since it does not hold "immutable"
+	 * information.
+	 */
+
+	assert(a->probe_name);
+	assert(b->probe_name);
+	if (strcmp(a->probe_name, b->probe_name)) {
+		goto end;
+	}
+
+	assert(a->provider_name);
+	assert(b->provider_name);
+	if (strcmp(a->provider_name, b->provider_name)) {
+		goto end;
+	}
+
+	assert(a->binary_path);
+	assert(b->binary_path);
+	if (strcmp(a->binary_path, b->binary_path)) {
+		goto end;
+	}
+
+	is_equal = true;
+end:
+	return is_equal;
 }
 
 static struct lttng_userspace_probe_location *
@@ -261,6 +334,7 @@ lttng_userspace_probe_location_tracepoint_create_no_check(const char *binary_pat
 	ret = &location->parent;
 	ret->lookup_method = lookup_method;
 	ret->type = LTTNG_USERSPACE_PROBE_LOCATION_TYPE_TRACEPOINT;
+	ret->equal = lttng_userspace_probe_location_tracepoint_is_equal;
 	goto end;
 
 error:
@@ -1710,4 +1784,29 @@ struct lttng_userspace_probe_location *lttng_userspace_probe_location_copy(
 	}
 err:
 	return new_location;
+}
+
+LTTNG_HIDDEN
+bool lttng_userspace_probe_location_is_equal(
+		const struct lttng_userspace_probe_location *a,
+		const struct lttng_userspace_probe_location *b)
+{
+	bool is_equal = false;
+
+	if (!a || !b) {
+		goto end;
+	}
+
+	if (a->type != b->type) {
+		goto end;
+	}
+
+	if (a == b) {
+		is_equal = true;
+		goto end;
+	}
+
+	is_equal = a->equal ? a->equal(a, b) : true;
+end:
+	return is_equal;
 }
