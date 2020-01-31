@@ -27,6 +27,7 @@ struct lttng_event_rule_syscall {
 	struct lttng_event_rule parent;
 	char *pattern;
 	char *filter_expression;
+
 	/* internal use only */
 	struct {
 		char *filter;
