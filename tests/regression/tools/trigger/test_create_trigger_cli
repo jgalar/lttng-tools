@@ -23,7 +23,7 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-plan_tests 93
+plan_tests 99
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
@@ -64,6 +64,12 @@ function test_failure ()
 	diff -u "${tmp_stderr}" <(echo "${error_msg}")
 	ok $? "${test_name}: expected stderr"
 }
+
+# top-level options
+test_success "explicit id" \
+	--id hohoho \
+	--condition on-event some-event-id -u \
+	--action notify
 
 # `--condition on-event` successes
 test_success "--condition on-event some-event -u" \
@@ -123,6 +129,9 @@ test_failure "two --condition" \
 	--condition on-event aaa -u \
 	--condition on-event bbb -u \
 	--action notify
+test_failure "missing argument to --id" \
+	"Error: While parsing argument #1 (\`--id\`): Missing required argument for option \`--id\`" \
+	--id
 
 # `--condition` failures
 test_failure "missing args after --condition" \

@@ -12,7 +12,7 @@ SYNOPSIS
 --------
 
 [verse]
-*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *create-trigger*
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *create-trigger* [--id ID]
       --condition CONDITION-NAME CONDITION-ARGS
       --action ACTION-NAME ACTION-ARGS
       [--action ACTION-NAME ACTION-ARGS]...
@@ -88,6 +88,15 @@ Snapshot session: *snapshot-session* session-name::
     the given name exist at the time the condition is met, nothing is
     done.
 
+OPTIONS
+-------
+
+option:--id='ID'::
+    Set the id of the trigger to 'ID'.  If omitted, an id will
+    automatically be assigned to the trigger by the session daemon.
++
+If a trigger with the specified 'ID' already exists, the trigger
+creation will fail.
 
 include::common-cmd-help-options.txt[]
 

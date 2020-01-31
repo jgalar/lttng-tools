@@ -23,6 +23,7 @@ enum {
 
 	OPT_CONDITION,
 	OPT_ACTION,
+	OPT_ID,
 
 	OPT_ALL,
 	OPT_FILTER,
@@ -206,7 +207,7 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		ARGPAR_ITEM_DESTROY_AND_RESET(item);
 		status = argpar_state_parse_next(state, &item, &error);
 		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
-			fprintf(stderr, "Internal argpar error: %s\n", error);
+			fprintf(stderr, "Error: %s\n", error);
 			goto error;
 		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
 			/* Just stop parsing here. */
@@ -563,7 +564,7 @@ struct lttng_condition *handle_condition_session_consumed_size(int *argc, const 
 		ARGPAR_ITEM_DESTROY_AND_RESET(item);
 		status = argpar_state_parse_next(state, &item, &error);
 		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
-			fprintf(stderr, "Internal argpar error: %s\n", error);
+			fprintf(stderr, "Error: %s\n", error);
 			goto error;
 		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
 			/* Just stop parsing here. */
@@ -680,7 +681,7 @@ struct lttng_condition *handle_condition_buffer_usage_high(int *argc, const char
 		ARGPAR_ITEM_DESTROY_AND_RESET(item);
 		status = argpar_state_parse_next(state, &item, &error);
 		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
-			fprintf(stderr, "Internal argpar error: %s\n", error);
+			fprintf(stderr, "Error: %s\n", error);
 			goto error;
 		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
 			/* Just stop parsing here. */
@@ -891,7 +892,7 @@ struct lttng_action *handle_action_simple_session(
 		ARGPAR_ITEM_DESTROY_AND_RESET(item);
 		status = argpar_state_parse_next(state, &item, &error);
 		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
-			fprintf(stderr, "Internal argpar error: %s\n", error);
+			fprintf(stderr, "Error: %s\n", error);
 			goto error;
 		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
 			/* Just stop parsing here. */
@@ -1298,6 +1299,7 @@ struct argpar_opt_descr create_trigger_options[] = {
 	{ OPT_LIST_OPTIONS, '\0', "list-options", false },
 	{ OPT_CONDITION, '\0', "condition", false },
 	{ OPT_ACTION, '\0', "action", false },
+	{ OPT_ID, '\0', "id", true },
 	ARGPAR_OPT_DESCR_SENTINEL,
 };
 
@@ -1322,6 +1324,7 @@ int cmd_create_trigger(int argc, const char **argv)
 	struct lttng_action *action = NULL;
 	struct lttng_trigger *trigger = NULL;
 	char *error = NULL;
+	char *id = NULL;
 	int i;
 
 	lttng_dynamic_pointer_array_init(&actions, lttng_actions_destructor);
@@ -1342,7 +1345,7 @@ int cmd_create_trigger(int argc, const char **argv)
 		status = argpar_state_parse_next(argpar_state, &argpar_item, &error);
 
 		if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR) {
-			fprintf(stderr, "Internal argpar error: %s\n", error);
+			fprintf(stderr, "Error: %s\n", error);
 			goto error;
 		} else if (status == ARGPAR_STATE_PARSE_NEXT_STATUS_ERROR_UNKNOWN_OPT) {
 			fprintf(stderr, "%s\n", error);
@@ -1422,6 +1425,14 @@ int cmd_create_trigger(int argc, const char **argv)
 
 			break;
 		}
+		case OPT_ID:
+		{
+			if (!assign_string(&id, item_opt->arg, "--id")) {
+				goto error;
+			}
+
+			break;
+		}
 		default:
 			abort();
 		}
@@ -1462,12 +1473,22 @@ int cmd_create_trigger(int argc, const char **argv)
 	if (!trigger) {
 		goto error;
 	}
+
 	/*
 	 * Ownership of the condition and action group was transferred to the
 	 * trigger.
 	 */
 	condition = NULL;
 	action_group = NULL;
+
+	if (id) {
+		enum lttng_trigger_status trigger_status =
+			lttng_trigger_set_name(trigger, id);
+		if (trigger_status != LTTNG_TRIGGER_STATUS_OK) {
+			fprintf(stderr, "Failed to set trigger id.\n");
+			goto error;
+		}
+	}
 
 	ret = lttng_register_trigger(trigger);
 	if (ret) {
@@ -1488,6 +1509,7 @@ end:
 	lttng_condition_destroy(condition);
 	lttng_action_destroy(action_group);
 	lttng_trigger_destroy(trigger);
+	free(id);
 	// TODO: check what else to free
 
 	return ret;
