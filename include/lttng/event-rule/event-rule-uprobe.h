@@ -19,6 +19,7 @@
 #define LTTNG_EVENT_RULE_UPROBE_H
 
 #include <lttng/event-rule/event-rule.h>
+#include <lttng/userspace-probe.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,15 +31,15 @@ extern "C" {
 extern struct lttng_event_rule *lttng_event_rule_uprobe_create(void);
 
 /*
- * Set the source of a uprobe event rule.
+ * Set the location of a uprobe event rule.
  *
- * TODO: list possible format
+ * The location is copied internally.
  *
  * Return LTTNG_EVENT_RULE_STATUS_OK on success, LTTNG_EVENT_RULE_STATUS_INVALID
  * if invalid parameters are passed.
  */
-extern enum lttng_event_rule_status lttng_event_rule_uprobe_set_source(
-		struct lttng_event_rule *rule, const char *source);
+extern enum lttng_event_rule_status lttng_event_rule_uprobe_set_location(
+		struct lttng_event_rule *rule, const struct lttng_userspace_probe_location *location);
 
 /*
  * Set the name of a uprobe event rule.
@@ -63,7 +64,7 @@ extern enum lttng_event_rule_status lttng_event_rule_uprobe_set_name(
  * or LTTNG_EVENT_RULE_STATUS_UNSET if a name was not set prior to this call.
  */
 extern enum lttng_event_rule_status lttng_event_rule_uprobe_get_name(
-		const struct lttng_event_rule *rule, const char *name);
+		const struct lttng_event_rule *rule, const char **name);
 
 #ifdef __cplusplus
 }

@@ -31,8 +31,7 @@ struct lttng_event_rule_uprobe {
 
 struct lttng_event_rule_uprobe_comm {
 	uint32_t name_len;
-	uint32_t source_symbol_len;
-	uint32_t length;
+	uint32_t location_len;
 	/*name, location object */
 	char payload[];
 } LTTNG_PACKED;
@@ -41,5 +40,10 @@ LTTNG_HIDDEN
 ssize_t lttng_event_rule_uprobe_create_from_buffer(
 		const struct lttng_buffer_view *view,
 		struct lttng_event_rule **rule);
+
+LTTNG_HIDDEN
+struct lttng_userspace_probe_location *
+lttng_event_rule_uprobe_get_location_no_const(
+		const struct lttng_event_rule *rule);
 
 #endif /* LTTNG_EVENT_RULE_UPROBE_INTERNAL_H */
