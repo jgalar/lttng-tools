@@ -532,7 +532,6 @@ static int receive_userspace_probe(struct command_ctx *cmd_ctx, int sock,
 {
 	int fd, ret;
 	struct lttng_userspace_probe_location *probe_location;
-	const struct lttng_userspace_probe_location_lookup_method *lookup = NULL;
 	struct lttng_dynamic_buffer probe_location_buffer;
 	struct lttng_buffer_view buffer_view;
 
@@ -592,30 +591,7 @@ static int receive_userspace_probe(struct command_ctx *cmd_ctx, int sock,
 	 * Set the file descriptor received from the client through the unix
 	 * socket in the probe location.
 	 */
-	lookup = lttng_userspace_probe_location_get_lookup_method(probe_location);
-	if (!lookup) {
-		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
-		goto error;
-	}
-
-	/*
-	 * From the kernel tracer's perspective, all userspace probe event types
-	 * are all the same: a file and an offset.
-	 */
-	switch (lttng_userspace_probe_location_lookup_method_get_type(lookup)) {
-	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
-		ret = lttng_userspace_probe_location_function_set_binary_fd(
-				probe_location, fd);
-		break;
-	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT:
-		ret = lttng_userspace_probe_location_tracepoint_set_binary_fd(
-				probe_location, fd);
-		break;
-	default:
-		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
-		goto error;
-	}
-
+	ret = lttng_userspace_probe_location_set_binary_fd(probe_location, fd);
 	if (ret) {
 		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
 		goto error;
@@ -1973,7 +1949,7 @@ error_add_context:
 			goto error;
 		}
 
-		ret = lttng_trigger_serialize(return_trigger, &payload);
+		ret = lttng_trigger_serialize(return_trigger, &payload, NULL);
 		if (ret) {
 			ERR("Failed to serialize trigger in reply to \"register trigger\" command");
 			ret = LTTNG_ERR_NOMEM;

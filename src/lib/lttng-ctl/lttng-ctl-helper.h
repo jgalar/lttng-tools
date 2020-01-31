@@ -58,6 +58,23 @@ int lttng_ctl_ask_sessiond_fds_no_cmd_header(struct lttcomm_session_msg *lsm,
 	return lttng_ctl_ask_sessiond_fds_varlen(lsm, fds, nb_fd, NULL,
 		0, NULL, NULL, NULL);
 }
+
+/*
+ * Calls lttng_ctl_ask_sessiond_fds_varlen() with fds with no expected command
+ * header and with varlen data.
+ */
+static inline int lttng_ctl_ask_sessiond_fds_varlen_no_cmd_header(
+		struct lttcomm_session_msg *lsm,
+		const int *fds,
+		size_t nb_fd,
+		void *vardata,
+		size_t vardata_len,
+		void **user_payload_buf)
+{
+	return lttng_ctl_ask_sessiond_fds_varlen(lsm, fds, nb_fd, vardata,
+			vardata_len, user_payload_buf, NULL, NULL);
+}
+
 /*
  * Use this if no variable length data needs to be sent.
  */

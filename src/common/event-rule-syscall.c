@@ -72,7 +72,8 @@ end:
 static
 int lttng_event_rule_syscall_serialize(
 		const struct lttng_event_rule *rule,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send)
 {
 	int ret;
 	size_t pattern_len, filter_expression_len;
@@ -111,6 +112,11 @@ int lttng_event_rule_syscall_serialize(
 			buf, syscall->filter_expression, filter_expression_len);
 	if (ret) {
 		goto end;
+	}
+
+	if (fd_to_send) {
+		/* Nothing to send */
+		*fd_to_send = -1;
 	}
 end:
 	return ret;

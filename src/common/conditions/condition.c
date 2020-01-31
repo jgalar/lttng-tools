@@ -56,7 +56,8 @@ end:
 
 LTTNG_HIDDEN
 int lttng_condition_serialize(const struct lttng_condition *condition,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send)
 {
 	int ret;
 	struct lttng_condition_comm condition_comm = { 0 };
@@ -74,7 +75,7 @@ int lttng_condition_serialize(const struct lttng_condition *condition,
 		goto end;
 	}
 
-	ret = condition->serialize(condition, buf);
+	ret = condition->serialize(condition, buf, fd_to_send);
 	if (ret) {
 		goto end;
 	}

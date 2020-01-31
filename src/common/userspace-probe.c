@@ -1810,3 +1810,45 @@ bool lttng_userspace_probe_location_is_equal(
 end:
 	return is_equal;
 }
+
+LTTNG_HIDDEN
+int lttng_userspace_probe_location_set_binary_fd(
+		struct lttng_userspace_probe_location *location, int fd)
+{
+	int ret = 0;
+	const struct lttng_userspace_probe_location_lookup_method *lookup = NULL;
+	/*
+	 * Set the file descriptor received from the client through the unix
+	 * socket in the probe location.
+	 */
+	lookup = lttng_userspace_probe_location_get_lookup_method(location);
+	if (!lookup) {
+		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+		goto end;
+	}
+
+	/*
+	 * From the kernel tracer's perspective, all userspace probe event types
+	 * are all the same: a file and an offset.
+	 */
+	switch (lttng_userspace_probe_location_lookup_method_get_type(lookup)) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+		ret = lttng_userspace_probe_location_function_set_binary_fd(
+				location, fd);
+		break;
+	case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT:
+		ret = lttng_userspace_probe_location_tracepoint_set_binary_fd(
+				location, fd);
+		break;
+	default:
+		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+		goto end;
+	}
+
+	if (ret) {
+		ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+		goto end;
+	}
+end:
+	return ret;
+}

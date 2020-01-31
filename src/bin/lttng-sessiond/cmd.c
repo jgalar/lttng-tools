@@ -32,6 +32,7 @@
 #include <lttng/condition/event-rule-internal.h>
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/event-rule/event-rule-internal.h>
+#include <lttng/event-rule/event-rule-uprobe-internal.h>
 #include <lttng/action/action.h>
 #include <lttng/channel.h>
 #include <lttng/channel-internal.h>
@@ -4289,8 +4290,8 @@ end:
 }
 
 /* TODO: is this the best place to perform this? (code wise) */
-/* On successThis returns lttng_error code.*/
-static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigger)
+/* On success LTTNG_OK. On error, returns lttng_error code.*/
+static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigger, int sock)
 {
 	enum lttng_error_code ret;
 	/* Internal object of the trigger might have to "generate" and
@@ -4314,6 +4315,42 @@ static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigge
 		if (ret != LTTNG_OK) {
 			goto end;
 		}
+
+		switch (lttng_event_rule_get_type(event_rule)) {
+		case LTTNG_EVENT_RULE_TYPE_UPROBE:
+		{
+			int fd;
+			struct lttng_userspace_probe_location *location = lttng_event_rule_uprobe_get_location_no_const(event_rule);
+			/*
+			 * Receive the file descriptor to the target binary from
+			 * the client.
+			 */
+			DBG("Receiving userspace probe target FD from client ...");
+			ret = lttcomm_recv_fds_unix_sock(sock, &fd, 1);
+			if (ret <= 0) {
+				DBG("Nothing recv() from client userspace probe fd... continuing");
+				ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+				goto end;
+			}
+
+			/*
+			 * Set the file descriptor received from the client
+			 * through the unix socket in the probe location.
+			 */
+			ret = lttng_userspace_probe_location_set_binary_fd(
+					location, fd);
+			if (ret) {
+				ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+				goto end;
+			}
+
+			break;
+		}
+		default:
+			/* Nothing to do */
+			break;
+		}
+		ret = LTTNG_OK;
 		break;
 	}
 	default:
@@ -4365,8 +4402,11 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 	/* Set the trigger credential */
 	lttng_trigger_set_credentials(trigger, cmd_ctx->creds.uid, cmd_ctx->creds.gid);
 
-	/* Prepare internal trigger object if needed on reception */
-	ret = prepare_trigger_object(trigger);
+	/* Prepare internal trigger object if needed on reception.
+	 * Handles also special treatment for certain internal object of the
+	 * trigger (e.g uprobe event rule binary fd.
+	 */
+	ret = prepare_trigger_object(trigger, sock);
 	if (ret != LTTNG_OK) {
 		goto end;
 	}

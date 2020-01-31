@@ -51,8 +51,7 @@ int lttng_notification_serialize(const struct lttng_notification *notification,
 	}
 
 	size_before_payload = buf->size;
-	ret = lttng_condition_serialize(notification->condition,
-			buf);
+	ret = lttng_condition_serialize(notification->condition, buf, NULL);
 	if (ret) {
 		goto end;
 	}

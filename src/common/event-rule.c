@@ -97,7 +97,8 @@ end:
 
 LTTNG_HIDDEN
 int lttng_event_rule_serialize(const struct lttng_event_rule *event_rule,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send)
 {
 	int ret;
 	struct lttng_event_rule_comm event_rule_comm = { 0 };
@@ -115,7 +116,7 @@ int lttng_event_rule_serialize(const struct lttng_event_rule *event_rule,
 		goto end;
 	}
 
-	ret = event_rule->serialize(event_rule, buf);
+	ret = event_rule->serialize(event_rule, buf, fd_to_send);
 	if (ret) {
 		goto end;
 	}

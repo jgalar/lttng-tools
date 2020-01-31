@@ -2927,6 +2927,8 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 	void *reply = NULL;
 	struct lttng_buffer_view reply_view;
 	struct lttng_trigger *reply_trigger = NULL;
+	bool send_fd = false;
+	int fd_to_send;
 
 	lttng_dynamic_buffer_init(&buffer);
 	if (!trigger) {
@@ -2939,17 +2941,23 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 		goto end;
 	}
 
-	ret = lttng_trigger_serialize(trigger, &buffer);
+	ret = lttng_trigger_serialize(trigger, &buffer, &fd_to_send);
 	if (ret < 0) {
 		ret = -LTTNG_ERR_UNK;
 		goto end;
 	}
 
+	send_fd = fd_to_send >= 0;
+
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_REGISTER_TRIGGER;
 	lsm.u.trigger.length = (uint32_t) buffer.size;
-	reply_ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(&lsm, buffer.data,
-			buffer.size, &reply);
+	reply_ret = lttng_ctl_ask_sessiond_fds_varlen_no_cmd_header(&lsm,
+			send_fd ? &fd_to_send : NULL,
+			send_fd ? 1 : 0,
+			buffer.data,
+			buffer.size,
+			&reply);
 	if (reply_ret < 0) {
 		ret = reply_ret;
 		goto end;
@@ -2997,7 +3005,7 @@ int lttng_unregister_trigger(struct lttng_trigger *trigger)
 		goto end;
 	}
 
-	ret = lttng_trigger_serialize(trigger, &buffer);
+	ret = lttng_trigger_serialize(trigger, &buffer, NULL);
 	if (ret < 0) {
 		ret = -LTTNG_ERR_UNK;
 		goto end;

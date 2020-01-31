@@ -21,7 +21,8 @@ typedef void (*condition_destroy_cb)(struct lttng_condition *condition);
 typedef bool (*condition_validate_cb)(const struct lttng_condition *condition);
 typedef int (*condition_serialize_cb)(
 		const struct lttng_condition *condition,
-		struct lttng_dynamic_buffer *buf);
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send);
 typedef bool (*condition_equal_cb)(const struct lttng_condition *a,
 		const struct lttng_condition *b);
 typedef ssize_t (*condition_create_from_buffer_cb)(
@@ -56,7 +57,8 @@ ssize_t lttng_condition_create_from_buffer(
 
 LTTNG_HIDDEN
 int lttng_condition_serialize(const struct lttng_condition *condition,
-		struct lttng_dynamic_buffer *buf);
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send);
 
 LTTNG_HIDDEN
 bool lttng_condition_is_equal(const struct lttng_condition *a,

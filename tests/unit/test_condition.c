@@ -86,7 +86,7 @@ void test_condition_event_rule(void)
 	ok(condition_status == LTTNG_CONDITION_STATUS_OK, "getting event rule");
 	ok(tracepoint == tracepoint_tmp, "Ownership transfer is good");
 
-	ret = lttng_condition_serialize(condition, &buffer);
+	ret = lttng_condition_serialize(condition, &buffer, NULL);
 	ok(ret == 0, "Condition serialized");
 
 	view = lttng_buffer_view_from_dynamic_buffer(&buffer, 0, -1);

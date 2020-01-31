@@ -632,7 +632,7 @@ enum lttng_notification_channel_status send_condition_command(
 		goto end_unlock;
 	}
 
-	ret = lttng_condition_serialize(condition, &buffer);
+	ret = lttng_condition_serialize(condition, &buffer, NULL);
 	if (ret) {
 		status = LTTNG_NOTIFICATION_CHANNEL_STATUS_INVALID;
 		goto end_unlock;

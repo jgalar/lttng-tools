@@ -120,7 +120,7 @@ void test_event_rule_tracepoint_ust(void)
 		ok(!strncmp(exclusions[i], tmp, strlen(exclusions[i])), "%s == %s", tmp, exclusions[i]);
 	}
 
-	lttng_event_rule_serialize(tracepoint, &buffer);
+	lttng_event_rule_serialize(tracepoint, &buffer, NULL);
 	view = lttng_buffer_view_from_dynamic_buffer(&buffer, 0, -1);
 	lttng_event_rule_create_from_buffer(&view, &tracepoint_from_buffer);
 

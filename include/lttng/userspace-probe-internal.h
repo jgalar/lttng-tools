@@ -152,4 +152,8 @@ bool lttng_userspace_probe_location_is_equal(
 		const struct lttng_userspace_probe_location *a,
 		const struct lttng_userspace_probe_location *b);
 
+LTTNG_HIDDEN
+int lttng_userspace_probe_location_set_binary_fd(
+		struct lttng_userspace_probe_location *location, int fd);
+
 #endif /* LTTNG_USERSPACE_PROBE_INTERNAL_H */

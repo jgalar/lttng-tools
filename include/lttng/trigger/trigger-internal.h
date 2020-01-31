@@ -64,7 +64,8 @@ ssize_t lttng_trigger_create_from_buffer(const struct lttng_buffer_view *view,
 
 LTTNG_HIDDEN
 int lttng_trigger_serialize(struct lttng_trigger *trigger,
-		struct lttng_dynamic_buffer *buf);
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send);
 
 LTTNG_HIDDEN
 const struct lttng_condition *lttng_trigger_get_const_condition(

@@ -219,7 +219,8 @@ error:
  */
 LTTNG_HIDDEN
 int lttng_trigger_serialize(struct lttng_trigger *trigger,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send)
 {
 	int ret;
 	size_t header_offset, size_before_payload, size_name;
@@ -252,7 +253,7 @@ int lttng_trigger_serialize(struct lttng_trigger *trigger,
 		goto end;
 	}
 
-	ret = lttng_condition_serialize(trigger->condition, buf);
+	ret = lttng_condition_serialize(trigger->condition, buf, fd_to_send);
 	if (ret) {
 		goto end;
 	}
@@ -514,7 +515,7 @@ int lttng_triggers_serialize(const struct lttng_triggers *triggers,
 			assert(0);
 		}
 
-		ret = lttng_trigger_serialize(trigger, buffer);
+		ret = lttng_trigger_serialize(trigger, buffer, NULL);
 		if (ret) {
 			goto end;
 		}

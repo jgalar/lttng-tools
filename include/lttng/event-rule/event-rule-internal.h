@@ -34,7 +34,8 @@ typedef bool (*event_rule_validate_cb)(
 		const struct lttng_event_rule *event_rule);
 typedef int (*event_rule_serialize_cb)(
 		const struct lttng_event_rule *event_rule,
-		struct lttng_dynamic_buffer *buf);
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send);
 typedef bool (*event_rule_equal_cb)(const struct lttng_event_rule *a,
 		const struct lttng_event_rule *b);
 typedef ssize_t (*event_rule_create_from_buffer_cb)(
@@ -79,7 +80,8 @@ ssize_t lttng_event_rule_create_from_buffer(
 
 LTTNG_HIDDEN
 int lttng_event_rule_serialize(const struct lttng_event_rule *event_rule,
-		struct lttng_dynamic_buffer *buf);
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send);
 
 LTTNG_HIDDEN
 bool lttng_event_rule_is_equal(const struct lttng_event_rule *a,

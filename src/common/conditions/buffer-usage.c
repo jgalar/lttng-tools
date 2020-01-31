@@ -91,7 +91,8 @@ end:
 static
 int lttng_condition_buffer_usage_serialize(
 		const struct lttng_condition *condition,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send)
 {
 	int ret;
 	struct lttng_condition_buffer_usage *usage;
@@ -148,6 +149,11 @@ int lttng_condition_buffer_usage_serialize(
 			channel_name_len);
 	if (ret) {
 		goto end;
+	}
+
+	if (fd_to_send) {
+		/* No fd to send */
+		*fd_to_send = -1;
 	}
 end:
 	return ret;

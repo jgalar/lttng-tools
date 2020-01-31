@@ -51,7 +51,7 @@ bool lttng_event_rule_kretprobe_validate(
 static
 int lttng_event_rule_kretprobe_serialize(
 		const struct lttng_event_rule *rule,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf, int *fd_to_send)
 {
 	/* TODO */
 	return -1;

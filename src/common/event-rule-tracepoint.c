@@ -84,7 +84,8 @@ end:
 static
 int lttng_event_rule_tracepoint_serialize(
 		const struct lttng_event_rule *rule,
-		struct lttng_dynamic_buffer *buf)
+		struct lttng_dynamic_buffer *buf,
+		int *fd_to_send)
 {
 	int ret;
 	size_t pattern_len, filter_expression_len, exclusions_len;
@@ -162,6 +163,11 @@ int lttng_event_rule_tracepoint_serialize(
 	}
 
 	assert(exclusions_len == exclusions_appended);
+
+	if (fd_to_send) {
+		/* No fd to send */
+		*fd_to_send = -1;
+	}
 
 end:
 	return ret;
