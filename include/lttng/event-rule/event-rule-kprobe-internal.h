@@ -30,13 +30,16 @@ struct lttng_event_rule_kprobe {
 		uint64_t address;
 		uint64_t offset;
 		char *symbol_name;
+		bool set;
 	} probe;
 };
 
 struct lttng_event_rule_kprobe_comm {
 	uint32_t name_len;
-	uint32_t probe_symbol_len;
-	/*name, source symbol_name */
+	uint32_t probe_symbol_name_len;
+	uint64_t probe_address;
+	uint64_t probe_offset;
+	/* name, source symbol_name */
 	char payload[];
 } LTTNG_PACKED;
 
