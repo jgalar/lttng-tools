@@ -202,6 +202,19 @@ struct notification_client {
 	struct rcu_head rcu_node;
 };
 
+/*
+ * Facilities to carry the different notifications type in the action processing
+ * code path.
+ */
+struct lttng_trigger_notification {
+	union {
+		struct lttng_ust_trigger_notification *ust;
+		uint64_t *kernel;
+	} u;
+	uint64_t id;
+	enum lttng_domain_type type;
+};
+
 struct channel_state_sample {
 	struct channel_key key;
 	struct cds_lfht_node channel_state_ht_node;
@@ -3694,7 +3707,7 @@ end:
 
 int perform_event_action_notify(struct notification_thread_state *state,
 		const struct lttng_trigger *trigger,
-		const struct lttng_ust_trigger_notification *notification,
+		const struct lttng_trigger_notification *notification,
 		const struct lttng_action *action)
 {
 	int ret;
@@ -3745,7 +3758,7 @@ end:
 /* This can be called recursively, pass NULL for action on the first iteration */
 int perform_event_action(struct notification_thread_state *state,
 		const struct lttng_trigger *trigger,
-		const struct lttng_ust_trigger_notification *notification,
+		const struct lttng_trigger_notification *notification,
 		const struct lttng_action *action)
 {
 	int ret = 0;
@@ -3758,7 +3771,7 @@ int perform_event_action(struct notification_thread_state *state,
 	}
 
 	action_type = lttng_action_get_type_const(action);
-	DBG("Handling action %s for trigger id %s (%" PRIu64 ")",
+	ERR("Handling action %s for trigger id %s (%" PRIu64 ")",
 			lttng_action_type_string(action_type), trigger->name,
 			trigger->key.value);
 
@@ -3796,24 +3809,40 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 		enum lttng_domain_type domain)
 {
 	int ret;
-	struct lttng_ust_trigger_notification notification;
+	struct lttng_ust_trigger_notification ust_notification;
+	uint64_t kernel_notification;
 	struct cds_lfht_node *node;
 	struct cds_lfht_iter iter;
 	struct notification_trigger_tokens_ht_element *element;
+	struct lttng_trigger_notification notification;
+	void *reception_buffer;
+	size_t reception_size;
 
-	/* Only ust is supported for now */
-	/* TODO split this into ust and kernel since received struct will not be
-	 * the same.
-	 */
-	assert(domain == LTTNG_DOMAIN_UST);
+	notification.type = domain;
+
+	switch(domain) {
+	case LTTNG_DOMAIN_UST:
+		reception_buffer = (void *) &ust_notification;
+		reception_size = sizeof(ust_notification);
+		notification.u.ust = &ust_notification;
+		break;
+	case LTTNG_DOMAIN_KERNEL:
+		reception_buffer = (void *) &kernel_notification;
+		reception_size = sizeof(kernel_notification);
+		notification.u.kernel = &kernel_notification;
+		break;
+	default:
+		assert(0);
+	}
+
 	/*
 	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
 	 * ensuring that read/write of sampling messages are atomic.
 	 */
 	/* TODO: should we read as much as we can ? EWOULDBLOCK? */
 
-	ret = lttng_read(pipe, &notification, sizeof(notification));
-	if (ret != sizeof(notification)) {
+	ret = lttng_read(pipe, reception_buffer, reception_size);
+	if (ret != reception_size) {
 		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
 				pipe);
 		/* TODO: Should this error out completly.
@@ -3824,6 +3853,16 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 		goto end;
 	}
 
+	switch(domain) {
+	case LTTNG_DOMAIN_UST:
+		notification.id = ust_notification.id;
+		break;
+	case LTTNG_DOMAIN_KERNEL:
+		notification.id = kernel_notification;
+		break;
+	default:
+		assert(0);
+	}
 
 	/* Find triggers associated with this token. */
 	rcu_read_lock();
