@@ -293,7 +293,7 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	int ret;
 
 	/*
-	 * Create pollset with size 5:
+	 * Create pollset with size 6:
 	 *	- notification channel socket (listen for new connections),
 	 *	- command queue event fd (internal sessiond commands),
 	 *	- consumerd (32-bit user space) channel monitor pipe,
@@ -301,7 +301,7 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	 *	- consumerd (kernel) channel monitor pipe.
 	 *	- kernel trigger event pipe,
 	 */
-	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
+	ret = lttng_poll_create(poll_set, 6, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto end;
 	}
@@ -333,13 +333,26 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 		goto error;
 	}
 	if (handle->channel_monitoring_pipes.kernel_consumer < 0) {
-		goto end;
+		goto skip_kernel_consumer;
 	}
 	ret = lttng_poll_add(poll_set,
 			handle->channel_monitoring_pipes.kernel_consumer,
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
 		ERR("[notification-thread] Failed to add kernel channel monitoring pipe fd to pollset");
+		goto error;
+	}
+
+skip_kernel_consumer:
+	if (handle->event_trigger_sources.kernel_tracer < 0) {
+		goto end;
+	}
+
+	ret = lttng_poll_add(poll_set,
+			handle->event_trigger_sources.kernel_tracer,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add kernel trigger notification monitoring pipe fd to pollset");
 		goto error;
 	}
 end:
