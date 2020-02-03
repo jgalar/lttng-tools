@@ -30,6 +30,10 @@
 #define LTTNG_MOD_OPTIONAL	0
 
 /* LTTng kernel tracer mandatory core modules list */
+/* TODO: the new trigger client might not be present in previous lttng-modules
+ * should it be optional?
+ * Can we reuse this to also know of the trigger feature is supported?
+ */
 struct kern_modules_param kern_modules_control_core[] = {
 	{ "lttng-ring-buffer-client-discard" },
 	{ "lttng-ring-buffer-client-overwrite" },
@@ -37,6 +41,7 @@ struct kern_modules_param kern_modules_control_core[] = {
 	{ "lttng-ring-buffer-client-mmap-discard" },
 	{ "lttng-ring-buffer-client-mmap-overwrite" },
 	{ "lttng-ring-buffer-metadata-mmap-client" },
+	{ "lttng-ring-buffer-trigger-client" },
 };
 
 /* LTTng kernel tracer probe modules list */
