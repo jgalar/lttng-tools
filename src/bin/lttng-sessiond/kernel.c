@@ -49,6 +49,7 @@ static const char *module_proc_lttng = "/proc/lttng";
 
 static int kernel_tracer_fd = -1;
 static int kernel_tracer_trigger_group_fd = -1;
+static int kernel_tracer_trigger_group_notification_fd = -1;
 static struct ltt_kernel_token_event_rule_list kernel_tracer_token_list;
 
 /*
@@ -1821,12 +1822,18 @@ int init_kernel_tracer(void)
 		WARN("Failed trigger group creation");
 		kernel_tracer_trigger_group_fd = -1;
 		/* This is not fatal */
+	} else {
+		ret = kernel_create_trigger_group_notification_fd(&kernel_tracer_trigger_group_notification_fd);
+		if (ret < 0) {
+			goto error_modules;
+		}
 	}
 
 	CDS_INIT_LIST_HEAD(&kernel_tracer_token_list.head);
 
 	DBG("Kernel tracer fd %d", kernel_tracer_fd);
 	DBG("Kernel tracer trigger group fd %d", kernel_tracer_trigger_group_fd);
+	DBG("Kernel tracer trigger group notificationi fd %d", kernel_tracer_trigger_group_notification_fd);
 
 	ret = syscall_init_table(kernel_tracer_fd);
 	if (ret < 0) {
@@ -1873,6 +1880,15 @@ void cleanup_kernel_tracer(void)
         cds_list_for_each_entry_safe(rule, rtmp, &kernel_tracer_token_list.head, list) {
 		kernel_disable_token_event_rule(rule);
 		trace_kernel_destroy_token_event_rule(rule);
+	}
+
+	DBG2("Closing kernel trigger group notification fd");
+	if (kernel_tracer_trigger_group_notification_fd >= 0) {
+		ret = close(kernel_tracer_trigger_group_notification_fd);
+		if (ret) {
+			PERROR("close");
+		}
+		kernel_tracer_trigger_group_notification_fd = -1;
 	}
 
 	/* TODO: do we iterate over the list to remove all token? */
@@ -2239,4 +2255,9 @@ end:
 	pthread_mutex_unlock(&notification_trigger_tokens_ht_lock);
 	return ret;
 
+}
+
+int kernel_get_notification_fd(void)
+{
+	return kernel_tracer_trigger_group_notification_fd;
 }

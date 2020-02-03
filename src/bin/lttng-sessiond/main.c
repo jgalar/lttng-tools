@@ -1635,7 +1635,8 @@ int main(int argc, char **argv)
 	notification_thread_handle = notification_thread_handle_create(
 			ust32_channel_monitor_pipe,
 			ust64_channel_monitor_pipe,
-			kernel_channel_monitor_pipe);
+			kernel_channel_monitor_pipe,
+			kernel_get_notification_fd());
 	if (!notification_thread_handle) {
 		retval = -1;
 		ERR("Failed to create notification thread shared data");

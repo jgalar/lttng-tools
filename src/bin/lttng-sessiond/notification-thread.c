@@ -74,17 +74,26 @@ void notification_thread_handle_destroy(
 		}
 	}
 
-	if (handle->event_trigger_sources.kernel_tracer >= 0) {
-		(void) kernel_destroy_trigger_group_notification_fd(handle->event_trigger_sources.kernel_tracer);
-	}
+	/* TODO: refactor this if needed. Lifetime of the kernel notification
+	 * event source.
+	 * event_trigger_sources.kernel_tracer is owned by the main thread and
+	 * is closed at this point.
+	 */
+	handle->event_trigger_sources.kernel_tracer = -1;
 end:
 	free(handle);
 }
 
+/*
+ * TODO: refactor this if needed. Lifetime of the kernel notification event source.
+ * The kernel_notification_monitor_fd ownwership remain to the main thread.
+ * This is because we need to close this fd before removing the modules.
+ */
 struct notification_thread_handle *notification_thread_handle_create(
 		struct lttng_pipe *ust32_channel_monitor_pipe,
 		struct lttng_pipe *ust64_channel_monitor_pipe,
-		struct lttng_pipe *kernel_channel_monitor_pipe)
+		struct lttng_pipe *kernel_channel_monitor_pipe,
+		int kernel_notification_monitor_fd)
 {
 	int ret;
 	struct notification_thread_handle *handle;
@@ -145,17 +154,7 @@ struct notification_thread_handle *notification_thread_handle_create(
 		handle->channel_monitoring_pipes.kernel_consumer = -1;
 	}
 
-	if (kernel_tracer_is_initialized()) {
-		/*
-		 * TODO: only do if we know that it is supported by the tracer
-		 * Figure out error handling for this path inside called
-		 * function also.
-		 */
-		ret = kernel_create_trigger_group_notification_fd(&handle->event_trigger_sources.kernel_tracer);
-		if (ret < 0) {
-			handle->event_trigger_sources.kernel_tracer = -1;
-		}
-	}
+	handle->event_trigger_sources.kernel_tracer = kernel_notification_monitor_fd;
 
 	CDS_INIT_LIST_HEAD(&handle->event_trigger_sources.list);
 	ret = pthread_mutex_init(&handle->event_trigger_sources.lock, NULL);

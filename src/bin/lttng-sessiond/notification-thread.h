@@ -241,7 +241,8 @@ struct notification_thread_state {
 struct notification_thread_handle *notification_thread_handle_create(
 		struct lttng_pipe *ust32_channel_monitor_pipe,
 		struct lttng_pipe *ust64_channel_monitor_pipe,
-		struct lttng_pipe *kernel_channel_monitor_pipe);
+		struct lttng_pipe *kernel_channel_monitor_pipe,
+		int kernel_notification_monitor_fd);
 void notification_thread_handle_destroy(
 		struct notification_thread_handle *handle);
 struct lttng_thread *launch_notification_thread(
