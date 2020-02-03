@@ -198,6 +198,13 @@ struct lttng_filter_bytecode *lttng_event_rule_kprobe_get_filter_bytecode(struct
 	return NULL;
 }
 
+static
+struct lttng_event_exclusion *lttng_event_rule_kprobe_generate_exclusions(struct lttng_event_rule *rule)
+{
+	/* Not supported */
+	return NULL;
+}
+
 struct lttng_event_rule *lttng_event_rule_kprobe_create()
 {
 	struct lttng_event_rule_kprobe *rule;
@@ -215,6 +222,7 @@ struct lttng_event_rule *lttng_event_rule_kprobe_create()
 	rule->parent.populate = lttng_event_rule_kprobe_populate;
 	rule->parent.get_filter = lttng_event_rule_kprobe_get_filter;
 	rule->parent.get_filter_bytecode = lttng_event_rule_kprobe_get_filter_bytecode;
+	rule->parent.generate_exclusions = lttng_event_rule_kprobe_generate_exclusions;
 	return &rule->parent;
 }
 

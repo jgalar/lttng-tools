@@ -437,6 +437,72 @@ static struct lttng_filter_bytecode *lttng_event_rule_tracepoint_get_internal_fi
 	return tracepoint->internal_filter.bytecode;
 }
 
+/* TODO: review error handling, the function should be able to
+ * return error information.
+ */
+static struct lttng_event_exclusion *
+lttng_event_rule_tracepoint_generate_exclusions(struct lttng_event_rule *rule)
+{
+	enum lttng_domain_type domain_type = LTTNG_DOMAIN_NONE;
+	struct lttng_event_exclusion *local_exclusions = NULL;
+	struct lttng_event_exclusion *ret_exclusions = NULL;
+	unsigned int nb_exclusions = 0;
+
+	(void) lttng_event_rule_tracepoint_get_domain_type(rule, &domain_type);
+
+	switch (domain_type) {
+	case LTTNG_DOMAIN_KERNEL:
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+		/* Not supported */
+		ret_exclusions = NULL;
+		goto end;
+	case LTTNG_DOMAIN_UST:
+		/* Exclusions supported */
+		break;
+	default:
+		assert(0);
+	}
+
+	(void) lttng_event_rule_tracepoint_get_exclusions_count(rule, &nb_exclusions);
+	if (nb_exclusions == 0) {
+		/* Nothing to do */
+		ret_exclusions = NULL;
+		goto end;
+	}
+
+	local_exclusions = zmalloc(sizeof(struct lttng_event_exclusion) + (LTTNG_SYMBOL_NAME_LEN * nb_exclusions));
+	if (!local_exclusions) {
+		ERR("local exclusion allocation");
+		ret_exclusions = NULL;
+		goto end;
+	}
+
+	local_exclusions->count = nb_exclusions;
+	for (unsigned int i = 0; i < nb_exclusions; i++) {
+		/* TODO: check for truncation.
+		 * Part of this should be validated on set exclusion
+		 */
+		const char *tmp;
+		enum lttng_event_rule_status status;
+		status = lttng_event_rule_tracepoint_get_exclusion_at_index(rule, i, &tmp);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			goto end;
+		}
+		strncpy(local_exclusions->names[i], tmp, LTTNG_SYMBOL_NAME_LEN);
+		local_exclusions->names[i][LTTNG_SYMBOL_NAME_LEN-1] = '\0';
+	}
+
+	/* Pass ownership */
+	ret_exclusions = local_exclusions;
+	local_exclusions = NULL;
+end:
+	free(local_exclusions);
+	/* Not supported */
+	return ret_exclusions;
+}
+
 struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_type domain_type)
 {
 	struct lttng_event_rule_tracepoint *rule;
@@ -458,6 +524,7 @@ struct lttng_event_rule *lttng_event_rule_tracepoint_create(enum lttng_domain_ty
 	rule->parent.populate = lttng_event_rule_tracepoint_populate;
 	rule->parent.get_filter = lttng_event_rule_tracepoint_get_internal_filter;
 	rule->parent.get_filter_bytecode = lttng_event_rule_tracepoint_get_internal_filter_bytecode;
+	rule->parent.generate_exclusions = lttng_event_rule_tracepoint_generate_exclusions;
 
 	rule->domain = domain_type;
 	rule->loglevel.type = LTTNG_EVENT_LOGLEVEL_ALL;
@@ -931,7 +998,10 @@ enum lttng_event_rule_status lttng_event_rule_tracepoint_set_exclusions(
 	tracepoint = container_of(
 			rule, struct lttng_event_rule_tracepoint, parent);
 
-	(void) lttng_event_rule_tracepoint_get_domain_type(rule, &domain_type);
+	status = lttng_event_rule_tracepoint_get_domain_type(rule, &domain_type);
+	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+		goto end;
+	}
 
 	switch (domain_type) {
 	case LTTNG_DOMAIN_KERNEL:

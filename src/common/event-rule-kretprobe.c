@@ -86,6 +86,13 @@ struct lttng_filter_bytecode *lttng_event_rule_kretprobe_get_filter_bytecode(str
 	return NULL;
 }
 
+static struct lttng_event_exclusion *
+lttng_event_rule_kretprobe_generate_exclusions(struct lttng_event_rule *rule)
+{
+	/* Not supported */
+	return NULL;
+}
+
 struct lttng_event_rule *lttng_event_rule_kretprobe_create()
 {
 	struct lttng_event_rule_kretprobe *rule;
@@ -103,6 +110,7 @@ struct lttng_event_rule *lttng_event_rule_kretprobe_create()
 	rule->parent.populate = lttng_event_rule_kretprobe_populate;
 	rule->parent.get_filter = lttng_event_rule_kretprobe_get_filter;
 	rule->parent.get_filter_bytecode = lttng_event_rule_kretprobe_get_filter_bytecode;
+	rule->parent.generate_exclusions = lttng_event_rule_kretprobe_generate_exclusions;
 	return &rule->parent;
 }
 

@@ -231,6 +231,13 @@ lttng_event_rule_syscall_get_internal_filter_bytecode(
 	return syscall->internal_filter.bytecode;
 }
 
+static struct lttng_event_exclusion *
+lttng_event_rule_syscall_generate_exclusions(struct lttng_event_rule *rule)
+{
+	/* Not supported */
+	return NULL;
+}
+
 struct lttng_event_rule *lttng_event_rule_syscall_create()
 {
 	struct lttng_event_rule_syscall *rule;
@@ -249,6 +256,8 @@ struct lttng_event_rule *lttng_event_rule_syscall_create()
 	rule->parent.get_filter = lttng_event_rule_syscall_get_internal_filter;
 	rule->parent.get_filter_bytecode =
 			lttng_event_rule_syscall_get_internal_filter_bytecode;
+	rule->parent.generate_exclusions =
+			lttng_event_rule_syscall_generate_exclusions;
 	return &rule->parent;
 }
 

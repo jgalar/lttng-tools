@@ -261,3 +261,16 @@ struct lttng_filter_bytecode *lttng_event_rule_get_filter_bytecode(
 	assert(rule->get_filter_bytecode);
 	return rule->get_filter_bytecode(rule);
 }
+
+/*
+ * If not present return NULL
+ * Caller OWN the returned object
+ * TODO: should this be done another way?
+ */
+LTTNG_HIDDEN
+struct lttng_event_exclusion *lttng_event_rule_generate_exclusions(
+		struct lttng_event_rule *rule)
+{
+	assert(rule->generate_exclusions);
+	return rule->generate_exclusions(rule);
+}

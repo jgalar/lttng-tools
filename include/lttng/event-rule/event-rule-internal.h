@@ -46,6 +46,8 @@ typedef enum lttng_error_code (*event_rule_populate_cb)(
 typedef char *(*event_rule_get_filter_cb)(struct lttng_event_rule *event_rule);
 typedef struct lttng_filter_bytecode *(*event_rule_get_filter_bytecode_cb)(
 		struct lttng_event_rule *event_rule);
+typedef struct lttng_event_exclusion *(*event_rule_generate_exclusions_cb)(
+		struct lttng_event_rule *event_rule);
 
 struct lttng_event_rule {
 	struct urcu_ref ref;
@@ -58,6 +60,7 @@ struct lttng_event_rule {
 	/* Optional */
 	event_rule_get_filter_cb get_filter;
 	event_rule_get_filter_bytecode_cb get_filter_bytecode;
+	event_rule_generate_exclusions_cb generate_exclusions;
 };
 
 struct lttng_event_rule_comm {
@@ -115,4 +118,12 @@ LTTNG_HIDDEN
 struct lttng_filter_bytecode *lttng_event_rule_get_filter_bytecode(
 		struct lttng_event_rule *rule);
 
+/*
+ * If not present return NULL
+ * Caller OWN the returned object
+ * TODO: should this be done another way?
+ */
+LTTNG_HIDDEN
+struct lttng_event_exclusion *lttng_event_rule_generate_exclusions(
+		struct lttng_event_rule *rule);
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

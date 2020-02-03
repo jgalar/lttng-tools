@@ -180,6 +180,13 @@ struct lttng_filter_bytecode *lttng_event_rule_uprobe_get_filter_bytecode(struct
 	return NULL;
 }
 
+static
+struct lttng_event_exclusion *lttng_event_rule_uprobe_generate_exclusions(struct lttng_event_rule *rule)
+{
+	/* Unsupported */
+	return NULL;
+}
+
 struct lttng_event_rule *lttng_event_rule_uprobe_create()
 {
 	struct lttng_event_rule_uprobe *rule;
@@ -197,6 +204,7 @@ struct lttng_event_rule *lttng_event_rule_uprobe_create()
 	rule->parent.populate = lttng_event_rule_uprobe_populate;
 	rule->parent.get_filter = lttng_event_rule_uprobe_get_filter;
 	rule->parent.get_filter_bytecode = lttng_event_rule_uprobe_get_filter_bytecode;
+	rule->parent.generate_exclusions = lttng_event_rule_uprobe_generate_exclusions;
 	return &rule->parent;
 }
 
