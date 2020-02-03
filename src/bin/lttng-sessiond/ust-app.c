@@ -332,7 +332,6 @@ void delete_ust_app_token_event_rule(int sock, struct ust_app_token_event_rule *
 
 	assert(ua_token);
 
-	free(ua_token->filter);
 	if (ua_token->exclusion != NULL)
 		free(ua_token->exclusion);
 	if (ua_token->obj != NULL) {
