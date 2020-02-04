@@ -23,7 +23,7 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-plan_tests 99
+plan_tests 117
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
@@ -33,11 +33,18 @@ start_lttng_sessiond_notap
 tmp_stdout=$(mktemp -t test_parse_cli_trigger_stdout.XXXXXX)
 tmp_stderr=$(mktemp -t test_parse_cli_trigger_stderr.XXXXXX)
 
+if [ "$(id -u)" == "0" ]; then
+	ist_root=1
+else
+	ist_root=0
+fi
+
 function test_success ()
 {
 	local test_name="$1"
 	shift
 
+	diag "${FULL_LTTNG_BIN} create-trigger $*"
 	"${FULL_LTTNG_BIN}" create-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
 	ok $? "${test_name}: exit code is 0"
 
@@ -55,6 +62,7 @@ function test_failure ()
 
 	shift 2
 
+	diag "${FULL_LTTNG_BIN} create-trigger $*"
 	"${FULL_LTTNG_BIN}" create-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
 	isnt $? 0 "${test_name}: exit code is not 0"
 
@@ -75,9 +83,29 @@ test_success "explicit id" \
 test_success "--condition on-event some-event -u" \
 	--condition on-event some-event -u \
 	--action notify
-test_success "--acontion on-event -a -u" \
+test_success "--condition on-event -a -u" \
 	--condition on-event -a -u \
 	--action notify
+
+skip $ist_root "non-root user: skipping kprobe tests" 12 || {
+	test_success "--condition on-event probe by symbol" \
+		--condition on-event -k --probe=do_sys_open my_sys_open \
+		--action notify
+
+	test_success "--condition on-event probe by symbol with offset" \
+		--condition on-event -k --probe=do_sys_open+10 my_sys_open \
+		--action notify
+
+	sys_open_addr=$(grep ' T do_sys_open$' /proc/kallsyms | cut -f 1 -d ' ')
+
+	test_success "--condition on-event probe by address" \
+		--condition on-event -k "--probe=${sys_open_addr}" my_sys_open \
+		--action notify
+
+	test_success "--condition on-event probe by address with offset" \
+		--condition on-event -k "--probe=${sys_open_addr}+10" my_sys_open \
+		--action notify
+}
 
 # `--action notify` successes
 test_success "--action notify" \
@@ -151,6 +179,12 @@ test_failure "missing domain in --condition on-event" \
 test_failure "extra args after --condition on-event" \
 	"Error: Unexpected argument: bozo" \
 	--condition on-event foo -u bozo
+test_failure "--condition on-event: --all with --probe" \
+	"Error: Can't use -a/--all with event rule of type probe." \
+	--condition on-event --probe=do_sys_open --all
+test_failure "--condition on-event: missing tracepoint name with --probe" \
+	"Error: Need to provide either a tracepoint name or -a/--all." \
+	--condition on-event -k --probe do_sys_open
 
 # `--action` failures
 test_failure "missing args after --action" \

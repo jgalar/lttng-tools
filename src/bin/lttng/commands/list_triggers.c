@@ -8,6 +8,8 @@
 #include "lttng/condition/event-rule.h"
 #include "lttng/domain-internal.h"
 #include "lttng/event-rule/event-rule-internal.h"
+#include "lttng/event-rule/event-rule-kprobe.h"
+#include "lttng/event-rule/event-rule-kprobe-internal.h"
 #include "lttng/event-rule/event-rule-tracepoint.h"
 #include "lttng/trigger/trigger-internal.h"
 
@@ -29,7 +31,8 @@ struct argpar_opt_descr list_trigger_options[] = {
 	ARGPAR_OPT_DESCR_SENTINEL,
 };
 
-static void print_event_rule_tracepoint(const struct lttng_event_rule *event_rule)
+static
+void print_event_rule_tracepoint(const struct lttng_event_rule *event_rule)
 {
 	enum lttng_event_rule_status event_rule_status;
 	enum lttng_domain_type domain_type;
@@ -99,6 +102,40 @@ static void print_event_rule_tracepoint(const struct lttng_event_rule *event_rul
 }
 
 static
+void print_event_rule_kprobe(const struct lttng_event_rule *event_rule)
+{
+	enum lttng_event_rule_status event_rule_status;
+	const char *name, *symbol_name;
+	uint64_t offset;
+
+	event_rule_status = lttng_event_rule_kprobe_get_name(event_rule, &name);
+	if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+		fprintf(stderr, "Failed to get kprobe event rule's name.\n");
+		goto end;
+	}
+
+	assert(lttng_event_rule_get_type(event_rule) == LTTNG_EVENT_RULE_TYPE_KPROBE);
+
+	printf("    rule: %s (type: probe, location: ", name);
+
+	// FIXME: When the location has been specified by address, this field
+	// contains the address as a string.  The only downside is that we are
+	// missing a `0x` prefix.
+	symbol_name = lttng_event_rule_kprobe_get_symbol_name(event_rule);
+	printf("%s", symbol_name);
+
+	offset = lttng_event_rule_kprobe_get_offset(event_rule);
+	if (offset > 0) {
+		printf("+0x%" PRIx64, offset);
+	}
+
+	printf(")\n");
+
+end:
+	return;
+}
+
+static
 void print_event_rule(const struct lttng_event_rule *event_rule)
 {
 	enum lttng_event_rule_type event_rule_type =
@@ -107,6 +144,10 @@ void print_event_rule(const struct lttng_event_rule *event_rule)
 	switch (event_rule_type) {
 	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
 		print_event_rule_tracepoint(event_rule);
+		break;
+
+	case LTTNG_EVENT_RULE_TYPE_KPROBE:
+		print_event_rule_kprobe(event_rule);
 		break;
 
 	default:

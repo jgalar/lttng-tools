@@ -23,13 +23,19 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-plan_tests 19
+plan_tests 26
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
 tmp_stdout=$(mktemp -t test_list_triggers_cli_stdout.XXXXXX)
 tmp_stderr=$(mktemp -t test_list_triggers_cli_stderr.XXXXXX)
 tmp_expected_stdout=$(mktemp -t test_list_triggers_cli_expected_stdout.XXXXXX)
+
+if [ "$(id -u)" == "0" ]; then
+	ist_root=1
+else
+	ist_root=0
+fi
 
 function create_trigger ()
 {
@@ -92,6 +98,48 @@ test_on_event_tracepoint ()
 	EOF
 
 	list_triggers "on-event, tracepoint event rule" "${tmp_expected_stdout}"
+
+	stop_lttng_sessiond_notap
+}
+
+test_on_event_probe ()
+{
+	local sys_open_addr
+
+	# shellcheck disable=SC2119
+	start_lttng_sessiond_notap
+
+	sys_open_addr=$(grep ' T do_sys_open$' /proc/kallsyms | cut -f 1 -d ' ')
+
+	create_trigger --condition on-event -k --probe=do_sys_open my_sys_open --action notify
+	create_trigger --condition on-event -k --probe=do_sys_open+10 my_sys_open --action notify
+	create_trigger --condition on-event -k --probe="${sys_open_addr}" my_sys_open --action notify
+	create_trigger --condition on-event -k --probe="${sys_open_addr}+10" my_sys_open --action notify
+
+	cat > "${tmp_expected_stdout}" <<- EOF
+	- id: TJORAJ1
+	  condition: event rule hit
+	    rule: my_sys_open (type: probe, location: do_sys_open)
+	  actions:
+	    notify
+	- id: TJORAJ2
+	  condition: event rule hit
+	    rule: my_sys_open (type: probe, location: do_sys_open+10)
+	  actions:
+	    notify
+	- id: TJORAJ3
+	  condition: event rule hit
+	    rule: my_sys_open (type: probe, location: ${sys_open_addr})
+	  actions:
+	    notify
+	- id: TJORAJ4
+	  condition: event rule hit
+	    rule: my_sys_open (type: probe, location: ${sys_open_addr}+10)
+	  actions:
+	    notify
+	EOF
+
+	list_triggers "on-event, probe event rule" "${tmp_expected_stdout}"
 
 	stop_lttng_sessiond_notap
 }
@@ -159,6 +207,7 @@ test_snapshot_action ()
 }
 
 test_on_event_tracepoint
+skip $ist_root "non-root user: skipping kprobe tests" 7 || test_on_event_probe
 test_snapshot_action
 
 # Cleanup

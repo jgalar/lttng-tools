@@ -8,7 +8,8 @@
 #include "common/utils.h"
 #include "lttng/condition/event-rule.h"
 #include "lttng/event-internal.h"
-#include <lttng/event-rule/event-rule-internal.h>
+#include "lttng/event-rule/event-rule-internal.h"
+#include "lttng/event-rule/event-rule-kprobe.h"
 #include "lttng/event-rule/event-rule-tracepoint.h"
 
 #ifdef LTTNG_EMBED_HELP
@@ -184,6 +185,9 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 	/* Tracepoint name (non-option argument) */
 	const char *tracepoint_name = NULL;
 
+	/* Holds the argument of --probe / --userspace-probe. */
+	char *source = NULL;
+
 	/* Filter */
 	char *filter = NULL;
 
@@ -267,12 +271,21 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 						LTTNG_EVENT_RULE_TYPE_KPROBE)) {
 					goto error;
 				}
+
+				if (!assign_string(&source, item_opt->arg, "source")) {
+					goto error;
+				}
+
 				break;
 
 			case OPT_USERSPACE_PROBE:
 				if (!assign_event_rule_type(&event_rule_type,
 						LTTNG_EVENT_RULE_TYPE_UPROBE)) {
 					goto error;
+				}
+
+				if (!assign_string(&source, item_opt->arg, "source")) {
+						goto error;
 				}
 				break;
 
@@ -337,19 +350,41 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		}
 	}
 
-	/* Need to provide exactly one of an event name and -a. */
-	if (tracepoint_name && all_events) {
-		fprintf(stderr, "Error: Can't provide a tracepoint name with -a/--all.\n");
-		goto error;
+	if (event_rule_type == LTTNG_EVENT_RULE_TYPE_UNKNOWN) {
+		event_rule_type = LTTNG_EVENT_RULE_TYPE_TRACEPOINT;
 	}
 
-	if (!tracepoint_name) {
-		if (!all_events) {
-			fprintf(stderr, "Error: Need to provide either a tracepoint name or -a/--all.\n");
+	/*
+	 * Option -a is applicable to event rules of type tracepoint and
+	 * syscall, and it is equivalent to using "*" as the tracepoint name.
+	 */
+	if (all_events) {
+		switch (event_rule_type) {
+		case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
+		case LTTNG_EVENT_RULE_TYPE_SYSCALL:
+			break;
+		default:
+			fprintf(stderr, "Error: Can't use -a/--all with event rule of type %s.\n",
+				lttng_event_rule_type_str(event_rule_type));
 			goto error;
 		}
 
+		if (tracepoint_name) {
+			fprintf(stderr, "Error: Can't provide a tracepoint name with -a/--all.\n");
+			goto error;
+		}
+
+		/* In which case, it's equivalent to tracepoint name "*". */
 		tracepoint_name = "*";
+	}
+
+	/*
+	 * A tracepoint name (or -a, for the event rule types that accept it)
+	 * is required.
+	 */
+	if (!tracepoint_name) {
+		fprintf(stderr, "Error: Need to provide either a tracepoint name or -a/--all.\n");
+		goto error;
 	}
 
 	/*
@@ -366,10 +401,6 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		goto error;
 	}
 
-	if (event_rule_type == LTTNG_EVENT_RULE_TYPE_UNKNOWN) {
-		event_rule_type = LTTNG_EVENT_RULE_TYPE_TRACEPOINT;
-	}
-
 	/* Validate event rule type against domain. */
 	switch (event_rule_type) {
 	case LTTNG_EVENT_RULE_TYPE_KPROBE:
@@ -381,8 +412,10 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 			goto error;
 		}
 		break;
+
 	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
 		break;
+
 	default:
 		abort();
 	}
@@ -425,11 +458,15 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		goto error;
 	}
 
-	if (event_rule_type == LTTNG_EVENT_RULE_TYPE_TRACEPOINT) {
+	/* Finally, create the event rule object. */
+	switch (event_rule_type) {
+	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
+	{
 		enum lttng_event_rule_status event_rule_status;
 
 		er = lttng_event_rule_tracepoint_create(domain_type);
 		if (!er) {
+			fprintf(stderr, "Failed to create tracepoint event rule.\n");
 			goto error;
 		}
 
@@ -498,7 +535,37 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 				goto error;
 			}
 		}
-	} else {
+
+		break;
+	}
+
+	case LTTNG_EVENT_RULE_TYPE_KPROBE:
+	{
+		enum lttng_event_rule_status event_rule_status;
+
+		er = lttng_event_rule_kprobe_create();
+		if (!er) {
+			fprintf(stderr, "Failed to create kprobe event rule.\n");
+			goto error;
+		}
+
+		event_rule_status = lttng_event_rule_kprobe_set_name(er, tracepoint_name);
+		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+			fprintf(stderr, "Failed to set kprobe event rule's name.\n");
+			goto error;
+		}
+
+		assert(source);
+		event_rule_status = lttng_event_rule_kprobe_set_source(er, source);
+		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+			fprintf(stderr, "Failed to set kprobe event rule's source.\n");
+			goto error;
+		}
+
+		break;
+	}
+
+	default:
 		fprintf(stderr, "parse_event_rule: I only support tracepoints at the moment.\n");
 		goto error;
 	}
