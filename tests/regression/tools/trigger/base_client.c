@@ -96,6 +96,8 @@ int main(int argc, char **argv)
 	enum lttng_notification_channel_status nc_status;
 	struct lttng_notification_channel *notification_channel = NULL;
 
+	const char* exclusions[] = { "sample_component:message2"};
+
 	struct lttng_trigger *trigger = NULL;
 
 	if (argc < 4) {
@@ -127,6 +129,13 @@ int main(int argc, char **argv)
 	event_rule_status = lttng_event_rule_tracepoint_set_filter(event_rule, "message=='Hello World'");
 	if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
 		printf("error: Could not set pattern\n");
+		ret = 1;
+		goto end;
+	}
+
+	event_rule_status = lttng_event_rule_tracepoint_set_exclusions(event_rule, 1, exclusions);
+	if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+		printf("error: Could not set exclusions\n");
 		ret = 1;
 		goto end;
 	}
