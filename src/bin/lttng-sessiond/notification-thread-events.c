@@ -4347,20 +4347,22 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 			struct notification_trigger_tokens_ht_element,
 			node);
 
-	action = lttng_trigger_get_const_action(element->trigger);
-	action_type = lttng_action_get_type_const(action);
-	DBG("Message from event source %d value:%" PRIu64 " action type: %s", pipe,
-			notification.id, lttng_action_type_string(action_type));
-	/* Debugging only */
-	if (action_type == LTTNG_ACTION_TYPE_GROUP) {
-		unsigned int nb_action = 0;
-		(void) lttng_action_group_get_count(action, &nb_action);
-		for (int i = 0; i < nb_action; i++) {
-			const struct lttng_action *p_action = NULL;
-			p_action = lttng_action_group_get_at_index(action, i);
-			assert(p_action);
-			DBG("Message from event source %d value:%" PRIu64 " action type internal index: %d value: %s", pipe,
-					notification.id, i, lttng_action_type_string(lttng_action_get_type_const(p_action)));
+	if (lttng_trigger_is_ready_to_fire(element->trigger)) {
+		action = lttng_trigger_get_const_action(element->trigger);
+		action_type = lttng_action_get_type_const(action);
+		DBG("Message from event source %d value:%" PRIu64 " action type: %s", pipe,
+				notification.id, lttng_action_type_string(action_type));
+		/* Debugging only */
+		if (action_type == LTTNG_ACTION_TYPE_GROUP) {
+			unsigned int nb_action = 0;
+			(void) lttng_action_group_get_count(action, &nb_action);
+			for (int i = 0; i < nb_action; i++) {
+				const struct lttng_action *p_action = NULL;
+				p_action = lttng_action_group_get_at_index(action, i);
+				assert(p_action);
+				DBG("Message from event source %d value:%" PRIu64 " action type internal index: %d value: %s", pipe,
+						notification.id, i, lttng_action_type_string(lttng_action_get_type_const(p_action)));
+			}
 		}
 	}
 
@@ -4526,6 +4528,10 @@ int handle_notification_thread_channel_sample(
 		condition = lttng_trigger_get_const_condition(trigger);
 		assert(condition);
 		action = lttng_trigger_get_const_action(trigger);
+
+		if (!lttng_trigger_is_ready_to_fire(trigger)) {
+			goto put_list;
+		}
 
 		/* Notify actions are the only type currently supported. */
 		/* TODO support other type of action */
