@@ -145,5 +145,8 @@ LTTNG_HIDDEN
 void lttng_trigger_set_credentials(
 		struct lttng_trigger *trigger, uid_t uid, gid_t git);
 
+LTTNG_HIDDEN
+bool lttng_trigger_is_ready_to_fire(
+		struct lttng_trigger *trigger);
 
 #endif /* LTTNG_TRIGGER_INTERNAL_H */

@@ -628,3 +628,37 @@ enum lttng_trigger_status lttng_trigger_set_firing_policy(
 end:
 	return ret;
 }
+
+LTTNG_HIDDEN
+bool lttng_trigger_is_ready_to_fire(struct lttng_trigger *trigger)
+{
+	assert(trigger);
+	bool ready_to_fire = false;
+
+	trigger->firing_policy.current_count++;
+
+	switch (trigger->firing_policy.type) {
+	case LTTNG_TRIGGER_FIRE_EVERY_N:
+		if (trigger->firing_policy.current_count == trigger->firing_policy.threshold) {
+			trigger->firing_policy.current_count = 0;
+			ready_to_fire = true;
+		}
+		break;
+	case LTTNG_TRIGGER_FIRE_ONCE_AFTER_N:
+		if (trigger->firing_policy.current_count == trigger->firing_policy.threshold) {
+			/* TODO: remove the trigger of at least deactivate it on
+			 * the tracers side to remove any work overhead on the
+			 * traced application or kernel since the trigger will
+			 * never fire again.
+			 * Still this branch should be left here since event
+			 * could still be in the pipe. These will be discarded.
+			 */
+			ready_to_fire = true;
+		}
+		break;
+	default:
+		assert(0);
+	};
+
+	return ready_to_fire;
+}

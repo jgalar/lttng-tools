@@ -3884,7 +3884,9 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 			struct notification_trigger_tokens_ht_element,
 			node);
 
-	perform_event_action(state, element->trigger, &notification, NULL);
+	if (lttng_trigger_is_ready_to_fire(element->trigger)) {
+		perform_event_action(state, element->trigger, &notification, NULL);
+	}
 
 	ret = 0;
 
