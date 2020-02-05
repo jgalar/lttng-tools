@@ -14,6 +14,7 @@
 #include <common/dynamic-buffer.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <urcu/ref.h>
 
 typedef bool (*action_validate_cb)(struct lttng_action *action);
 typedef void (*action_destroy_cb)(struct lttng_action *action);
@@ -26,6 +27,7 @@ typedef ssize_t (*action_create_from_buffer_cb)(
 		struct lttng_action **action);
 
 struct lttng_action {
+	struct urcu_ref ref;
 	enum lttng_action_type type;
 	action_validate_cb validate;
 	action_serialize_cb serialize;
@@ -64,6 +66,12 @@ enum lttng_action_type lttng_action_get_type_const(
 LTTNG_HIDDEN
 bool lttng_action_is_equal(const struct lttng_action *a,
 		const struct lttng_action *b);
+
+LTTNG_HIDDEN
+void lttng_action_get(struct lttng_action *action);
+
+LTTNG_HIDDEN
+void lttng_action_put(struct lttng_action *action);
 
 LTTNG_HIDDEN
 const char* lttng_action_type_string(enum lttng_action_type action_type);
