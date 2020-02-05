@@ -2230,7 +2230,7 @@ static int action_notify_register_trigger(
 		)
 {
 
-	int ret;
+	int ret = 0;
 	struct lttng_condition *condition;
 	struct notification_client *client;
 	struct notification_client_list *client_list = NULL;
