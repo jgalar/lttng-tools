@@ -576,6 +576,7 @@ enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct ltt
 				lttng_event_rule_kprobe_get_symbol_name(rule), LTTNG_KERNEL_SYM_NAME_LEN);
 		kernel_trigger->u.kprobe.symbol_name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
 		(void) lttng_event_rule_kprobe_get_name(rule, &name);
+		ret = LTTNG_OK;
 		break;
 	case LTTNG_EVENT_RULE_TYPE_UPROBE:
 	{
@@ -590,15 +591,18 @@ enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct ltt
 				lttng_event_rule_kretprobe_get_symbol_name(rule), LTTNG_KERNEL_SYM_NAME_LEN);
 		kernel_trigger->u.kretprobe.symbol_name[LTTNG_KERNEL_SYM_NAME_LEN - 1] = '\0';
 		(void) lttng_event_rule_kretprobe_get_name(rule, &name);
+		ret = LTTNG_OK;
 		break;
 	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
 		/* TODO: assert his is a kernel domain event-rule */
 		kernel_trigger->instrumentation = LTTNG_KERNEL_TRACEPOINT;
 		(void) lttng_event_rule_tracepoint_get_pattern(rule, &name);
+		ret = LTTNG_OK;
 		break;
 	case LTTNG_EVENT_RULE_TYPE_SYSCALL:
 		kernel_trigger->instrumentation = LTTNG_KERNEL_SYSCALL;
 		(void) lttng_event_rule_tracepoint_get_pattern(rule, &name);
+		ret = LTTNG_OK;
 		break;
 	default:
 		ERR("Unknown kernel event rule instrumentation type (%d)", lttng_event_rule_get_type(rule));
