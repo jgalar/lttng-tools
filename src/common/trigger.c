@@ -644,6 +644,25 @@ end:
 	return ret;
 }
 
+enum lttng_trigger_status lttng_trigger_get_firing_policy(
+		const struct lttng_trigger *trigger,
+		enum lttng_trigger_firing_policy_type *policy_type,
+		unsigned long long *threshold)
+{
+	enum lttng_trigger_status status = LTTNG_TRIGGER_STATUS_OK;
+
+	if (!trigger || !policy_type || !threshold) {
+		status = LTTNG_TRIGGER_STATUS_INVALID;
+		goto end;
+	}
+
+	*policy_type = trigger->firing_policy.type;
+	*threshold = trigger->firing_policy.threshold;
+
+end:
+	return status;
+}
+
 LTTNG_HIDDEN
 bool lttng_trigger_is_ready_to_fire(struct lttng_trigger *trigger)
 {

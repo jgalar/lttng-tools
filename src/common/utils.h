@@ -55,4 +55,16 @@ int utils_get_memory_available(size_t *value);
 int utils_get_memory_total(size_t *value);
 int utils_change_working_directory(const char *path);
 
+/*
+ * Parse `str` as an unsigned long long value.
+ *
+ * Return 0 on success.  Return -1 on failure which can be because:
+ *
+ * - `str` is zero length
+ * - `str` contains invalid
+ */
+LTTNG_HIDDEN
+int utils_parse_unsigned_long_long(const char *str,
+		unsigned long long *value);
+
 #endif /* _COMMON_UTILS_H */

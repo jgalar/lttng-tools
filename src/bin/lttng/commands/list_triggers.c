@@ -362,10 +362,34 @@ void print_one_trigger(const struct lttng_trigger *trigger)
 	enum lttng_action_type action_type;
 	enum lttng_trigger_status trigger_status;
 	const char *name;
+	enum lttng_trigger_firing_policy_type policy_type;
+	unsigned long long threshold;
 
 	trigger_status = lttng_trigger_get_name(trigger, &name);
 	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
 	printf("- id: %s\n", name);
+
+	trigger_status = lttng_trigger_get_firing_policy(trigger,
+			&policy_type, &threshold);
+	if (trigger_status != LTTNG_TRIGGER_STATUS_OK) {
+		fprintf(stderr, "Failed to get trigger's firing policy.\n");
+		goto end;
+	}
+
+	switch (policy_type) {
+	case LTTNG_TRIGGER_FIRE_EVERY_N:
+		if (threshold > 1) {
+			printf("  firing policy: after every %llu occurences\n", threshold);
+		}
+		break;
+
+	case LTTNG_TRIGGER_FIRE_ONCE_AFTER_N:
+		printf("  firing policy: once after %llu occurences\n", threshold);
+		break;
+
+	default:
+		abort();
+	}
 
 	condition = lttng_trigger_get_const_condition(trigger);
 	condition_type = lttng_condition_get_type(condition);
@@ -404,6 +428,9 @@ void print_one_trigger(const struct lttng_trigger *trigger)
 		printf(" action:");
 		print_one_action(action);
 	}
+
+end:
+	return;
 }
 
 static

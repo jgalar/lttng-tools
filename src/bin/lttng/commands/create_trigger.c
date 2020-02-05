@@ -28,6 +28,8 @@ enum {
 	OPT_CONDITION,
 	OPT_ACTION,
 	OPT_ID,
+	OPT_FIRE_ONCE_AFTER,
+	OPT_FIRE_EVERY,
 
 	OPT_ALL,
 	OPT_FILTER,
@@ -1434,6 +1436,8 @@ struct argpar_opt_descr create_trigger_options[] = {
 	{ OPT_CONDITION, '\0', "condition", false },
 	{ OPT_ACTION, '\0', "action", false },
 	{ OPT_ID, '\0', "id", true },
+	{ OPT_FIRE_ONCE_AFTER, '\0', "fire-once-after", true },
+	{ OPT_FIRE_EVERY, '\0', "fire-every", true },
 	ARGPAR_OPT_DESCR_SENTINEL,
 };
 
@@ -1460,6 +1464,8 @@ int cmd_create_trigger(int argc, const char **argv)
 	char *error = NULL;
 	char *id = NULL;
 	int i;
+	char *fire_once_after_str = NULL;
+	char *fire_every_str = NULL;
 
 	lttng_dynamic_pointer_array_init(&actions, lttng_actions_destructor);
 
@@ -1536,6 +1542,7 @@ int cmd_create_trigger(int argc, const char **argv)
 
 			break;
 		}
+
 		case OPT_ACTION:
 		{
 			action = parse_action(&my_argc, &my_argv);
@@ -1559,6 +1566,7 @@ int cmd_create_trigger(int argc, const char **argv)
 
 			break;
 		}
+
 		case OPT_ID:
 		{
 			if (!assign_string(&id, item_opt->arg, "--id")) {
@@ -1567,6 +1575,25 @@ int cmd_create_trigger(int argc, const char **argv)
 
 			break;
 		}
+
+		case OPT_FIRE_ONCE_AFTER:
+		{
+			if (!assign_string(&fire_once_after_str, item_opt->arg,
+					"--fire-once-after")) {
+				goto error;
+			}
+			break;
+		}
+
+		case OPT_FIRE_EVERY:
+		{
+			if (!assign_string(&fire_every_str, item_opt->arg,
+					"--fire-every")) {
+				goto error;
+			}
+			break;
+		}
+
 		default:
 			abort();
 		}
@@ -1579,6 +1606,11 @@ int cmd_create_trigger(int argc, const char **argv)
 
 	if (lttng_dynamic_pointer_array_get_count(&actions) == 0) {
 		fprintf(stderr, "Need at least one --action.\n");
+		goto error;
+	}
+
+	if (fire_every_str && fire_once_after_str) {
+		fprintf(stderr, "Can't specify both --fire-once-after and --fire-every.\n");
 		goto error;
 	}
 
@@ -1624,6 +1656,40 @@ int cmd_create_trigger(int argc, const char **argv)
 		}
 	}
 
+	if (fire_once_after_str) {
+		unsigned long long threshold;
+		enum lttng_trigger_status trigger_status;
+
+		if (utils_parse_unsigned_long_long(fire_once_after_str, &threshold) != 0) {
+			fprintf(stderr, "Failed to parse `%s` as an integer.\n", fire_once_after_str);
+			goto error;
+		}
+
+		trigger_status = lttng_trigger_set_firing_policy(trigger,
+			LTTNG_TRIGGER_FIRE_ONCE_AFTER_N, threshold);
+		if (trigger_status != LTTNG_TRIGGER_STATUS_OK) {
+			fprintf(stderr, "Failed to set trigger's firing policy.\n");
+			goto error;
+		}
+	}
+
+	if (fire_every_str) {
+		unsigned long long threshold;
+		enum lttng_trigger_status trigger_status;
+
+		if (utils_parse_unsigned_long_long(fire_every_str, &threshold) != 0) {
+			fprintf(stderr, "Failed to parse `%s` as an integer.\n", fire_every_str);
+			goto error;
+		}
+
+		trigger_status = lttng_trigger_set_firing_policy(trigger,
+			LTTNG_TRIGGER_FIRE_EVERY_N, threshold);
+		if (trigger_status != LTTNG_TRIGGER_STATUS_OK) {
+			fprintf(stderr, "Failed to set trigger's firing policy.\n");
+			goto error;
+		}
+	}
+
 	ret = lttng_register_trigger(trigger);
 	if (ret) {
 		fprintf(stderr, "Failed to register trigger.\n");
@@ -1644,6 +1710,8 @@ end:
 	lttng_action_destroy(action_group);
 	lttng_trigger_destroy(trigger);
 	free(id);
+	free(fire_once_after_str);
+	free(fire_every_str);
 	// TODO: check what else to free
 
 	return ret;

@@ -23,7 +23,7 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-plan_tests 144
+plan_tests 171
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
@@ -84,9 +84,20 @@ test_success "explicit id" \
 test_success "--condition on-event some-event -u" \
 	--condition on-event some-event -u \
 	--action notify
+
 test_success "--condition on-event -a -u" \
 	--condition on-event -a -u \
 	--action notify
+
+test_success "--fire-once-after" \
+	--condition on-event -u test-fire-once-after \
+	--action notify \
+	--fire-once-after=55
+
+test_success "--fire-every" \
+	--condition on-event -u test-fire-every \
+	--action notify \
+	--fire-every=55
 
 skip $ist_root "non-root user: skipping kprobe tests" 12 || {
 	test_success "--condition on-event probe by symbol" \
@@ -171,20 +182,41 @@ test_success "--action snapshot-session with ctrl/data URIs" \
 
 # top-level failures
 test_failure "no args" "Missing --condition."
+
 test_failure "unknown option" \
 	"Unknown option \`--hello\`" \
 	--hello
+
 test_failure "missing --action" \
 	"Need at least one --action." \
 	--condition on-event hello -u
+
 test_failure "two --condition" \
 	"A --condition was already given." \
 	--condition on-event aaa -u \
 	--condition on-event bbb -u \
 	--action notify
+
 test_failure "missing argument to --id" \
 	"Error: While parsing argument #1 (\`--id\`): Missing required argument for option \`--id\`" \
 	--id
+
+for cmd in fire-once-after fire-every; do
+	test_failure "missing argument to --${cmd}" \
+		"Error: While parsing argument #1 (\`--${cmd}\`): Missing required argument for option \`--${cmd}\`" \
+		--condition on-event -u -a --action notify \
+		--${cmd}
+
+	test_failure "invalid argument to --${cmd}: non-digit character" \
+		"Failed to parse \`123bob\` as an integer." \
+		--condition on-event -u -a --action notify \
+		--${cmd} 123bob
+
+	test_failure "invalid argument to --${cmd}: empty string" \
+		"Failed to parse \`\` as an integer." \
+		--condition on-event -u -a --action notify \
+		--${cmd} ""
+done
 
 # `--condition` failures
 test_failure "missing args after --condition" \

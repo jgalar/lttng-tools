@@ -125,7 +125,13 @@ extern enum lttng_trigger_status lttng_trigger_set_name(
  * if invalid parameters are passed.
  */
 extern enum lttng_trigger_status lttng_trigger_set_firing_policy(
-		struct lttng_trigger *trigger, enum lttng_trigger_firing_policy_type policy_type, unsigned long long threshold);
+		struct lttng_trigger *trigger,
+		enum lttng_trigger_firing_policy_type policy_type,
+		unsigned long long threshold);
+extern enum lttng_trigger_status lttng_trigger_get_firing_policy(
+		const struct lttng_trigger *trigger,
+		enum lttng_trigger_firing_policy_type *policy_type,
+		unsigned long long *threshold);
 
 /*
  * Destroy (frees) a trigger object.
