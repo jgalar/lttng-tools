@@ -329,6 +329,29 @@ end:
 }
 
 LTTNG_HIDDEN
+enum lttng_event_rule_status lttng_event_rule_uprobe_get_location(
+		const struct lttng_event_rule *rule,
+		const struct lttng_userspace_probe_location **location)
+{
+	enum lttng_event_rule_status status = LTTNG_EVENT_RULE_STATUS_OK;
+
+	if (!rule || !IS_UPROBE_EVENT_RULE(rule) || !location) {
+		status = LTTNG_EVENT_RULE_STATUS_INVALID;
+		goto end;
+	}
+
+	*location = lttng_event_rule_uprobe_get_location_no_const(rule);
+	if (!*location) {
+		status = LTTNG_EVENT_RULE_STATUS_UNSET;
+		goto end;
+	}
+
+end:
+	return status;
+
+}
+
+LTTNG_HIDDEN
 struct lttng_userspace_probe_location *
 lttng_event_rule_uprobe_get_location_no_const(
 		const struct lttng_event_rule *rule)

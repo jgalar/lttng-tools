@@ -27,6 +27,7 @@
 #include <lttng/condition/event-rule-internal.h>
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/event-rule/event-rule-internal.h>
+#include <lttng/event-rule/event-rule-uprobe-internal.h>
 
 #include "lttng-sessiond.h"
 #include "lttng-syscall.h"
@@ -502,6 +503,40 @@ int userspace_probe_event_add_callsites(struct lttng_event *ev,
 	if (ret) {
 		WARN("Adding callsite to userspace probe event \"%s\" "
 			"failed.", ev->name);
+	}
+
+end:
+	return ret;
+}
+
+/*
+ * Extract the offsets of the instrumentation point for the different lookup
+ * methods.
+ */
+static int userspace_probe_event_rule_add_callsites(
+		const struct lttng_event_rule *rule,
+		const struct lttng_credentials *creds,
+		int fd)
+{
+	const struct lttng_userspace_probe_location *location = NULL;
+	enum lttng_event_rule_status status;
+	int ret;
+
+	assert(rule);
+	assert(creds);
+	assert(lttng_event_rule_get_type(rule) == LTTNG_EVENT_RULE_TYPE_UPROBE);
+
+	status = lttng_event_rule_uprobe_get_location(rule, &location);
+	if (!location) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = userspace_probe_add_callsite(location, creds->uid, creds->gid,
+		fd);
+	if (ret) {
+		WARN("Adding callsite to userspace probe object %d"
+			"failed.", fd);
 	}
 
 end:
@@ -2083,8 +2118,8 @@ int match_trigger_token(struct cds_lfht_node *node, const void *key)
 	return *_key == element->token ;
 }
 
-static
-int kernel_create_token_event_rule(struct lttng_event_rule *rule, uint64_t token)
+static int kernel_create_token_event_rule(struct lttng_event_rule *rule,
+		const struct lttng_credentials *creds, uint64_t token)
 {
 	int err, fd;
 	enum lttng_error_code ret;
@@ -2144,13 +2179,13 @@ int kernel_create_token_event_rule(struct lttng_event_rule *rule, uint64_t token
 		}
 	}
 
-	if (lttng_event_rule_get_type(event->event_rule) == LTTNG_EVENT_RULE_TYPE_UPROBE) {
-		/* TODO */
-		ret = 0;
-		//ret = userspace_probe_add_callsites(ev, channel->session, event->fd);
-		//if (ret) {
-		//	goto add_callsite_error;
-		//}
+	if (lttng_event_rule_get_type(event->event_rule) ==
+			LTTNG_EVENT_RULE_TYPE_UPROBE) {
+		ret = userspace_probe_event_rule_add_callsites(
+				rule, creds, event->fd);
+		if (ret) {
+			goto add_callsite_error;
+		}
 	}
 
 	err = kernctl_enable(event->fd);
@@ -2174,6 +2209,7 @@ int kernel_create_token_event_rule(struct lttng_event_rule *rule, uint64_t token
 
 	return 0;
 
+add_callsite_error:
 enable_error:
 filter_error:
 	{
@@ -2188,7 +2224,6 @@ free_event:
 	free(event);
 error:
 	return ret;
-
 }
 
 enum lttng_error_code kernel_update_tokens(void)
@@ -2217,6 +2252,7 @@ enum lttng_error_code kernel_update_tokens(void)
 		struct lttng_condition *condition;
 		struct lttng_event_rule *event_rule;
 		struct lttng_trigger *trigger;
+		const struct lttng_credentials *creds;
 		uint64_t token;
 		struct ltt_kernel_token_event_rule *k_token;
 
@@ -2231,10 +2267,11 @@ enum lttng_error_code kernel_update_tokens(void)
 			continue;
 		}
 
+		creds = lttng_trigger_get_credentials(trigger);
 		/* Iterate over all known token trigger */
 		k_token = trace_kernel_find_trigger_by_token(&kernel_tracer_token_list, token);
 		if (!k_token) {
-			ret = kernel_create_token_event_rule(event_rule, token);
+			ret = kernel_create_token_event_rule(event_rule, creds, token);
 			if (ret < 0) {
 				goto end;
 			}

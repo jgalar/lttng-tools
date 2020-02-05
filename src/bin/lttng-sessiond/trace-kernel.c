@@ -25,6 +25,7 @@
 #include <lttng/event-rule/event-rule-syscall-internal.h>
 #include <lttng/event-rule/event-rule-tracepoint.h>
 #include <lttng/event-rule/event-rule-tracepoint-internal.h>
+#include <lttng/event-rule/event-rule-uprobe-internal.h>
 
 #include <common/common.h>
 #include <common/defaults.h>
@@ -560,7 +561,7 @@ enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct ltt
 		struct lttng_kernel_trigger *kernel_trigger)
 {
 	enum lttng_error_code ret;
-	enum lttng_event_rule_status;
+	enum lttng_event_rule_status status;
 	const char *name = NULL;
 
 	/* TODO: do this for now but have disucssion on if this could be the
@@ -580,10 +581,53 @@ enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct ltt
 		break;
 	case LTTNG_EVENT_RULE_TYPE_UPROBE:
 	{
-		assert("Not implemented" && 0);
+		const struct lttng_userspace_probe_location* location = NULL;
+		const struct lttng_userspace_probe_location_lookup_method *lookup = NULL;
+
+		status = lttng_event_rule_uprobe_get_location(rule, &location);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+			goto error;
+		}
+
+		kernel_trigger->instrumentation = LTTNG_KERNEL_UPROBE;
+
+		/*
+		 * Only the elf lookup method is supported at the moment.
+		 */
+		lookup = lttng_userspace_probe_location_get_lookup_method(
+				location);
+		if (!lookup) {
+			ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+			goto error;
+		}
+
+		/*
+		 * From the kernel tracer's perspective, all userspace probe
+		 * event types are all the same: a file and an offset.
+		 */
+		switch (lttng_userspace_probe_location_lookup_method_get_type(lookup)) {
+		case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_FUNCTION_ELF:
+			/* Get the file descriptor on the target binary. */
+			kernel_trigger->u.uprobe.fd =
+					lttng_userspace_probe_location_function_get_binary_fd(location);
+
+			break;
+		case LTTNG_USERSPACE_PROBE_LOCATION_LOOKUP_METHOD_TYPE_TRACEPOINT_SDT:
+			/* Get the file descriptor on the target binary. */
+			kernel_trigger->u.uprobe.fd =
+					lttng_userspace_probe_location_tracepoint_get_binary_fd(location);
+			break;
+		default:
+			DBG("Unsupported lookup method type");
+			ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
+			goto error;
+		}
+		ret = LTTNG_OK;
 		break;
 	}
 	case LTTNG_EVENT_RULE_TYPE_KRETPROBE:
+		assert("Not supported" && 0);
 		kernel_trigger->instrumentation = LTTNG_KERNEL_KRETPROBE;
 		kernel_trigger->u.kretprobe.addr = lttng_event_rule_kretprobe_get_address(rule);
 		kernel_trigger->u.kretprobe.offset = lttng_event_rule_kretprobe_get_offset(rule);
