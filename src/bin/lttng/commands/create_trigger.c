@@ -11,6 +11,7 @@
 #include "lttng/event-internal.h"
 #include "lttng/event-rule/event-rule-internal.h"
 #include "lttng/event-rule/event-rule-kprobe.h"
+#include "lttng/event-rule/event-rule-syscall.h"
 #include "lttng/event-rule/event-rule-tracepoint.h"
 #include "lttng/event-rule/event-rule-uprobe.h"
 
@@ -595,6 +596,34 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
 			fprintf(stderr, "Failed to set userspace probe event rule's name.\n");
 			goto error;
+		}
+
+		break;
+	}
+
+	case LTTNG_EVENT_RULE_TYPE_SYSCALL:
+	{
+		enum lttng_event_rule_status event_rule_status;
+
+		er = lttng_event_rule_syscall_create();
+		if (!er) {
+			fprintf(stderr, "Failed to create syscall event rule.\n");
+			goto error;
+		}
+
+		event_rule_status = lttng_event_rule_syscall_set_pattern(er, tracepoint_name);
+		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+			fprintf(stderr, "Failed to set syscall event rule's pattern.\n");
+			goto error;
+		}
+
+		if (filter) {
+			event_rule_status = lttng_event_rule_syscall_set_filter(
+					er, filter);
+			if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+				fprintf(stderr, "Failed to set syscall event rule's filter expression.\n");
+				goto error;
+			}
 		}
 
 		break;

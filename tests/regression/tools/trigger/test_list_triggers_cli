@@ -23,7 +23,7 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-plan_tests 30
+plan_tests 35
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
@@ -165,6 +165,32 @@ test_on_event_userspace_probe ()
 	stop_lttng_sessiond_notap
 }
 
+test_on_event_syscall ()
+{
+	# shellcheck disable=SC2119
+	start_lttng_sessiond_notap
+
+	create_trigger --condition on-event -k --syscall open --action notify
+	create_trigger --condition on-event -k --syscall ptrace --filter 'a > 2' --action notify
+
+	cat > "${tmp_expected_stdout}" <<- EOF
+	- id: TJORAJ1
+	  condition: event rule hit
+	  - rule: open (type: syscall)
+	  actions:
+	    notify
+	- id: TJORAJ2
+	  condition: event rule hit
+	  - rule: ptrace (type: syscall, filter: a > 2)
+	  actions:
+	    notify
+	EOF
+
+	list_triggers "on-event, syscall event rule" "${tmp_expected_stdout}"
+
+	stop_lttng_sessiond_notap
+}
+
 test_snapshot_action ()
 {
 	start_lttng_sessiond_notap
@@ -230,6 +256,7 @@ test_snapshot_action ()
 test_on_event_tracepoint
 skip $ist_root "non-root user: skipping kprobe tests" 7 || test_on_event_probe
 skip $ist_root "non-root user: skipping uprobe tests" 4 || test_on_event_userspace_probe
+skip $ist_root "non-root user: skipping syscall tests" 5 || test_on_event_syscall
 test_snapshot_action
 
 # Cleanup
