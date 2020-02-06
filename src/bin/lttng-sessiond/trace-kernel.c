@@ -623,6 +623,9 @@ enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct ltt
 			ret = LTTNG_ERR_PROBE_LOCATION_INVAL;
 			goto error;
 		}
+
+		(void) lttng_event_rule_uprobe_get_name(rule, &name);
+
 		ret = LTTNG_OK;
 		break;
 	}
