@@ -288,6 +288,13 @@ ssize_t lttng_event_rule_uprobe_create_from_buffer(
 	uprobe = container_of(rule, struct lttng_event_rule_uprobe, parent);
 	uprobe->location = location;
 
+	(void) lttng_event_rule_uprobe_set_name(rule, name);
+
+	if (!lttng_event_rule_uprobe_validate(rule)) {
+		ret = -1;
+		goto end;
+	}
+
 	*_event_rule = rule;
 	rule = NULL;
 	ret = offset;
