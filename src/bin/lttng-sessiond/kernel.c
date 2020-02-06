@@ -527,7 +527,7 @@ static int userspace_probe_event_rule_add_callsites(
 	assert(lttng_event_rule_get_type(rule) == LTTNG_EVENT_RULE_TYPE_UPROBE);
 
 	status = lttng_event_rule_uprobe_get_location(rule, &location);
-	if (!location) {
+	if (status != LTTNG_EVENT_RULE_STATUS_OK || !location) {
 		ret = -1;
 		goto end;
 	}
