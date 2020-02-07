@@ -2997,6 +2997,39 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 
 	message_lsm->u.trigger.length = (uint32_t) message.buffer.size - sizeof(lsm);
 
+	if (getenv("LTTNG_REGISTER_TRIGGER_DRY_RUN")) {
+		/*
+		 * Don't really send the request, just deserialize, validate
+		 * that it is equal to the original trigger (to test
+		 * serialization and deserialization), and return.
+		 */
+		ssize_t sz;
+
+		struct lttng_payload_view pv = lttng_payload_view_from_payload(
+				&message, sizeof(lsm), -1);
+		sz = lttng_trigger_create_from_payload(&pv, &reply_trigger);
+		if (sz != pv.buffer.size - sizeof(lsm)) {
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		if (!reply_trigger) {
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		if (!lttng_trigger_is_equal(trigger, reply_trigger)) {
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		/* Give it a dummy name. */
+		lttng_trigger_set_name(trigger, "yop");
+
+		ret = 0;
+		goto end;
+	}
+
 	{
 		struct lttng_payload_view message_view =
 				lttng_payload_view_from_payload(
