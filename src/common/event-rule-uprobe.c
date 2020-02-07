@@ -83,7 +83,6 @@ int lttng_event_rule_uprobe_serialize(
 	struct lttng_event_rule_uprobe *uprobe;
 	struct lttng_event_rule_uprobe_comm uprobe_comm = { 0 };
 	struct lttng_event_rule_uprobe_comm *header;
-	int local_fd_to_send;
 
 	if (!rule || !IS_UPROBE_EVENT_RULE(rule)) {
 		ret = -1;
@@ -116,7 +115,7 @@ int lttng_event_rule_uprobe_serialize(
 	/* This serialize return the size taken in the buffer */
 	/* TODO: should all serialize standardise on this? */
 	ret = lttng_userspace_probe_location_serialize(
-			uprobe->location, buf, &local_fd_to_send);
+			uprobe->location, buf, fd_to_send);
 	if (ret < 0) {
 		goto end;
 	}
@@ -124,10 +123,6 @@ int lttng_event_rule_uprobe_serialize(
 	/* Update the header regarding the probe size */
 	header = (struct lttng_event_rule_uprobe_comm *) ((char *) buf->data + header_offset);
 	header->location_len = buf->size - size_before_probe;
-
-	if (fd_to_send) {
-		*fd_to_send = local_fd_to_send;
-	}
 
 	ret = 0;
 
