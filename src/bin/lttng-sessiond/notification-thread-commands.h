@@ -127,6 +127,10 @@ enum lttng_error_code notification_thread_command_add_application(
 		struct notification_thread_handle *handle,
 		struct lttng_pipe *trigger_event_application_pipe);
 
+enum lttng_error_code notification_thread_command_remove_application(
+		struct notification_thread_handle *handle,
+		struct lttng_pipe *trigger_event_application_pipe);
+
 /* Must hold the notification_trigger_tokens_ht_lock to protect trigger_tokens_ht */
 /* todo find a better way....*/
 enum lttng_error_code notification_thread_command_get_tokens(

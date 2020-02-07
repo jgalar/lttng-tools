@@ -1936,6 +1936,7 @@ int handle_notification_thread_command_add_application(
 			read_side_trigger_event_application_pipe,
 			LPOLLIN | LPOLLERR);
 
+	DBG3("[notification-thread] Adding application event source from fd: %d", read_side_trigger_event_application_pipe);
 	if (ret < 0) {
 		/* TODO: what should be the value of cmd_result??? */
 		ERR("[notification-thread] Failed to add event source pipe fd to pollset");
@@ -1970,10 +1971,10 @@ int handle_notification_thread_command_remove_application(
 		break;
 	}
 
+	DBG3("[notification-thread] Removing application event source from fd: %d", read_side_trigger_event_application_pipe);
 	/* Removing the read side pipe to the event poll */
 	ret = lttng_poll_del(&state->events,
 			read_side_trigger_event_application_pipe);
-
 	if (ret < 0) {
 		/* TODO: what should be the value of cmd_result??? */
 		ERR("[notification-thread] Failed to remove event source pipe fd from pollset");

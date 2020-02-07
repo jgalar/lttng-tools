@@ -932,6 +932,7 @@ static
 void delete_ust_app(struct ust_app *app)
 {
 	int ret, sock;
+	enum lttng_error_code ret_code;
 	struct ust_app_session *ua_sess, *tmp_ua_sess;
 
 	/*
@@ -956,8 +957,15 @@ void delete_ust_app(struct ust_app *app)
 	ht_cleanup_push(app->ust_sessions_objd);
 	ht_cleanup_push(app->ust_objd);
 
-
 	ustctl_release_object(sock, app->token_communication.handle);
+
+	ret_code = notification_thread_command_remove_application(
+			notification_thread_handle,
+			app->token_communication.trigger_event_pipe);
+	if (ret_code != LTTNG_OK) {
+		ERR("Failed to remove application from notification thread");
+	}
+	lttng_pipe_close(app->token_communication.trigger_event_pipe);
 
 	/*
 	 * Wait until we have deleted the application from the sock hash table
@@ -977,8 +985,6 @@ void delete_ust_app(struct ust_app *app)
 		PERROR("close");
 	}
 	lttng_fd_put(LTTNG_FD_APPS, 1);
-
-	lttng_pipe_close(app->token_communication.trigger_event_pipe);
 
 	DBG2("UST app pid %d deleted", app->pid);
 	free(app);
