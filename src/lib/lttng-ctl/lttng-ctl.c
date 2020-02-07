@@ -2951,6 +2951,39 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 		goto end;
 	}
 
+	if (getenv("LTTNG_REGISTER_TRIGGER_DRY_RUN")) {
+		/*
+		 * Don't really send the request, just deserialize, validate
+		 * that it is equal to the original trigger (to test
+		 * serialization and deserialization), and return.
+		 */
+		struct lttng_buffer_view bv;
+		ssize_t sz;
+
+		bv = lttng_buffer_view_from_dynamic_buffer(&buffer, 0, -1);
+		sz = lttng_trigger_create_from_buffer(&bv, &reply_trigger);
+		if (sz != bv.size) {
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		if (!reply_trigger) {
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		if (!lttng_trigger_is_equal(trigger, reply_trigger)) {
+			ret = -LTTNG_ERR_UNK;
+			goto end;
+		}
+
+		/* Give it a dummy name. */
+		lttng_trigger_set_name(trigger, "yop");
+
+		ret = 0;
+		goto end;
+	}
+
 	send_fd = fd_to_send >= 0;
 
 	memset(&lsm, 0, sizeof(lsm));
