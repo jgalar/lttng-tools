@@ -4363,6 +4363,7 @@ end:
 	return ret;
 }
 
+/* Caller must call lttng_destroy_trigger on the returned trigger object */
 int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		struct notification_thread_handle *notification_thread,
 		struct lttng_trigger **return_trigger)
@@ -4410,6 +4411,13 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 	if (ret != LTTNG_OK) {
 		goto end;
 	}
+
+	/*
+	 * Since we return the trigger object, take a reference to it
+	 * Caller is responsible for calling lttng_destroy_trigger on it.
+	 * This thread does not OWN the trigger.
+	 */
+	lttng_trigger_get(trigger);
 
 	/* Inform the notification thread */
 	ret = notification_thread_command_register_trigger(notification_thread,
@@ -4566,7 +4574,7 @@ int cmd_list_triggers(struct command_ctx *cmd_ctx, int sock,
 	triggers = NULL;
 	ret = LTTNG_OK;
 end:
-	lttng_triggers_destroy_array(triggers);
+	lttng_triggers_destroy(triggers);
 	return ret;
 }
 /*

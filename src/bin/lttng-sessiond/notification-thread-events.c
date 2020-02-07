@@ -2026,15 +2026,14 @@ int handle_notification_thread_command_list_triggers(
 		if ((uid != creds->uid) || (gid != creds->gid)) {
 			continue;
 		}
-		/*
-		 * Share the trigger not the ownership
-		 * TODO: either refcout the trigger or copy it.
-		 * */
+
 		ret = lttng_triggers_add(local_triggers, trigger_ht_element->trigger);
 		if (ret < 0) {
 			ret = -1;
 			goto end;
 		}
+		/* Ownership is shared with the lttng_triggers object */
+		lttng_trigger_get(trigger_ht_element->trigger);
 
 		i++;
 	}
@@ -2045,7 +2044,7 @@ int handle_notification_thread_command_list_triggers(
 
 end:
 	rcu_read_unlock();
-	lttng_triggers_destroy_array(local_triggers);
+	lttng_triggers_destroy(local_triggers);
 	*_cmd_result = cmd_result;
 	return ret;
 }
@@ -2501,6 +2500,12 @@ int handle_notification_thread_command_register_trigger(
 	/* Add trigger to the trigger_ht. */
 	cds_lfht_node_init(&trigger_ht_element->node);
 	cds_lfht_node_init(&trigger_ht_element->node_by_name);
+
+	/*
+	 * This element own the trigger object from now own, this is why there
+	 * is no lttng_trigger_get here.
+	 * This thread is now the owner of the trigger object.
+	 */
 	trigger_ht_element->trigger = trigger;
 
 	node = cds_lfht_add_unique(state->triggers_ht,
@@ -2705,10 +2710,7 @@ int handle_notification_thread_command_unregister_trigger(
 	cds_lfht_del(state->triggers_by_name_ht, &trigger_ht_element->node_by_name);
 	cds_lfht_del(state->triggers_ht, triggers_ht_node);
 
-	condition = lttng_trigger_get_condition(trigger_ht_element->trigger);
-	lttng_condition_destroy(condition);
-	action = lttng_trigger_get_action(trigger_ht_element->trigger);
-	lttng_action_destroy(action);
+	/* Release the ownership of the trigger */
 	lttng_trigger_destroy(trigger_ht_element->trigger);
 	call_rcu(&trigger_ht_element->rcu_node, free_lttng_trigger_ht_element_rcu);
 end:

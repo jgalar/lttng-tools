@@ -13,6 +13,24 @@
 #include <assert.h>
 #include <inttypes.h>
 
+static void lttng_trigger_set_internal_object_ownership(
+		struct lttng_trigger *trigger)
+{
+	/*
+	 * This is necessary to faciliate the object destroy phase. A trigger
+	 * created by a client does not OWN the internal objects (condition and
+	 * action) but when a trigger object is created on the sessiond side or
+	 * for listing triggers (mostly via create_from_buffer) the object is
+	 * the owner of the internal objects. Hence, we set the ownership bool
+	 * to true, in such case, to facilitate object lifetime management and
+	 * internal ownership.
+	 *
+	 * TODO: I'm open to any other solution
+	 */
+	assert(trigger);
+	trigger->owns_internal_objects = true;
+}
+
 LTTNG_HIDDEN
 bool lttng_trigger_validate(struct lttng_trigger *trigger)
 {
@@ -44,6 +62,8 @@ struct lttng_trigger *lttng_trigger_create(
 		goto end;
 	}
 
+	urcu_ref_init(&trigger->ref);
+	trigger->owns_internal_objects = false;
 	trigger->firing_policy.type = LTTNG_TRIGGER_FIRE_EVERY_N;
 	trigger->firing_policy.threshold = 1;
 	trigger->condition = condition;
@@ -81,39 +101,29 @@ const struct lttng_action *lttng_trigger_get_const_action(
 	return trigger->action;
 }
 
-void lttng_trigger_destroy(struct lttng_trigger *trigger)
+static void trigger_destroy_ref(struct urcu_ref *ref)
 {
-	if (!trigger) {
-		return;
+	struct lttng_trigger *trigger =
+			container_of(ref, struct lttng_trigger, ref);
+
+	if (trigger->owns_internal_objects) {
+		struct lttng_action *action = lttng_trigger_get_action(trigger);
+		struct lttng_condition *condition =
+				lttng_trigger_get_condition(trigger);
+
+		assert(action);
+		assert(condition);
+		lttng_action_destroy(action);
+		lttng_condition_destroy(condition);
 	}
 
 	free(trigger->name);
 	free(trigger);
 }
 
-/*
- * Frees the contained condition and actions.
- */
-static
-void lttng_trigger_destroy_full(struct lttng_trigger *trigger)
+void lttng_trigger_destroy(struct lttng_trigger *trigger)
 {
-	struct lttng_action *action;
-	struct lttng_condition *condition;
-
-	if (!trigger) {
-		return;
-	}
-
-	action = lttng_trigger_get_action(trigger);
-	condition = lttng_trigger_get_condition(trigger);
-
-	assert(action);
-	assert(condition);
-	lttng_action_destroy(action);
-	lttng_condition_destroy(condition);
-
-	free(trigger->name);
-	free(trigger);
+	lttng_trigger_put(trigger);
 }
 
 LTTNG_HIDDEN
@@ -189,6 +199,11 @@ ssize_t lttng_trigger_create_from_buffer(
 		ret = -1;
 		goto error;
 	}
+
+	/* Take ownership of the internal object from there */
+	lttng_trigger_set_internal_object_ownership(*trigger);
+	condition = NULL;
+	action = NULL;
 
 	if (name) {
 		status = lttng_trigger_set_name(*trigger, name);
@@ -380,6 +395,12 @@ bool lttng_trigger_is_equal(
 	return true;
 }
 
+static void delete_trigger_array_element(void *ptr)
+{
+	struct lttng_trigger *trigger = ptr;
+	lttng_trigger_destroy(trigger);
+}
+
 LTTNG_HIDDEN
 struct lttng_triggers *lttng_triggers_create(void)
 {
@@ -390,7 +411,7 @@ struct lttng_triggers *lttng_triggers_create(void)
 		goto error;
 	}
 
-	lttng_dynamic_pointer_array_init(&triggers->array, NULL);
+	lttng_dynamic_pointer_array_init(&triggers->array, delete_trigger_array_element);
 
 	return triggers;
 error:
@@ -440,44 +461,14 @@ end:
 	return status;
 }
 
-LTTNG_HIDDEN
-void lttng_triggers_destroy_array(struct lttng_triggers *triggers)
+void lttng_triggers_destroy(struct lttng_triggers *triggers)
 {
-	/*
-	 * Do not free the actual triggers.
-	 * Only the triggers structure.
-	 * This is useful on the sessiond side for listing.
-	 */
 	if (!triggers) {
 		return;
 	}
 
 	lttng_dynamic_pointer_array_reset(&triggers->array);
 	free(triggers);
-}
-
-void lttng_triggers_destroy(struct lttng_triggers *triggers)
-{
-	struct lttng_trigger *trigger;
-	/*
-	 * The collection own the complete trigger object, including its sub
-	 * structure, in comparison to a regular trigger.
-	 * */
-	if (!triggers) {
-		return;
-	}
-
-	/* TODO: this is done this way because there is no refcount on the
-	 * triggers object for now and that in certain case the triggers object
-	 * does not own the internal trigger objects. When r3efcount is
-	 * implemented for the trigger object we should use the
-	 * lttng_trigger_destroy_full as a dynamic array destructor
-	 */
-	for (size_t i = 0; i < lttng_dynamic_pointer_array_get_count(&triggers->array); i++) {
-		trigger = lttng_dynamic_pointer_array_steal_pointer(&triggers->array, i);
-		lttng_trigger_destroy_full(trigger);
-	}
-	lttng_triggers_destroy_array(triggers);
 }
 
 int lttng_triggers_serialize(const struct lttng_triggers *triggers,
@@ -661,4 +652,20 @@ bool lttng_trigger_is_ready_to_fire(struct lttng_trigger *trigger)
 	};
 
 	return ready_to_fire;
+}
+
+LTTNG_HIDDEN
+void lttng_trigger_get(struct lttng_trigger *trigger)
+{
+	urcu_ref_get(&trigger->ref);
+}
+
+LTTNG_HIDDEN
+void lttng_trigger_put(struct lttng_trigger *trigger)
+{
+	if (!trigger) {
+		return;
+	}
+
+	urcu_ref_put(&trigger->ref , trigger_destroy_ref);
 }

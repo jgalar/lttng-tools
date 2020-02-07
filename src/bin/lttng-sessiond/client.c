@@ -1937,9 +1937,6 @@ error_add_context:
 	case LTTNG_REGISTER_TRIGGER:
 	{
 		struct lttng_dynamic_buffer payload;
-		/* Do not free the return trigger, ownership was transfered to
-		 * the notification thread. It is solely used to return the
-		 * trigger name to the client on registration */
 		struct lttng_trigger *return_trigger;
 
 		lttng_dynamic_buffer_init(&payload);
@@ -1953,14 +1950,17 @@ error_add_context:
 		if (ret) {
 			ERR("Failed to serialize trigger in reply to \"register trigger\" command");
 			ret = LTTNG_ERR_NOMEM;
+			lttng_trigger_destroy(return_trigger);
 			goto error;
 		}
 		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, payload.data,
 				payload.size);
 		if (ret) {
+			lttng_trigger_destroy(return_trigger);
 			ret = LTTNG_ERR_NOMEM;
 			goto error;
 		}
+		lttng_trigger_destroy(return_trigger);
 		lttng_dynamic_buffer_reset(&payload);
 		ret = LTTNG_OK;
 		break;
@@ -2078,12 +2078,6 @@ error_add_context:
 	case LTTNG_LIST_TRIGGERS:
 	{
 		struct lttng_dynamic_buffer payload;
-		/* Use lttng_triggers_destroy_array only since we do not own the
-		 * triggers object. This is only possible since we have a
-		 * guarantee that in normal operation trigger cannot removed
-		 * destroyed since we are currently executing this command. This
-		 * is in no way robust in error case we either need to refcount
-		 * the trigger object of copy */
 		struct lttng_triggers *return_triggers;
 
 		lttng_dynamic_buffer_init(&payload);
@@ -2097,15 +2091,18 @@ error_add_context:
 		if (ret) {
 			ERR("Failed to serialize triggers in reply to \"list triggers\" command");
 			ret = LTTNG_ERR_NOMEM;
+			lttng_triggers_destroy(return_triggers);
 			goto error;
 		}
 		ret = setup_lttng_msg_no_cmd_header(cmd_ctx, payload.data,
 				payload.size);
 		if (ret) {
 			ret = LTTNG_ERR_NOMEM;
+			lttng_triggers_destroy(return_triggers);
 			goto error;
 		}
 		lttng_dynamic_buffer_reset(&payload);
+		lttng_triggers_destroy(return_triggers);
 		ret = LTTNG_OK;
 		break;
 	}

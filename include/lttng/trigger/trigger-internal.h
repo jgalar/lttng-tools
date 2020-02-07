@@ -17,8 +17,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/types.h>
+#include <urcu/ref.h>
 
 struct lttng_trigger {
+	struct urcu_ref ref; /* internal use only */
+	bool owns_internal_objects; /* internal use only */
+
 	struct lttng_condition *condition;
 	struct lttng_action *action;
 	char *name;
@@ -125,14 +129,6 @@ LTTNG_HIDDEN
 int lttng_triggers_serialize(const struct lttng_triggers *triggers,
 		struct lttng_dynamic_buffer *buffer);
 
-/*
- * Free only the collection structure, not the triggers 
- * TODO: this is needed only on sessiond side, the use of refcount on the
- * trigger object would mostly resolve the need for this.
- */
-LTTNG_HIDDEN
-void lttng_triggers_destroy_array(struct lttng_triggers *triggers);
-
 LTTNG_HIDDEN
 ssize_t lttng_triggers_create_from_buffer(const struct lttng_buffer_view *view,
 		struct lttng_triggers **triggers);
@@ -144,6 +140,12 @@ const struct lttng_credentials *lttng_trigger_get_credentials(
 LTTNG_HIDDEN
 void lttng_trigger_set_credentials(
 		struct lttng_trigger *trigger, uid_t uid, gid_t git);
+
+LTTNG_HIDDEN
+void lttng_trigger_get(struct lttng_trigger *trigger);
+
+LTTNG_HIDDEN
+void lttng_trigger_put(struct lttng_trigger *trigger);
 
 LTTNG_HIDDEN
 bool lttng_trigger_is_ready_to_fire(
