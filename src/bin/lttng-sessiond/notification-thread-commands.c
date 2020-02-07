@@ -261,14 +261,14 @@ end:
 
 enum lttng_error_code notification_thread_command_get_tokens(
 		struct notification_thread_handle *handle,
-		struct cds_lfht **tokens_ht)
+		struct lttng_triggers **tokens_triggers)
 {
 	int ret;
 	enum lttng_error_code ret_code;
 	struct notification_thread_command cmd;
 
 	assert(handle);
-	assert(tokens_ht);
+	assert(tokens_triggers);
 
 	init_notification_thread_command(&cmd);
 
@@ -280,7 +280,7 @@ enum lttng_error_code notification_thread_command_get_tokens(
 		goto end;
 	}
 	ret_code = cmd.reply_code;
-	*tokens_ht = cmd.reply.get_tokens.ht;
+	*tokens_triggers = cmd.reply.get_tokens.triggers;
 
 end:
 	return ret_code;

@@ -5330,54 +5330,48 @@ end:
 	return ret;
 }
 
-/* TODO: find a better way, this is copied from notification-thread-events.c to
- * allows the lookup of the "passed" hast table from the notification thread.
- * This is ugly as fuck since the passed hash table is a cdf instead of a
- * lttng_ht
- */
-static
-int match_trigger_token(struct cds_lfht_node *node, const void *key)
-{
-	const uint64_t *_key = key;
-	struct notification_trigger_tokens_ht_element *element;
-
-	element = caa_container_of(node, struct notification_trigger_tokens_ht_element,
-			node);
-	return *_key == element->token ;
-}
-
 static
 void ust_app_synchronize_tokens(struct ust_app *app)
 {
 	int ret = 0;
 	enum lttng_error_code ret_code;
-	struct cds_lfht *trigger_tokens_ht = NULL;
-	struct cds_lfht_iter iter;
+	enum lttng_trigger_status t_status;
 	struct lttng_ht_iter app_trigger_iter;
-	struct notification_trigger_tokens_ht_element *trigger_token_element;
+	struct lttng_triggers *triggers;
 	struct ust_app_token_event_rule *token_event_rule_element;
+	unsigned int count;
 
-	/* Get list of token trigger from the notification thread here */
 	rcu_read_lock();
+	/* TODO: is this necessary to protect against new trigger being added ?
+	 * notification_trigger_tokens_ht is still the backing data structure
+	 * for this listing. Leave it there for now.
+	 */
 	pthread_mutex_lock(&notification_trigger_tokens_ht_lock);
-	ret_code = notification_thread_command_get_tokens(notification_thread_handle, &trigger_tokens_ht);
+	ret_code = notification_thread_command_get_tokens(
+			notification_thread_handle, &triggers);
 	if (ret_code != LTTNG_OK) {
 		goto end;
 	}
 
-	assert(trigger_tokens_ht);
+	assert(triggers);
 
-	cds_lfht_for_each_entry (trigger_tokens_ht, &iter,
-			trigger_token_element, node) {
+	t_status = lttng_triggers_get_count(triggers, &count);
+	if (t_status != LTTNG_TRIGGER_STATUS_OK) {
+		goto end;
+	}
+
+	for (unsigned int i = 0; i < count; i++) {
 		struct lttng_condition *condition;
 		struct lttng_event_rule *event_rule;
 		struct lttng_trigger *trigger;
-		uint64_t token;
 		struct ust_app_token_event_rule *ua_token;
+		uint64_t token;
+
+		trigger = lttng_triggers_get_pointer_of_index(triggers, i);
+		assert(trigger);
 
 		/* TODO: error checking and type checking */
-		token = trigger_token_element->token;
-		trigger = trigger_token_element->trigger;
+		token = lttng_trigger_get_key(trigger);
 		condition = lttng_trigger_get_condition(trigger);
 		(void) lttng_condition_event_rule_get_rule_no_const(condition, &event_rule);
 
@@ -5403,20 +5397,38 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 	 */
 	cds_lfht_for_each_entry (app->tokens_ht->ht, &app_trigger_iter.iter,
 			token_event_rule_element, node.node) {
-		struct cds_lfht_node *node;
-		struct cds_lfht_iter lookup_iter;
 		uint64_t token;
+		bool found = false;
 
 		token = token_event_rule_element->token;
 
-		/* Check if the app event trigger still exists on the
+		/*
+		 * Check if the app event trigger still exists on the
 		 * notification side.
+		 * TODO: might want to change the backing data struct of the
+		 * lttng_triggers object to allow quick lookup?
+		 * For kernel mostly all of this can be removed once we delete
+		 * on a per trigger basis.
 		 */
-		cds_lfht_lookup(trigger_tokens_ht, hash_key_u64(&token, lttng_ht_seed),
-				match_trigger_token, &token, &lookup_iter);
-		node = cds_lfht_iter_get_node(&lookup_iter);
-		if (node != NULL) {
-			/* Still valid, continue */
+
+		for (unsigned int i = 0; i < count; i++) {
+			struct lttng_trigger *trigger;
+			uint64_t inner_token;
+
+			trigger = lttng_triggers_get_pointer_of_index(
+					triggers, i);
+			assert(trigger);
+
+			inner_token = lttng_trigger_get_key(trigger);
+
+			if (inner_token == token) {
+				found = true;
+				break;
+			}
+		}
+
+		if (found) {
+			/* Still valid */
 			continue;
 		}
 

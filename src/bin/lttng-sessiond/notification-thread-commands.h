@@ -81,7 +81,7 @@ struct notification_thread_command {
 
 	union {
 		struct {
-			struct cds_lfht *ht;
+			struct lttng_triggers *triggers;
 		} get_tokens;
 		struct {
 			struct lttng_triggers *triggers;
@@ -131,11 +131,12 @@ enum lttng_error_code notification_thread_command_remove_application(
 		struct notification_thread_handle *handle,
 		struct lttng_pipe *trigger_event_application_pipe);
 
-/* Must hold the notification_trigger_tokens_ht_lock to protect trigger_tokens_ht */
+/* Must hold the notification_trigger_tokens_ht_lock to protect against
+ * insertion removal of triggers TODO: is it the case even with refcounting? */
 /* todo find a better way....*/
 enum lttng_error_code notification_thread_command_get_tokens(
 		struct notification_thread_handle *handle,
-		struct cds_lfht **trigger_tokens_ht);
+		struct lttng_triggers **triggers);
 
 /* TODO: for now we borrow with no refcount the trigger. THIS IS DANGEROUS */
 enum lttng_error_code notification_thread_command_list_triggers(
