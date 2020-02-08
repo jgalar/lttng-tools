@@ -19,6 +19,8 @@
 #include <semaphore.h>
 #include "thread.h"
 
+typedef uint64_t notification_client_id;
+
 struct notification_event_trigger_source_element {
 	int fd;
 	struct cds_list_head node;
@@ -74,9 +76,14 @@ struct notification_thread_handle {
  * In order to speed-up and simplify queries, hash tables providing the
  * following associations are maintained:
  *
- *   - client_socket_ht: associate a client's socket (fd) to its "struct client"
- *             This hash table owns the "struct client" which must thus be
- *             disposed-of on removal from the hash table.
+ *   - client_socket_ht: associate a client's socket (fd) to its
+ *             "struct notification_client".
+ *             This hash table owns the "struct notification_client" which must
+ *             thus be disposed-of on removal from the hash table.
+ *
+ *   - client_id_ht: associate a client's id to its "struct notification_client"
+ *             This hash table holds a _weak_ reference to the
+ *             "struct notification_client".
  *
  *   - channel_triggers_ht:
  *             associates a channel key to a list of
@@ -199,9 +206,11 @@ struct notification_thread_handle {
  * 7) Session rotation completed
  *
  * 8) Connection of a client
- *    - add client socket to the client_socket_ht.
+ *    - add client socket to the client_socket_ht,
+ *    - add client socket to the client_id_ht.
  *
  * 9) Disconnection of a client
+ *    - remove client socket from the client_id_ht,
  *    - remove client socket from the client_socket_ht,
  *    - traverse all conditions to which the client is subscribed and remove
  *      the client from the notification_trigger_clients_ht.
@@ -222,6 +231,7 @@ struct notification_thread_state {
 	int notification_channel_socket;
 	struct lttng_poll_event events;
 	struct cds_lfht *client_socket_ht;
+	struct cds_lfht *client_id_ht;
 	struct cds_lfht *channel_triggers_ht;
 	struct cds_lfht *session_triggers_ht;
 	struct cds_lfht *channel_state_ht;
@@ -235,6 +245,7 @@ struct notification_thread_state {
 		uint64_t token_generator;
 		uint64_t name_offset;
 	} trigger_id;
+	notification_client_id next_notification_client_id;
 };
 
 /* notification_thread_data takes ownership of the channel monitor pipes. */
