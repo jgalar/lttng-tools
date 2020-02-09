@@ -391,6 +391,20 @@ LTTNG_HIDDEN
 bool lttng_trigger_is_equal(
 		const struct lttng_trigger *a, const struct lttng_trigger *b)
 {
+	/* TODO: Optimization: for now a trigger with a firing policy that is
+	 * not the same even if the conditions and actions is the same is
+	 * treated as a "completely" different trigger. In a perfect world we
+	 * would simply add a supplemental counter internally (sessiond side) to
+	 * remove overhead on the tracer side.
+	 */
+	if (a->firing_policy.type != b->firing_policy.type) {
+		return false;
+	}
+
+	if (a->firing_policy.threshold != b->firing_policy.threshold) {
+		return false;
+	}
+
 	/*
 	 * Name is not taken into account since it is cosmetic only
 	 */
