@@ -32,7 +32,8 @@ lttng_SOURCES = command.h conf.c conf.h commands/start.c \
 				commands/create_trigger.c \
 				commands/list_triggers.c \
 				commands/destroy_trigger.c \
-				utils.c utils.h lttng.c
+				utils.c utils.h lttng.c \
+				uprobe.c uprobe.h
 
 lttng_CFLAGS = $(AM_CFLAGS) $(POPT_CFLAGS)
 

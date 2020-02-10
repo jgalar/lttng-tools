@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "../command.h"
+#include "../uprobe.h"
 
 #include "common/argpar/argpar.h"
 #include "common/dynamic-array.h"
@@ -11,6 +12,7 @@
 #include "lttng/event-rule/event-rule-internal.h"
 #include "lttng/event-rule/event-rule-kprobe.h"
 #include "lttng/event-rule/event-rule-tracepoint.h"
+#include "lttng/event-rule/event-rule-uprobe.h"
 
 #ifdef LTTNG_EMBED_HELP
 static const char help_msg[] =
@@ -178,6 +180,7 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 	struct argpar_item *item = NULL;
 	char *error = NULL;
 	int consumed_args = -1;
+	struct lttng_userspace_probe_location *userspace_probe_location = NULL;
 
 	/* Was the -a/--all flag provided? */
 	bool all_events = false;
@@ -565,12 +568,46 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 		break;
 	}
 
+	case LTTNG_EVENT_RULE_TYPE_UPROBE:
+	{
+		int ret;
+		enum lttng_event_rule_status event_rule_status;
+
+		ret = parse_userspace_probe_opts(source, &userspace_probe_location);
+		if (ret) {
+			fprintf(stderr, "Failed to parse userspace probe location.\n");
+			goto error;
+		}
+
+		er = lttng_event_rule_uprobe_create();
+		if (!er) {
+			fprintf(stderr, "Failed to create userspace probe event rule.\n");
+			goto error;
+		}
+
+		event_rule_status = lttng_event_rule_uprobe_set_location(er, userspace_probe_location);
+		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+			fprintf(stderr, "Failed to set userspace probe event rule's location.\n");
+			goto error;
+		}
+
+		event_rule_status = lttng_event_rule_uprobe_set_name(er, tracepoint_name);
+		if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+			fprintf(stderr, "Failed to set userspace probe event rule's name.\n");
+			goto error;
+		}
+
+		break;
+	}
+
 	default:
-		fprintf(stderr, "parse_event_rule: I only support tracepoints at the moment.\n");
+		fprintf(stderr, "%s: I don't support event rules of type `%s` at the moment.\n", __func__,
+			lttng_event_rule_type_str(event_rule_type));
 		goto error;
 	}
 
 	goto end;
+
 error:
 	lttng_event_rule_destroy(er);
 	er = NULL;
@@ -583,6 +620,7 @@ end:
 	free(exclude);
 	free(loglevel_str);
 	strutils_free_null_terminated_array_of_strings(exclusion_list);
+	lttng_userspace_probe_location_destroy(userspace_probe_location);
 	return er;
 }
 

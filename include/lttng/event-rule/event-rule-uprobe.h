@@ -42,6 +42,21 @@ extern enum lttng_event_rule_status lttng_event_rule_uprobe_set_location(
 		struct lttng_event_rule *rule, const struct lttng_userspace_probe_location *location);
 
 /*
+ * Get the location of a uprobe event rule.
+ *
+ * The caller does not assume the ownership of the returned location.
+ * The location shall only be used for the duration of the event
+ * rule's lifetime, or before a different location is set.
+ *
+ * Returns LTTNG_EVENT_RULE_STATUS_OK and a pointer to the event rule's location
+ * on success, LTTNG_EVENT_RULE_STATUS_INVALID if an invalid parameter is passed,
+ * or LTTNG_EVENT_RULE_STATUS_UNSET if a location was not set prior to this call.
+ */
+extern enum lttng_event_rule_status lttng_event_rule_uprobe_get_location(
+		const struct lttng_event_rule *rule,
+		const struct lttng_userspace_probe_location **location);
+
+/*
  * Set the name of a uprobe event rule.
  *
  * The name is copied.

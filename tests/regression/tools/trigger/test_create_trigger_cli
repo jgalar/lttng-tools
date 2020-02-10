@@ -23,7 +23,7 @@ TESTDIR="$CURDIR/../../.."
 # shellcheck source=../../../utils/utils.sh
 source "$TESTDIR/utils/utils.sh"
 
-plan_tests 117
+plan_tests 129
 
 FULL_LTTNG_BIN="${TESTDIR}/../src/bin/lttng/${LTTNG_BIN}"
 
@@ -32,6 +32,7 @@ start_lttng_sessiond_notap
 
 tmp_stdout=$(mktemp -t test_parse_cli_trigger_stdout.XXXXXX)
 tmp_stderr=$(mktemp -t test_parse_cli_trigger_stderr.XXXXXX)
+uprobe_elf_binary="${TESTDIR}/utils/testapp/userspace-probe-elf-binary/userspace-probe-elf-binary"
 
 if [ "$(id -u)" == "0" ]; then
 	ist_root=1
@@ -104,6 +105,16 @@ skip $ist_root "non-root user: skipping kprobe tests" 12 || {
 
 	test_success "--condition on-event probe by address with offset" \
 		--condition on-event -k "--probe=${sys_open_addr}+10" my_sys_open \
+		--action notify
+}
+
+skip $ist_root "non-root user: skipping uprobe tests" 6 || {
+	test_success "--condition on-event uprobe" \
+		--condition on-event -k --userspace-probe=${uprobe_elf_binary}:test_function ma-probe \
+		--action notify
+
+	test_success "--condition on-event uprobe with elf prefix" \
+		--condition on-event -k --userspace-probe=elf:${uprobe_elf_binary}:test_function ma-probe-2 \
 		--action notify
 }
 
@@ -185,6 +196,15 @@ test_failure "--condition on-event: --all with --probe" \
 test_failure "--condition on-event: missing tracepoint name with --probe" \
 	"Error: Need to provide either a tracepoint name or -a/--all." \
 	--condition on-event -k --probe do_sys_open
+
+test_failure "--condition on-event: missing tracepoint name with --userspace-probe" \
+	"Error: Need to provide either a tracepoint name or -a/--all." \
+	--condition on-event -k --userspace-probe=${uprobe_elf_binary}:test_function
+
+test_failure "--condition on-event: extra argument with --userspace-probe" \
+	"Error: Unexpected argument: world" \
+	--condition on-event -k --userspace-probe=${uprobe_elf_binary}:test_failure hello world
+
 
 # `--action` failures
 test_failure "missing args after --action" \

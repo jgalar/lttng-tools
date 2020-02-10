@@ -330,7 +330,6 @@ end:
 	return status;
 }
 
-LTTNG_HIDDEN
 enum lttng_event_rule_status lttng_event_rule_uprobe_get_location(
 		const struct lttng_event_rule *rule,
 		const struct lttng_userspace_probe_location **location)

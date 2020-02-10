@@ -11,6 +11,7 @@
 #include "lttng/event-rule/event-rule-kprobe.h"
 #include "lttng/event-rule/event-rule-kprobe-internal.h"
 #include "lttng/event-rule/event-rule-tracepoint.h"
+#include "lttng/event-rule/event-rule-uprobe.h"
 #include "lttng/trigger/trigger-internal.h"
 
 #ifdef LTTNG_EMBED_HELP
@@ -136,6 +137,59 @@ end:
 }
 
 static
+void print_event_rule_uprobe(const struct lttng_event_rule *event_rule)
+{
+	enum lttng_event_rule_status event_rule_status;
+	const char *name;
+	const struct lttng_userspace_probe_location *location;
+	enum lttng_userspace_probe_location_type userspace_probe_location_type;
+
+	assert(lttng_event_rule_get_type(event_rule) == LTTNG_EVENT_RULE_TYPE_UPROBE);
+
+	event_rule_status = lttng_event_rule_uprobe_get_name(event_rule, &name);
+	if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+		fprintf(stderr, "Failed to get uprobe event rule's name.\n");
+		goto end;
+	}
+
+	event_rule_status = lttng_event_rule_uprobe_get_location(event_rule, &location);
+	if (event_rule_status != LTTNG_EVENT_RULE_STATUS_OK) {
+		fprintf(stderr, "Failed to get uprobe event rule's location.\n");
+		goto end;
+	}
+
+	printf("    rule: %s (type: userspace probe, location: ", name);
+
+	userspace_probe_location_type =
+		lttng_userspace_probe_location_get_type(location);
+
+	switch (userspace_probe_location_type) {
+	case LTTNG_USERSPACE_PROBE_LOCATION_TYPE_FUNCTION:
+	{
+		const char *binary_path, *function_name;
+
+		binary_path = lttng_userspace_probe_location_function_get_binary_path(location);
+		function_name = lttng_userspace_probe_location_function_get_function_name(location);
+
+		printf("%s:%s", binary_path, function_name);
+		break;
+	}
+
+	case LTTNG_USERSPACE_PROBE_LOCATION_TYPE_TRACEPOINT:
+		printf("SDT not implemented yet");
+		break;
+
+	default:
+		abort();
+	}
+
+	printf(")\n");
+
+end:
+	return;
+}
+
+static
 void print_event_rule(const struct lttng_event_rule *event_rule)
 {
 	enum lttng_event_rule_type event_rule_type =
@@ -148,6 +202,10 @@ void print_event_rule(const struct lttng_event_rule *event_rule)
 
 	case LTTNG_EVENT_RULE_TYPE_KPROBE:
 		print_event_rule_kprobe(event_rule);
+		break;
+
+	case LTTNG_EVENT_RULE_TYPE_UPROBE:
+		print_event_rule_uprobe(event_rule);
 		break;
 
 	default:
