@@ -770,6 +770,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 	int ret = LTTNG_OK;
 	int need_tracing_session = 1;
 	int need_domain;
+	int need_consumerd = 1;
 
 	DBG("Processing client command %d", cmd_ctx->lsm.cmd_type);
 
@@ -793,8 +794,6 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 	case LTTNG_SET_SESSION_SHM_PATH:
 	case LTTNG_REGENERATE_METADATA:
 	case LTTNG_REGENERATE_STATEDUMP:
-	case LTTNG_REGISTER_TRIGGER:
-	case LTTNG_UNREGISTER_TRIGGER:
 	case LTTNG_ROTATE_SESSION:
 	case LTTNG_ROTATION_GET_INFO:
 	case LTTNG_ROTATION_SET_SCHEDULE:
@@ -805,6 +804,17 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 		break;
 	default:
 		need_domain = 1;
+	}
+
+	/* Needs a functioning consumerd */
+	switch (cmd_ctx->lsm.cmd_type) {
+	case LTTNG_REGISTER_TRIGGER:
+	case LTTNG_UNREGISTER_TRIGGER:
+		need_consumerd = 0;
+		break;
+	default:
+		need_consumerd = 1;
+		break;
 	}
 
 	if (config.no_kernel && need_domain
@@ -847,6 +857,7 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 	case LTTNG_DATA_PENDING:
 	case LTTNG_ROTATE_SESSION:
 	case LTTNG_ROTATION_GET_INFO:
+	case LTTNG_REGISTER_TRIGGER:
 	case LTTNG_LIST_TRIGGERS:
 		break;
 	default:
@@ -947,7 +958,8 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 		}
 
 		/* Consumer is in an ERROR state. Report back to client */
-		if (uatomic_read(&kernel_consumerd_state) == CONSUMER_ERROR) {
+		if (need_consumerd && uatomic_read(&kernel_consumerd_state) ==
+						      CONSUMER_ERROR) {
 			ret = LTTNG_ERR_NO_KERNCONSUMERD;
 			goto error;
 		}
@@ -998,8 +1010,10 @@ static int process_client_msg(struct command_ctx *cmd_ctx, int *sock,
 			ret = LTTNG_ERR_NO_UST;
 			goto error;
 		}
+
 		/* Consumer is in an ERROR state. Report back to client */
-		if (uatomic_read(&ust_consumerd_state) == CONSUMER_ERROR) {
+		if (need_consumerd && uatomic_read(&ust_consumerd_state) ==
+						      CONSUMER_ERROR) {
 			ret = LTTNG_ERR_NO_USTCONSUMERD;
 			goto error;
 		}
