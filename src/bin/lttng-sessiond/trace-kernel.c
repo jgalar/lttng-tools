@@ -648,7 +648,7 @@ enum lttng_error_code trace_kernel_init_trigger_from_event_rule(const struct ltt
 		break;
 	case LTTNG_EVENT_RULE_TYPE_SYSCALL:
 		kernel_trigger->instrumentation = LTTNG_KERNEL_SYSCALL;
-		(void) lttng_event_rule_tracepoint_get_pattern(rule, &name);
+		(void) lttng_event_rule_syscall_get_pattern(rule, &name);
 		ret = LTTNG_OK;
 		break;
 	default:
