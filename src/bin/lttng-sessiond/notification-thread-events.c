@@ -2498,6 +2498,8 @@ int handle_notification_thread_command_register_trigger(
 	const char* trigger_name;
 	bool free_trigger = true;
 
+	assert(trigger->creds.set);
+
 	rcu_read_lock();
 
 	/* Set the trigger's key */

@@ -88,6 +88,9 @@ int subscribe_session_consumed_size_rotation(struct ltt_session *session, uint64
 		goto end;
 	}
 
+	lttng_trigger_set_credentials(
+			session->rotate_trigger, session->uid, session->gid);
+
 	nc_status = lttng_notification_channel_subscribe(
 			rotate_notification_channel, session->rotate_condition);
 	if (nc_status != LTTNG_NOTIFICATION_CHANNEL_STATUS_OK) {
