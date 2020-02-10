@@ -7,7 +7,11 @@
 
 #include <lttng/trigger/trigger-internal.h>
 #include <lttng/condition/condition-internal.h>
+#include <lttng/condition/event-rule.h>
+#include <lttng/condition/buffer-usage.h>
+#include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/action/action-internal.h>
+#include <lttng/domain.h>
 #include <common/error.h>
 #include <common/dynamic-array.h>
 #include <assert.h>
@@ -691,4 +695,53 @@ void lttng_trigger_put(struct lttng_trigger *trigger)
 	}
 
 	urcu_ref_put(&trigger->ref , trigger_destroy_ref);
+}
+
+LTTNG_HIDDEN
+enum lttng_domain_type lttng_trigger_get_underlying_domain_type_restriction(
+		const struct lttng_trigger *trigger)
+{
+	enum lttng_domain_type type = LTTNG_DOMAIN_NONE;
+	const struct lttng_event_rule *event_rule;
+	enum lttng_condition_status c_status;
+	enum lttng_condition_type c_type;
+
+	assert(trigger);
+	assert(trigger->condition);
+	c_type = lttng_condition_get_type(trigger->condition);
+	if (c_type == LTTNG_CONDITION_TYPE_UNKNOWN) {
+		assert(0);
+	}
+
+	switch (c_type) {
+	case LTTNG_CONDITION_TYPE_SESSION_CONSUMED_SIZE:
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
+	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
+		type = LTTNG_DOMAIN_NONE;
+		break;
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+		c_status = lttng_condition_event_rule_get_rule(
+				trigger->condition, &event_rule);
+		if (c_status != LTTNG_CONDITION_STATUS_OK) {
+			/* The condition object is invalid */
+			assert(0);
+		}
+
+		type = lttng_event_rule_get_domain_type(event_rule);
+		break;
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_HIGH:
+	case LTTNG_CONDITION_TYPE_BUFFER_USAGE_LOW:
+		c_status = lttng_condition_buffer_usage_get_domain_type(
+				trigger->condition, &type);
+		if (c_status != LTTNG_CONDITION_STATUS_OK) {
+			/* The condition object is invalid */
+			assert(0);
+		}
+		break;
+	default:
+		type = LTTNG_DOMAIN_NONE;
+		break;
+	}
+
+	return type;
 }

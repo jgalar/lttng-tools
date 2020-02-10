@@ -154,4 +154,12 @@ LTTNG_HIDDEN
 bool lttng_trigger_is_ready_to_fire(
 		struct lttng_trigger *trigger);
 
+/*
+ * Return the type of any uderlying domain requirement. If no particular
+ * requirement is needed return LTTNG_DOMAIN_NONE.
+ */
+LTTNG_HIDDEN
+enum lttng_domain_type lttng_trigger_get_underlying_domain_type_restriction(
+		const struct lttng_trigger *trigger);
+
 #endif /* LTTNG_TRIGGER_INTERNAL_H */

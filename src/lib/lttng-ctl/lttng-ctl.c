@@ -2929,6 +2929,7 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 	struct lttng_trigger *reply_trigger = NULL;
 	bool send_fd = false;
 	int fd_to_send;
+	enum lttng_domain_type domain_type;
 
 	lttng_dynamic_buffer_init(&buffer);
 	if (!trigger) {
@@ -2941,6 +2942,9 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 		goto end;
 	}
 
+	domain_type = lttng_trigger_get_underlying_domain_type_restriction(
+			trigger);
+
 	ret = lttng_trigger_serialize(trigger, &buffer, &fd_to_send);
 	if (ret < 0) {
 		ret = -LTTNG_ERR_UNK;
@@ -2951,6 +2955,7 @@ int lttng_register_trigger(struct lttng_trigger *trigger)
 
 	memset(&lsm, 0, sizeof(lsm));
 	lsm.cmd_type = LTTNG_REGISTER_TRIGGER;
+	lsm.domain.type = domain_type;
 	lsm.u.trigger.length = (uint32_t) buffer.size;
 	reply_ret = lttng_ctl_ask_sessiond_fds_varlen_no_cmd_header(&lsm,
 			send_fd ? &fd_to_send : NULL,
