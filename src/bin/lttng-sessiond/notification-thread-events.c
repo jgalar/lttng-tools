@@ -3930,7 +3930,13 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 		 * question on the trigger lifetime and when we can remove a
 		 * trigger. How to guarantee that all event with the token idea
 		 * have be processed? Do we want to provide this guarantee?
+		 *
+		 * Update: I have encountered this when using a trigger on
+		 * sched_switch and then removing it. The frequency is quite
+		 * high hence we en up exactly in the mentionned scenario.
+		 * AFAIK this might be the best way to handle this.
 		 */
+		ret = 0;
 		goto end_unlock;
 	}
 	element = caa_container_of(node,

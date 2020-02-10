@@ -590,7 +590,7 @@ static int handle_trigger_event_pipe(int fd,
 
 	ret = handle_notification_thread_event(state, fd, domain);
 	if (ret) {
-		ERR("[notification-thread] Consumer sample handling error occurred");
+		ERR("[notification-thread] Event sample handling error occurred for fd: %d", fd);
 		ret = -1;
 		goto end;
 	}
