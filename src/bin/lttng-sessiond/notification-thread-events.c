@@ -2734,7 +2734,7 @@ int handle_notification_thread_command_unregister_trigger(
 		}
 	}
 
-	if (lttng_action_get_type(action) == LTTNG_ACTION_TYPE_NOTIFY) {
+	if (action_is_notify(action)) {
 		/*
 		 * Remove and release the client list from
 		 * notification_trigger_clients_ht.
