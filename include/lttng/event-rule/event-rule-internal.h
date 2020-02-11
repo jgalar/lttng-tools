@@ -10,6 +10,7 @@
 
 #include <common/macros.h>
 #include <lttng/domain.h>
+#include <lttng/event.h>
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/lttng-error.h>
 #include <stdbool.h>
@@ -40,6 +41,8 @@ typedef const struct lttng_filter_bytecode *(
 		const struct lttng_event_rule *event_rule);
 typedef struct lttng_event_exclusion *(*event_rule_generate_exclusions_cb)(
 		const struct lttng_event_rule *event_rule);
+typedef struct lttng_event *(*event_rule_generate_lttng_event_cb)(
+		const struct lttng_event_rule *event_rule);
 
 struct lttng_event_rule {
 	struct urcu_ref ref;
@@ -52,6 +55,7 @@ struct lttng_event_rule {
 	event_rule_get_filter_cb get_filter;
 	event_rule_get_filter_bytecode_cb get_filter_bytecode;
 	event_rule_generate_exclusions_cb generate_exclusions;
+	event_rule_generate_lttng_event_cb generate_lttng_event;
 };
 
 struct lttng_event_rule_comm {
@@ -119,5 +123,19 @@ struct lttng_event_exclusion *lttng_event_rule_generate_exclusions(
 
 LTTNG_HIDDEN
 const char *lttng_event_rule_type_str(enum lttng_event_rule_type type);
+
+/*
+ * This is compatibility helper, allowing us to generate a sessiond side (not
+ * communication) struct lttng_event object. This facilitate integration with
+ * current code.
+ * Caller OWN the returned object
+ */
+LTTNG_HIDDEN
+struct lttng_event *lttng_event_rule_generate_lttng_event(
+		const struct lttng_event_rule *rule);
+
+/* Quick helper to test if the event rule apply to an agent domain */
+LTTNG_HIDDEN
+bool lttng_event_rule_is_agent(const struct lttng_event_rule *rule);
 
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

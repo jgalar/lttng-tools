@@ -266,6 +266,36 @@ struct lttng_event_exclusion *lttng_event_rule_generate_exclusions(
 }
 
 LTTNG_HIDDEN
+struct lttng_event *lttng_event_rule_generate_lttng_event(
+		const struct lttng_event_rule *rule)
+{
+	assert(rule->generate_lttng_event);
+	return rule->generate_lttng_event(rule);
+}
+
+LTTNG_HIDDEN
+bool lttng_event_rule_is_agent(const struct lttng_event_rule *rule)
+{
+	bool ret = false;
+	enum lttng_domain_type type = lttng_event_rule_get_domain_type(rule);
+
+	switch (type) {
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+		ret = true;
+		break;
+	case LTTNG_DOMAIN_UST:
+	case LTTNG_DOMAIN_KERNEL:
+		ret = false;
+		break;
+	default:
+		assert(0);
+	};
+
+	return ret;
+}
+
 const char *lttng_event_rule_type_str(enum lttng_event_rule_type type)
 {
 	switch (type) {

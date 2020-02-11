@@ -13,6 +13,7 @@
 #include <common/runas.h>
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/tracepoint-internal.h>
+#include <lttng/event.h>
 
 #define IS_TRACEPOINT_EVENT_RULE(rule) \
 	(lttng_event_rule_get_type(rule) == LTTNG_EVENT_RULE_TYPE_TRACEPOINT)
@@ -540,6 +541,35 @@ static void destroy_lttng_exclusions_element(void *ptr)
 	free(ptr);
 }
 
+static struct lttng_event *lttng_event_rule_tracepoint_generate_lttng_event(
+		const struct lttng_event_rule *rule)
+{
+	const struct lttng_event_rule_tracepoint *tracepoint;
+	struct lttng_event *local_event = NULL;
+	struct lttng_event *event = NULL;
+
+	tracepoint = container_of(
+			rule, const struct lttng_event_rule_tracepoint, parent);
+
+	local_event = zmalloc(sizeof(*local_event));
+	if (!local_event) {
+		goto error;
+	}
+
+	local_event->type = LTTNG_EVENT_TRACEPOINT;
+	(void) strncpy(local_event->name, tracepoint->pattern,
+			sizeof(local_event->name) - 1);
+	local_event->name[sizeof(local_event->name) - 1] = '\0';
+	local_event->loglevel_type = tracepoint->loglevel.type;
+	local_event->loglevel = tracepoint->loglevel.value;
+
+	event = local_event;
+	local_event = NULL;
+error:
+	free(local_event);
+	return event;
+}
+
 struct lttng_event_rule *lttng_event_rule_tracepoint_create(
 		enum lttng_domain_type domain_type)
 {
@@ -569,6 +599,8 @@ struct lttng_event_rule *lttng_event_rule_tracepoint_create(
 			lttng_event_rule_tracepoint_get_internal_filter_bytecode;
 	tp_rule->parent.generate_exclusions =
 			lttng_event_rule_tracepoint_generate_exclusions;
+	tp_rule->parent.generate_lttng_event =
+			lttng_event_rule_tracepoint_generate_lttng_event;
 
 	tp_rule->domain = domain_type;
 	tp_rule->loglevel.type = LTTNG_EVENT_LOGLEVEL_ALL;
