@@ -8,16 +8,17 @@
 #ifndef NOTIFICATION_THREAD_H
 #define NOTIFICATION_THREAD_H
 
-#include <urcu/list.h>
-#include <urcu.h>
-#include <urcu/rculfhash.h>
-#include <lttng/trigger/trigger.h>
-#include <common/pipe.h>
+#include "action-executor.h"
+#include "thread.h"
 #include <common/compat/poll.h>
 #include <common/hashtable/hashtable.h>
+#include <common/pipe.h>
+#include <lttng/trigger/trigger.h>
 #include <pthread.h>
 #include <semaphore.h>
-#include "thread.h"
+#include <urcu.h>
+#include <urcu/list.h>
+#include <urcu/rculfhash.h>
 
 typedef uint64_t notification_client_id;
 
@@ -246,6 +247,7 @@ struct notification_thread_state {
 		uint64_t name_offset;
 	} trigger_id;
 	notification_client_id next_notification_client_id;
+	struct action_executor *executor;
 };
 
 /* notification_thread_data takes ownership of the channel monitor pipes. */

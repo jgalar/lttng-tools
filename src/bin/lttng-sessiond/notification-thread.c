@@ -423,6 +423,9 @@ void fini_thread_state(struct notification_thread_state *state)
 		notification_channel_socket_destroy(
 				state->notification_channel_socket);
 	}
+	if (state->executor) {
+		action_executor_destroy(state->executor);
+	}
 	lttng_poll_clean(&state->events);
 }
 
@@ -530,6 +533,10 @@ int init_thread_state(struct notification_thread_handle *handle,
 	state->triggers_by_name_ht = cds_lfht_new(DEFAULT_HT_SIZE,
 			1, 0, CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING, NULL);
 	if (!state->triggers_by_name_ht) {
+		goto error;
+	}
+	state->executor = action_executor_create(handle);
+	if (!state->executor) {
 		goto error;
 	}
 	mark_thread_as_ready(handle);
