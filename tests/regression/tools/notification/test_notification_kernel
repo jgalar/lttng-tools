@@ -83,8 +83,8 @@ function test_buffer_usage_notification
 	kernel_event_generator $TESTAPP_STATE_PATH &
 	APP_PID=$!
 
-	$CURDIR/notification 2 LTTNG_DOMAIN_KERNEL $SESSION_NAME $CHANNEL_NAME \
-		$APP_PID $TESTAPP_STATE_PATH ${consumerd_pipe[@]}
+	$CURDIR/notification 2 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH \
+		$SESSION_NAME $CHANNEL_NAME ${consumerd_pipe[@]}
 
 	destroy_lttng_session_notap $SESSION_NAME
 
