@@ -16,8 +16,10 @@ TESTPOINT=$(readlink -f ${CURDIR}/.libs/libpause_consumer.so)
 
 
 TESTAPP_PATH="$TESTDIR/utils/testapp"
-TESTAPP_NAME="gen-ust-events"
-TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
+
+GEN_UST_EVENTS_TESTAPP_NAME="gen-ust-events"
+GEN_UST_EVENTS_TESTAPP_BIN="$TESTAPP_PATH/$GEN_UST_EVENTS_TESTAPP_NAME/$GEN_UST_EVENTS_TESTAPP_NAME"
+
 TESTAPP_STATE_PATH=$(mktemp -u "$TMPDIR/application_state.XXXXXXXXXX")
 
 NR_ITER=5
@@ -41,7 +43,8 @@ function ust_event_generator_toggle_state
 }
 function ust_event_generator
 {
-	state_file=$1
+	test_app=$1
+	state_file=$2
 	ust_event_generator_suspended=0
 	trap ust_event_generator_toggle_state SIGUSR1
 
@@ -53,43 +56,55 @@ function ust_event_generator
 			if [[ -f $state_file ]]; then
 				rm -rf $state_file 2> /dev/null
 			fi
-			taskset  -c 0 $TESTAPP_BIN -i $NR_ITER -w $NR_USEC_WAIT > /dev/null 2>&1
+			taskset  -c 0 $test_app -i $NR_ITER -w $NR_USEC_WAIT > /dev/null 2>&1
 		fi
 	done
 }
 
-consumerd_pipe=()
-file_sync_after_first_event=$(mktemp -u)
-event_name="tp:tptest"
+function test_basic_error_path
+{
+	$CURDIR/notification 1 LTTNG_DOMAIN_UST
+}
+
+function test_buffer_usage_notification
+{
+	consumerd_pipe=()
+	file_sync_after_first_event=$(mktemp -u)
+	event_name="tp:tptest"
+
+	create_lttng_session_notap $SESSION_NAME $TRACE_PATH
+
+	enable_ust_lttng_channel_notap $SESSION_NAME $CHANNEL_NAME --subbuf-size=$PAGE_SIZE
+	enable_ust_lttng_event_notap $SESSION_NAME $event_name $CHANNEL_NAME
+
+	#This is needed since the testpoint create a pipe with the consumer type suffixed
+	for f in "$TESTPOINT_BASE_PATH"*; do
+		consumerd_pipe+=("$f")
+	done
+
+
+	ust_event_generator $GEN_UST_EVENTS_TESTAPP_BIN $TESTAPP_STATE_PATH &
+	APP_PID=$!
+
+	$CURDIR/notification 2 LTTNG_DOMAIN_UST $SESSION_NAME $CHANNEL_NAME $APP_PID $TESTAPP_STATE_PATH ${consumerd_pipe[@]}
+
+	destroy_lttng_session_notap $SESSION_NAME
+
+	# On ungraceful kill the app is cleaned up via the full_cleanup call
+	# Suppress kill message
+	kill -9 $APP_PID
+	wait $APP_PID 2> /dev/null
+
+	# Just in case cleanup
+	rm -rf $TRACE_PATH
+}
 
 LTTNG_SESSIOND_ENV_VARS="LTTNG_TESTPOINT_ENABLE=1 CONSUMER_PAUSE_PIPE_PATH=${TESTPOINT_PIPE_PATH} LD_PRELOAD=${TESTPOINT}"
 start_lttng_sessiond_notap
 
-create_lttng_session_notap $SESSION_NAME $TRACE_PATH
+test_basic_error_path
+test_buffer_usage_notification
 
-enable_ust_lttng_channel_notap $SESSION_NAME $CHANNEL_NAME --subbuf-size=$PAGE_SIZE
-enable_ust_lttng_event_notap $SESSION_NAME $event_name $CHANNEL_NAME
-
-#This is needed since the testpoint create a pipe with the consumer type suffixed
-for f in "$TESTPOINT_BASE_PATH"*; do
-	consumerd_pipe+=("$f")
-done
-
-
-ust_event_generator $TESTAPP_STATE_PATH &
-APP_PID=$!
-
-$CURDIR/notification LTTNG_DOMAIN_UST $SESSION_NAME $CHANNEL_NAME $APP_PID $TESTAPP_STATE_PATH ${consumerd_pipe[@]}
-
-destroy_lttng_session_notap $SESSION_NAME
 stop_lttng_sessiond_notap
 
-# On ungraceful kill the app is cleaned up via the full_cleanup call
-# Suppress kill message
-kill -9 $APP_PID
-wait $APP_PID 2> /dev/null
-
 rm -rf $TMPDIR
-
-# Just in case cleanup
-rm -rf $TRACE_PATH

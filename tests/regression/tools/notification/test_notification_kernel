@@ -58,46 +58,60 @@ function kernel_event_generator
 	done
 }
 
-function kernel_test
+function test_basic_error_path
 {
-	local consumerd_pipe=()
+	$CURDIR/notification 1 LTTNG_DOMAIN_KERNEL
+}
+
+function test_buffer_usage_notification
+{
+	local consumerd_pipe=$1
 	local event_name="lttng_test_filter_event"
-
-	modprobe lttng-test
-
-	LTTNG_SESSIOND_ENV_VARS="LTTNG_TESTPOINT_ENABLE=1 CONSUMER_PAUSE_PIPE_PATH=${TESTPOINT_PIPE_PATH} LD_PRELOAD=${TESTPOINT}"
-	start_lttng_sessiond_notap
 
 	create_lttng_session_notap $SESSION_NAME $TRACE_PATH
 
-	lttng_enable_kernel_channel_notap $SESSION_NAME $CHANNEL_NAME --subbuf-size=$PAGE_SIZE
+	lttng_enable_kernel_channel_notap $SESSION_NAME $CHANNEL_NAME \
+		--subbuf-size=$PAGE_SIZE
 	enable_kernel_lttng_event_notap $SESSION_NAME $event_name $CHANNEL_NAME
-
-	#This is needed since the testpoint create a pipe with the consumer type suffixed
-	for f in "$TESTPOINT_BASE_PATH"*; do
-		consumerd_pipe+=("$f")
-	done
 
 	kernel_event_generator $TESTAPP_STATE_PATH &
 	APP_PID=$!
 
-	$CURDIR/notification LTTNG_DOMAIN_KERNEL $SESSION_NAME $CHANNEL_NAME $APP_PID $TESTAPP_STATE_PATH ${consumerd_pipe[@]}
+	$CURDIR/notification 2 LTTNG_DOMAIN_KERNEL $SESSION_NAME $CHANNEL_NAME \
+		$APP_PID $TESTAPP_STATE_PATH ${consumerd_pipe[@]}
 
 	destroy_lttng_session_notap $SESSION_NAME
-	stop_lttng_sessiond_notap
 
 	kill -9 $APP_PID
 	wait $APP_PID 2> /dev/null
-
-
-	rmmod lttng-test
-
-	rm -rf ${consumerd_pipe[@]} 2> /dev/null
 }
 
 if [ "$(id -u)" == "0" ]; then
+	consumerd_pipe=()
+
 	validate_lttng_modules_present
-	kernel_test
+
+	# This is needed since the testpoint create a pipe with the consumer
+	# type suffixed.
+	for f in "$TESTPOINT_BASE_PATH"*; do
+		consumerd_pipe+=("$f")
+	done
+
+	modprobe lttng-test
+
+	LTTNG_SESSIOND_ENV_VARS="LTTNG_TESTPOINT_ENABLE=1
+	CONSUMER_PAUSE_PIPE_PATH=${TESTPOINT_PIPE_PATH}
+	LD_PRELOAD=${TESTPOINT}"
+
+	start_lttng_sessiond_notap
+
+	test_basic_error_path
+	test_buffer_usage_notification $consumerd_pipe
+
+	stop_lttng_sessiond_notap
+	rmmod lttng-test
+
+	rm -rf ${consumerd_pipe[@]} 2> /dev/null
 else
 	# Kernel tests are skipped.
 	plan_tests $NUM_TESTS
