@@ -1692,7 +1692,8 @@ int cmd_create_trigger(int argc, const char **argv)
 
 	ret = lttng_register_trigger(trigger);
 	if (ret) {
-		fprintf(stderr, "Failed to register trigger.\n");
+		fprintf(stderr, "Failed to register trigger: %s.\n",
+			lttng_strerror(ret));
 		goto error;
 	}
 
