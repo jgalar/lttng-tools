@@ -65,7 +65,7 @@ struct ltt_kernel_token_event_rule {
 	struct lttng_event_rule *event_rule;
 	struct cds_list_head list;
 	uint64_t token;
-	struct lttng_filter_bytecode *filter;
+	const struct lttng_filter_bytecode *filter;
 	struct lttng_userspace_probe_location *userspace_probe_location;
 };
 

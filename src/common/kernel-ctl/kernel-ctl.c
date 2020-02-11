@@ -432,7 +432,7 @@ int kernctl_create_trigger(int group_fd, struct lttng_kernel_trigger *trigger)
 		return LTTNG_IOCTL_NO_CHECK(group_fd, LTTNG_KERNEL_TRIGGER_CREATE, trigger);
 }
 
-int kernctl_filter(int fd, struct lttng_filter_bytecode *filter)
+int kernctl_filter(int fd, const struct lttng_filter_bytecode *filter)
 {
 	struct lttng_kernel_filter_bytecode *kb;
 	uint32_t len;

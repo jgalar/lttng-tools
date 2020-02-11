@@ -49,6 +49,8 @@ static void update_agent_app(struct agent_app *app)
 {
 	struct ltt_session *session, *stmp;
 	struct ltt_session_list *list;
+	struct agent *trigger_agent;
+	struct lttng_ht_iter iter;
 
 	list = session_get_list();
 	assert(list);
@@ -74,6 +76,14 @@ static void update_agent_app(struct agent_app *app)
 		session_put(session);
 	}
 	session_unlock_list();
+
+	/* Do we need more locking here? maybe against trigger add? */
+	rcu_read_lock();
+	cds_lfht_for_each_entry (trigger_agents_ht_by_domain->ht, &iter.iter,
+			trigger_agent, node.node) {
+		agent_update(trigger_agent, app->sock->fd);
+	}
+	rcu_read_unlock;
 }
 
 /*

@@ -361,7 +361,7 @@ void lttng_trigger_set_key(struct lttng_trigger *trigger, uint64_t key)
 }
 
 LTTNG_HIDDEN
-uint64_t lttng_trigger_get_key(struct lttng_trigger *trigger)
+uint64_t lttng_trigger_get_key(const struct lttng_trigger *trigger)
 {
 	assert(trigger);
 

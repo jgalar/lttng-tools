@@ -33,7 +33,7 @@ int kernctl_create_trigger_group_notification_fd(int fd);
 int kernctl_create_trigger(int fd, struct lttng_kernel_trigger *trigger);
 
 /* Apply on event FD */
-int kernctl_filter(int fd, struct lttng_filter_bytecode *filter);
+int kernctl_filter(int fd, const struct lttng_filter_bytecode *filter);
 int kernctl_add_callsite(int fd, struct lttng_kernel_event_callsite *callsite);
 
 int kernctl_tracepoint_list(int fd);

@@ -23,6 +23,7 @@ struct notification_thread_handle *notification_thread_handle;
 pthread_mutex_t notification_trigger_tokens_ht_lock = PTHREAD_MUTEX_INITIALIZER;
 
 struct lttng_ht *agent_apps_ht_by_sock = NULL;
+struct lttng_ht *trigger_agents_ht_by_domain = NULL;
 
 struct lttng_ht *registered_ust_event_rule = NULL;
 

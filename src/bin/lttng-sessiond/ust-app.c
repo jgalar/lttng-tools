@@ -41,6 +41,7 @@
 #include "lttng-sessiond.h"
 #include "notification-thread-commands.h"
 #include "rotate.h"
+#include "event.h"
 
 struct lttng_ht *ust_app_ht;
 struct lttng_ht *ust_app_ht_by_sock;
@@ -1240,35 +1241,12 @@ error:
 }
 
 /*
- * Allocate a filter and copy the given original filter.
- *
- * Return allocated filter or NULL on error.
- */
-static struct lttng_filter_bytecode *copy_filter_bytecode(
-		struct lttng_filter_bytecode *orig_f)
-{
-	struct lttng_filter_bytecode *filter = NULL;
-
-	/* Copy filter bytecode */
-	filter = zmalloc(sizeof(*filter) + orig_f->len);
-	if (!filter) {
-		PERROR("zmalloc alloc filter bytecode");
-		goto error;
-	}
-
-	memcpy(filter, orig_f, sizeof(*filter) + orig_f->len);
-
-error:
-	return filter;
-}
-
-/*
  * Create a liblttng-ust filter bytecode from given bytecode.
  *
  * Return allocated filter or NULL on error.
  */
 static struct lttng_ust_filter_bytecode *create_ust_bytecode_from_bytecode(
-		struct lttng_filter_bytecode *orig_f)
+		const struct lttng_filter_bytecode *orig_f)
 {
 	struct lttng_ust_filter_bytecode *filter = NULL;
 
@@ -1443,8 +1421,9 @@ error:
 /*
  * Set the filter on the tracer.
  */
-static
-int set_ust_filter(struct ust_app *app, struct lttng_filter_bytecode *bytecode, struct lttng_ust_object_data *ust_object)
+static int set_ust_filter(struct ust_app *app,
+		const struct lttng_filter_bytecode *bytecode,
+		struct lttng_ust_object_data *ust_object)
 {
 	int ret;
 	struct lttng_ust_filter_bytecode *ust_bytecode = NULL;
@@ -1860,33 +1839,47 @@ void init_ust_trigger_from_event_rule(const struct lttng_event_rule *rule, struc
 
 	memset(trigger, 0, sizeof(*trigger));
 
-	status = lttng_event_rule_tracepoint_get_pattern(rule, &pattern);
-	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
-		/* At this point this is a fatal error */
-		assert(0);
-	}
-
-	status = lttng_event_rule_tracepoint_get_loglevel_type(rule, &loglevel_type);
-	if (status != LTTNG_EVENT_RULE_STATUS_OK) {
-		/* At this point this is a fatal error */
-		assert(0);
-	}
-
-	switch (loglevel_type) {
-	case LTTNG_EVENT_LOGLEVEL_ALL:
+	if (lttng_event_rule_is_agent(rule)) {
+		/*
+		 * Special event for agents
+		 * The actual meat of the event is in the filter that will be
+		 * attached later on.
+		 * Set the default values for the agent event.
+		 */
+		pattern = event_get_default_agent_ust_name(lttng_event_rule_get_domain_type(rule));
+		loglevel = 0;
 		ust_loglevel_type = LTTNG_UST_LOGLEVEL_ALL;
-		break;
-	case LTTNG_EVENT_LOGLEVEL_RANGE:
-		ust_loglevel_type = LTTNG_UST_LOGLEVEL_RANGE;
-		break;
-	case LTTNG_EVENT_LOGLEVEL_SINGLE:
-		ust_loglevel_type = LTTNG_UST_LOGLEVEL_SINGLE;
-		break;
-	}
+	} else {
+		status = lttng_event_rule_tracepoint_get_pattern(rule, &pattern);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			/* At this point this is a fatal error */
+			assert(0);
+		}
 
-	if (loglevel_type != LTTNG_EVENT_LOGLEVEL_ALL) {
-		status = lttng_event_rule_tracepoint_get_loglevel(rule, &loglevel);
-		assert(status == LTTNG_EVENT_RULE_STATUS_OK);
+		status = lttng_event_rule_tracepoint_get_loglevel_type(
+				rule, &loglevel_type);
+		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
+			/* At this point this is a fatal error */
+			assert(0);
+		}
+
+		switch (loglevel_type) {
+		case LTTNG_EVENT_LOGLEVEL_ALL:
+			ust_loglevel_type = LTTNG_UST_LOGLEVEL_ALL;
+			break;
+		case LTTNG_EVENT_LOGLEVEL_RANGE:
+			ust_loglevel_type = LTTNG_UST_LOGLEVEL_RANGE;
+			break;
+		case LTTNG_EVENT_LOGLEVEL_SINGLE:
+			ust_loglevel_type = LTTNG_UST_LOGLEVEL_SINGLE;
+			break;
+		}
+
+		if (loglevel_type != LTTNG_EVENT_LOGLEVEL_ALL) {
+			status = lttng_event_rule_tracepoint_get_loglevel(
+					rule, &loglevel);
+			assert(status == LTTNG_EVENT_RULE_STATUS_OK);
+		}
 	}
 
 	trigger->instrumentation = LTTNG_UST_TRACEPOINT;

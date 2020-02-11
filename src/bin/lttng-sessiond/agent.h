@@ -24,11 +24,15 @@
  */
 extern struct lttng_ht *agent_apps_ht_by_sock;
 
+/*
+ * Hash table that contains the trigger agents by domain */
+extern struct lttng_ht *trigger_agents_ht_by_domain;
+
 struct agent_ht_key {
 	const char *name;
 	int loglevel_value;
 	enum lttng_loglevel_type loglevel_type;
-	char *filter_expression;
+	const char *filter_expression;
 };
 
 /*
@@ -87,6 +91,12 @@ struct agent_event {
 	struct lttng_filter_bytecode *filter;
 	char *filter_expression;
 	struct lttng_event_exclusion *exclusion;
+
+	/*
+	 * Multiple triggers and events can use this agent event.
+	 * The event can only be disabled when the count is zero.
+	 */
+	unsigned int user_refcount;
 };
 
 /*
@@ -133,8 +143,10 @@ struct agent_event *agent_create_event(const char *name,
 void agent_add_event(struct agent_event *event, struct agent *agt);
 
 struct agent_event *agent_find_event(const char *name,
-		enum lttng_loglevel_type loglevel_type, int loglevel_value,
-		char *filter_expression, struct agent *agt);
+		enum lttng_loglevel_type loglevel_type,
+		int loglevel_value,
+		const char *filter_expression,
+		struct agent *agt);
 void agent_find_events_by_name(const char *name, struct agent *agt,
 		struct lttng_ht_iter* iter);
 void agent_event_next_duplicate(const char *name,
@@ -166,5 +178,13 @@ int agent_disable_event(struct agent_event *event,
 void agent_update(struct agent *agt, int sock);
 int agent_list_events(struct lttng_event **events,
 		enum lttng_domain_type domain);
+
+struct agent_event *agent_find_event_by_trigger(
+		const struct lttng_trigger *trigger, struct agent *agt);
+
+/* todo: find a better place for this */
+struct agent *trigger_find_agent(enum lttng_domain_type domain_type);
+void trigger_agent_ht_clean(void);
+int trigger_agent_ht_alloc(void);
 
 #endif /* LTTNG_SESSIOND_AGENT_H */

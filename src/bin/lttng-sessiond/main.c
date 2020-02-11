@@ -314,6 +314,9 @@ static void sessiond_cleanup(void)
 
 	pthread_mutex_destroy(&session_list->lock);
 
+	DBG("Cleaning up all trigger agents");
+	trigger_agent_ht_clean();
+
 	DBG("Cleaning up all agent apps");
 	agent_app_ht_clean();
 	DBG("Closing all UST sockets");
@@ -1538,6 +1541,11 @@ int main(int argc, char **argv)
 		goto stop_threads;
 	}
 
+	if (trigger_agent_ht_alloc()) {
+		ERR("Failed to allocate trigger agent hash table");
+		retval = -1;
+		goto stop_threads;
+	}
 	/*
 	 * These actions must be executed as root. We do that *after* setting up
 	 * the sockets path because we MUST make the check for another daemon using

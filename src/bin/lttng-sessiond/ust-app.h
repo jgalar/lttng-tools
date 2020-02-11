@@ -120,7 +120,7 @@ struct ust_app_token_event_rule {
 	uint64_t token;
 	struct lttng_ht_node_u64 node;
 	/* The event_rule object own this pointer */
-	struct lttng_filter_bytecode *filter;
+	const struct lttng_filter_bytecode *filter;
 	/* The event_rule object own this pointer */
 	struct lttng_event_exclusion *exclusion;
 };

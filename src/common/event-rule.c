@@ -244,8 +244,7 @@ enum lttng_error_code lttng_event_rule_populate(struct lttng_event_rule *rule, u
  * Caller DO NOT own the returned object
  */
 LTTNG_HIDDEN
-char *lttng_event_rule_get_filter(
-		struct lttng_event_rule *rule)
+const char *lttng_event_rule_get_filter(const struct lttng_event_rule *rule)
 {
 	assert(rule->get_filter);
 	return rule->get_filter(rule);
@@ -255,8 +254,8 @@ char *lttng_event_rule_get_filter(
  * Caller DO NOT own the returned object
  */
 LTTNG_HIDDEN
-struct lttng_filter_bytecode *lttng_event_rule_get_filter_bytecode(
-		struct lttng_event_rule *rule)
+const struct lttng_filter_bytecode *lttng_event_rule_get_filter_bytecode(
+		const struct lttng_event_rule *rule)
 {
 	assert(rule->get_filter_bytecode);
 	return rule->get_filter_bytecode(rule);
@@ -273,4 +272,35 @@ struct lttng_event_exclusion *lttng_event_rule_generate_exclusions(
 {
 	assert(rule->generate_exclusions);
 	return rule->generate_exclusions(rule);
+}
+
+LTTNG_HIDDEN
+struct lttng_event *lttng_event_rule_generate_lttng_event(
+		const struct lttng_event_rule *rule)
+{
+	assert(rule->generate_lttng_event);
+	return rule->generate_lttng_event(rule);
+}
+
+LTTNG_HIDDEN
+bool lttng_event_rule_is_agent(const struct lttng_event_rule *rule)
+{
+	bool ret = false;
+	enum lttng_domain_type type = lttng_event_rule_get_domain_type(rule);
+
+	switch (type) {
+	case LTTNG_DOMAIN_JUL:
+	case LTTNG_DOMAIN_LOG4J:
+	case LTTNG_DOMAIN_PYTHON:
+		ret = true;
+		break;
+	case LTTNG_DOMAIN_UST:
+	case LTTNG_DOMAIN_KERNEL:
+		ret = false;
+		break;
+	default:
+		assert(0);
+	};
+
+	return ret;
 }
