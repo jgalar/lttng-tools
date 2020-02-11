@@ -394,6 +394,14 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 	}
 
 	/*
+	 * We don't support multiple tracepoint names for now.
+	 */
+	if (strchr(tracepoint_name, ',')) {
+		fprintf(stderr, "Error: multiple tracepoint names are not supported at the moment.\n");
+		goto error;
+	}
+
+	/*
 	 * Update *argc and *argv so our caller can keep parsing what follows.
 	 */
 	consumed_args = argpar_state_get_ingested_orig_args(state);
