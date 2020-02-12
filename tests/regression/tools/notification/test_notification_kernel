@@ -20,8 +20,8 @@ TESTAPP_NAME="gen-ust-events"
 TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 TESTAPP_STATE_PATH=$(mktemp -u "$TMPDIR/application_state.XXXXXXXXXX")
 
-NR_ITER=-1
-NR_USEC_WAIT=5
+SYSCALL_TESTAPP_NAME="gen-syscall-events"
+SYSCALL_TESTAPP_BIN="$TESTAPP_PATH/$SYSCALL_TESTAPP_NAME/$SYSCALL_TESTAPP_NAME"
 
 SESSION_NAME="my_session"
 CHANNEL_NAME="my_channel"
@@ -37,11 +37,23 @@ source $TESTDIR/utils/utils.sh
 function kernel_event_generator_toggle_state
 {
 	kernel_event_generator_suspended=$((kernel_event_generator_suspended==0))
-
 }
+
+function generate_filter_events
+{
+	/bin/echo -n "10" > /proc/lttng-test-filter-event 2> /dev/null
+}
+
+function generate_syscalls
+{
+	# Pass /dev/null so to generate the syscall right away.
+	$SYSCALL_TESTAPP_BIN /dev/null
+}
+
 function kernel_event_generator
 {
-	state_file=$1
+	command_to_run=$1
+	state_file=$2
 	kernel_event_generator_suspended=0
 	trap kernel_event_generator_toggle_state SIGUSR1
 
@@ -53,14 +65,14 @@ function kernel_event_generator
 			if [[ -f $state_file ]]; then
 				rm $state_file 2> /dev/null
 			fi
-			echo -n "1000" > /proc/lttng-test-filter-event 2> /dev/null
+			$command_to_run
 		fi
 	done
 }
 
 function test_basic_error_path
 {
-	kernel_event_generator $TESTAPP_STATE_PATH &
+	kernel_event_generator generate_filter_events $TESTAPP_STATE_PATH &
 	APP_PID=$!
 
 	$CURDIR/notification 1 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
@@ -80,7 +92,7 @@ function test_buffer_usage_notification
 		--subbuf-size=$PAGE_SIZE
 	enable_kernel_lttng_event_notap $SESSION_NAME $event_name $CHANNEL_NAME
 
-	kernel_event_generator $TESTAPP_STATE_PATH &
+	kernel_event_generator generate_filter_events $TESTAPP_STATE_PATH &
 	APP_PID=$!
 
 	$CURDIR/notification 2 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH \
@@ -94,10 +106,21 @@ function test_buffer_usage_notification
 
 function test_kernel_instrumentation_notification
 {
-	kernel_event_generator $TESTAPP_STATE_PATH &
+	kernel_event_generator generate_filter_events $TESTAPP_STATE_PATH &
 	APP_PID=$!
 
 	$CURDIR/notification 4 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
+
+	kill -9 $APP_PID
+	wait $APP_PID 2> /dev/null
+}
+
+function test_kernel_syscall_notification
+{
+	kernel_event_generator generate_syscalls $TESTAPP_STATE_PATH &
+	APP_PID=$!
+
+	$CURDIR/notification 5 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
 
 	kill -9 $APP_PID
 	wait $APP_PID 2> /dev/null
@@ -125,6 +148,7 @@ if [ "$(id -u)" == "0" ]; then
 	test_basic_error_path
 	test_buffer_usage_notification $consumerd_pipe
 	test_kernel_instrumentation_notification
+	test_kernel_syscall_notification
 
 	stop_lttng_sessiond_notap
 	rmmod lttng-test
