@@ -92,6 +92,17 @@ function test_buffer_usage_notification
 	wait $APP_PID 2> /dev/null
 }
 
+function test_kernel_instrumentation_notification
+{
+	kernel_event_generator $TESTAPP_STATE_PATH &
+	APP_PID=$!
+
+	$CURDIR/notification 4 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
+
+	kill -9 $APP_PID
+	wait $APP_PID 2> /dev/null
+}
+
 if [ "$(id -u)" == "0" ]; then
 	consumerd_pipe=()
 
@@ -113,6 +124,7 @@ if [ "$(id -u)" == "0" ]; then
 
 	test_basic_error_path
 	test_buffer_usage_notification $consumerd_pipe
+	test_kernel_instrumentation_notification
 
 	stop_lttng_sessiond_notap
 	rmmod lttng-test
