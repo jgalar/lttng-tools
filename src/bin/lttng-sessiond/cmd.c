@@ -4321,6 +4321,11 @@ static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigge
 		{
 			int fd;
 			struct lttng_userspace_probe_location *location = lttng_event_rule_uprobe_get_location_no_const(event_rule);
+
+			if (sock < 0) {
+				/* Nothing to receive */
+				break;
+			}
 			/*
 			 * Receive the file descriptor to the target binary from
 			 * the client.
@@ -4509,6 +4514,20 @@ int cmd_unregister_trigger(struct command_ctx *cmd_ctx, int sock,
 	}
 
 	lttng_trigger_set_credentials(trigger, cmd_ctx->creds.uid, cmd_ctx->creds.gid);
+
+	/* TODO: forgotting this bited me for agent since the filter is
+	 * genereted on this side. Wonder if we could find a way to detect when
+	 * do it or not.
+	 */
+
+	/* Prepare internal trigger object if needed on reception.
+	 * Handles also special treatment for certain internal object of the
+	 * trigger (e.g uprobe event rule binary fd.
+	 */
+	ret = prepare_trigger_object(trigger, -1);
+	if (ret != LTTNG_OK) {
+		goto end;
+	}
 
 	ret = notification_thread_command_unregister_trigger(notification_thread,
 			trigger);
