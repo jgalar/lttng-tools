@@ -83,7 +83,7 @@ static void update_agent_app(struct agent_app *app)
 			trigger_agent, node.node) {
 		agent_update(trigger_agent, app->sock->fd);
 	}
-	rcu_read_unlock;
+	rcu_read_unlock();
 }
 
 /*
