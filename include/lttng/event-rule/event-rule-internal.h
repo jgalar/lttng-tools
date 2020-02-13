@@ -146,4 +146,7 @@ struct lttng_event *lttng_event_rule_generate_lttng_event(
 LTTNG_HIDDEN
 bool lttng_event_rule_is_agent(const struct lttng_event_rule *rule);
 
+LTTNG_HIDDEN
+const char *lttng_event_rule_type_str(enum lttng_event_rule_type type);
+
 #endif /* LTTNG_EVENT_RULE_INTERNAL_H */

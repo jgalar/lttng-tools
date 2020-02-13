@@ -304,3 +304,30 @@ bool lttng_event_rule_is_agent(const struct lttng_event_rule *rule)
 
 	return ret;
 }
+
+LTTNG_HIDDEN
+const char *lttng_event_rule_type_str(enum lttng_event_rule_type type)
+{
+	switch (type) {
+	case LTTNG_EVENT_RULE_TYPE_UNKNOWN:
+		return "unknown";
+
+	case LTTNG_EVENT_RULE_TYPE_TRACEPOINT:
+		return "tracepoint";
+
+	case LTTNG_EVENT_RULE_TYPE_SYSCALL:
+		return "syscall";
+
+	case LTTNG_EVENT_RULE_TYPE_KPROBE:
+		return "probe";
+
+	case LTTNG_EVENT_RULE_TYPE_KRETPROBE:
+		return "function";
+
+	case LTTNG_EVENT_RULE_TYPE_UPROBE:
+		return "userspace-probe";
+
+	default:
+		abort();
+	}
+}

@@ -7,6 +7,7 @@
 #include "common/string-utils/string-utils.h"
 #include "common/utils.h"
 #include <lttng/condition/event-rule.h>
+#include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/event-rule-tracepoint.h>
 
 #ifdef LTTNG_EMBED_HELP
@@ -347,7 +348,7 @@ struct lttng_event_rule *parse_event_rule(int *argc, const char ***argv)
 			break;
 		default:
 			ERR("Filter expressions are not supported for %s events",
-					get_event_type_str(event_rule_type));
+					lttng_event_rule_type_str(event_rule_type));
 			goto error;
 		}
 	}
