@@ -9,10 +9,49 @@
 #include <stdio.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <common/error.h>
 
 #include "utils.h"
 
 #define MAX_LEN 16
+
+static
+int open_read_close(const char *path)
+{
+	int fd, ret;
+	char buf[MAX_LEN];
+
+	/*
+	 * Start generating syscalls. We use syscall(2) to prevent libc from
+	 * changing the underlying syscall (e.g. calling openat(2) instead of
+	 * open(2)).
+	 */
+	fd = syscall(SYS_openat, AT_FDCWD, path, O_RDONLY);
+	if (fd < 0) {
+		PERROR_NO_LOGGER("Failed to open file with openat(): path = '%s'", path);
+		ret = -1;
+		goto error;
+	}
+
+	ret = syscall(SYS_read, fd, buf, MAX_LEN);
+	if (ret < 0) {
+		PERROR_NO_LOGGER("Failed to read file: path = '%s', fd = %d, length = %d",
+				path, fd, MAX_LEN);
+		ret = -1;
+		goto error;
+	}
+
+	ret = syscall(SYS_close, fd);
+	if (ret == -1) {
+		PERROR_NO_LOGGER("Failed to close file: path = '%s', fd = %d", path, fd);
+		ret = -1;
+		goto error;
+	}
+
+error:
+	return ret;
+}
+
 /*
  * The process waits for the creation of a file passed as argument from an
  * external processes to execute a syscall and exiting. This is useful for tests
@@ -21,8 +60,7 @@
  */
 int main(int argc, char **argv)
 {
-	int fd, ret;
-	char buf[MAX_LEN];
+	int ret;
 	char *start_file;
 
 	if (argc != 2) {
@@ -47,23 +85,14 @@ int main(int argc, char **argv)
 	 * Start generating syscalls. We use syscall(2) to prevent libc to change
 	 * the underlying syscall. e.g. calling openat(2) instead of open(2).
 	 */
-	fd = syscall(SYS_openat, AT_FDCWD, "/proc/cpuinfo", O_RDONLY);
-	if (fd < 0) {
-		perror("open");
-		ret = -1;
-		goto error;
-	}
-
-	ret = syscall(SYS_read, fd, buf, MAX_LEN);
-	if (ret < 0) {
-		perror("read");
-		ret = -1;
-		goto error;
-	}
-
-	ret = syscall(SYS_close, fd);
+	ret = open_read_close("/proc/cpuinfo");
 	if (ret == -1) {
-		perror("close");
+		ret = -1;
+		goto error;
+	}
+
+	ret = open_read_close("/proc/cmdline");
+	if (ret == -1) {
 		ret = -1;
 		goto error;
 	}
