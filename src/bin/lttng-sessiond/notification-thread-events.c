@@ -2490,6 +2490,7 @@ int handle_notification_thread_command_register_trigger(
 		enum lttng_error_code *cmd_result)
 {
 	int ret = 0;
+	int is_supported;
 	struct lttng_condition *condition;
 	struct lttng_action *action;
 	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
@@ -2520,19 +2521,19 @@ int handle_notification_thread_command_register_trigger(
 	action = lttng_trigger_get_action(trigger);
 	assert(action);
 
-	ret = condition_is_supported(condition);
-	if (ret < 0) {
+	is_supported = condition_is_supported(condition);
+	if (is_supported < 0) {
 		goto error;
-	} else if (ret == 0) {
+	} else if (is_supported == 0) {
 		ret = 0;
 		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
 		goto error;
 	}
 
-	ret = action_is_supported(action);
-	if (ret < 0) {
+	is_supported = action_is_supported(action);
+	if (is_supported < 0) {
 		goto error;
-	} else if (ret == 0) {
+	} else if (is_supported == 0) {
 		ret = 0;
 		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
 		goto error;
