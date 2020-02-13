@@ -3078,7 +3078,7 @@ int lttng_list_triggers(struct lttng_triggers **triggers)
 
 	reply_ret = lttng_ctl_ask_sessiond(&lsm, &reply);
 	if (reply_ret < 0) {
-		ret = -reply_ret;
+		ret = reply_ret;
 		goto end;
 	} else if (reply_ret == 0) {
 		/* Socket unexpectedly closed by the session daemon. */
