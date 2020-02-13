@@ -2630,11 +2630,6 @@ error_free_ht_element:
 	free(trigger_tokens_ht_element);
 error:
 	if (free_trigger) {
-		struct lttng_action *action = lttng_trigger_get_action(trigger);
-		struct lttng_condition *condition = lttng_trigger_get_condition(trigger);
-
-		lttng_condition_destroy(condition);
-		lttng_action_destroy(action);
 		lttng_trigger_destroy(trigger);
 	}
 	rcu_read_unlock();
