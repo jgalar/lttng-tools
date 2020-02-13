@@ -23,6 +23,9 @@ TESTAPP_STATE_PATH=$(mktemp -u "$TMPDIR/application_state.XXXXXXXXXX")
 SYSCALL_TESTAPP_NAME="gen-syscall-events"
 SYSCALL_TESTAPP_BIN="$TESTAPP_PATH/$SYSCALL_TESTAPP_NAME/$SYSCALL_TESTAPP_NAME"
 
+USERSPACE_PROBE_ELF_TESTAPP_NAME="userspace-probe-elf-binary"
+USERSPACE_PROBE_ELF_TESTAPP_BIN="$TESTAPP_PATH/$USERSPACE_PROBE_ELF_TESTAPP_NAME/.libs/$USERSPACE_PROBE_ELF_TESTAPP_NAME"
+
 SESSION_NAME="my_session"
 CHANNEL_NAME="my_channel"
 
@@ -48,6 +51,11 @@ function generate_syscalls
 {
 	# Pass /dev/null so to generate the syscall right away.
 	$SYSCALL_TESTAPP_BIN /dev/null
+}
+
+function userspace_probe_testapp
+{
+	 $USERSPACE_PROBE_ELF_TESTAPP_BIN
 }
 
 function kernel_event_generator
@@ -126,6 +134,19 @@ function test_kernel_syscall_notification
 	wait $APP_PID 2> /dev/null
 }
 
+function test_kernel_userspace_probe_notification
+{
+	kernel_event_generator userspace_probe_testapp $TESTAPP_STATE_PATH &
+	APP_PID=$!
+
+	$CURDIR/notification 6 LTTNG_DOMAIN_KERNEL \
+		$APP_PID $TESTAPP_STATE_PATH \
+		$USERSPACE_PROBE_ELF_TESTAPP_BIN "test_function"
+
+	kill -9 $APP_PID
+	wait $APP_PID 2> /dev/null
+}
+
 if [ "$(id -u)" == "0" ]; then
 	consumerd_pipe=()
 
@@ -149,6 +170,7 @@ if [ "$(id -u)" == "0" ]; then
 	test_buffer_usage_notification $consumerd_pipe
 	test_kernel_instrumentation_notification
 	test_kernel_syscall_notification
+	test_kernel_userspace_probe_notification
 
 	stop_lttng_sessiond_notap
 	rmmod lttng-test
