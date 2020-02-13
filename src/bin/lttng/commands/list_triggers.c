@@ -500,7 +500,8 @@ int cmd_list_triggers(int argc, const char **argv)
 
 	ret = lttng_list_triggers(&triggers);
 	if (ret != 0) {
-		fprintf(stderr, "Error listing triggers.\n");
+		fprintf(stderr, "Error listing triggers: %s.\n",
+			lttng_strerror(ret));
 		goto error;
 	}
 
