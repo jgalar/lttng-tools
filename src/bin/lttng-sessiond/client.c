@@ -183,7 +183,7 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 		case LTTNG_CONSUMER64_UST:
 		{
 			if (config.consumerd64_lib_dir.value) {
-				char *tmp;
+				const char *tmp;
 				size_t tmplen;
 				char *tmpnew;
 
@@ -220,7 +220,7 @@ static pid_t spawn_consumerd(struct consumer_data *consumer_data)
 		case LTTNG_CONSUMER32_UST:
 		{
 			if (config.consumerd32_lib_dir.value) {
-				char *tmp;
+				const char *tmp;
 				size_t tmplen;
 				char *tmpnew;
 

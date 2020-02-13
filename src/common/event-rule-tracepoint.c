@@ -288,7 +288,7 @@ static int generate_agent_filter(
 	}
 
 	if (loglevel_type != LTTNG_EVENT_LOGLEVEL_ALL) {
-		char *op;
+		const char *op;
 		int loglevel_value;
 
 		status = lttng_event_rule_tracepoint_get_loglevel(rule, &loglevel_value);
