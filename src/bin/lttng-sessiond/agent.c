@@ -1242,7 +1242,6 @@ struct agent_event *agent_find_event_by_trigger(
 	enum lttng_domain_type d_type;
 	const struct lttng_condition *condition;
 	const struct lttng_event_rule *rule;
-	struct lttng_ht *ht;
 	const char *name;
 	const char *filter_expression;
 	/* TODO validate if this is the unset value or no */
@@ -1282,8 +1281,6 @@ struct agent_event *agent_find_event_by_trigger(
 				rule, &loglevel_value);
 		assert(er_status == LTTNG_EVENT_RULE_STATUS_OK);
 	}
-
-	ht = agt->events;
 
 	return agent_find_event(name, loglevel_type, loglevel_value,
 			filter_expression, agt);
