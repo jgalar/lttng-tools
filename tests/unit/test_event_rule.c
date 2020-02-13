@@ -44,7 +44,7 @@ int lttng_opt_quiet = 1;
 int lttng_opt_verbose;
 int lttng_opt_mi;
 
-#define NUM_TESTS 32
+#define NUM_TESTS 31
 
 void test_event_rule_tracepoint_ust(void)
 {
@@ -93,7 +93,6 @@ void test_event_rule_tracepoint_ust(void)
 	status = lttng_event_rule_tracepoint_set_loglevel(tracepoint, LTTNG_LOGLEVEL_INFO);
 	ok(status == LTTNG_EVENT_RULE_STATUS_OK, "setting single loglevel");
 	status = lttng_event_rule_tracepoint_get_loglevel_type(tracepoint, &loglevel_type);
-	ok(status == LTTNG_EVENT_RULE_STATUS_OK, "get loglevel type");
 	ok(loglevel_type == LTTNG_EVENT_LOGLEVEL_SINGLE, "getting loglevel type single");
 	status = lttng_event_rule_tracepoint_get_loglevel(tracepoint, &ret);
 	ok(status == LTTNG_EVENT_RULE_STATUS_OK, "get loglevel value");

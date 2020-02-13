@@ -2849,10 +2849,11 @@ int handle_notification_thread_command(
 		struct lttng_triggers *triggers = NULL;
 		ret = handle_notification_thread_command_get_tokens(
 				handle, state, &triggers, &cmd->reply_code);
-		if (ret < 0) {
-			goto error_unlock;
-		}
 		cmd->reply.get_tokens.triggers = triggers;
+		ret = 0;
+		break;
+
+		cmd->reply_code = LTTNG_OK;
 		ret = 0;
 		break;
 	}
@@ -2866,9 +2867,6 @@ int handle_notification_thread_command(
 				cmd->parameters.list_triggers.gid,
 				&triggers,
 				&cmd->reply_code);
-		if (ret < 0) {
-			goto error_unlock;
-		}
 		cmd->reply.list_triggers.triggers = triggers;
 		ret = 0;
 		break;

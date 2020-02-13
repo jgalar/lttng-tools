@@ -404,7 +404,6 @@ enum lttng_error_code lttng_event_rule_tracepoint_populate(struct lttng_event_ru
 	ret = run_as_generate_filter_bytecode(tracepoint->internal_filter.filter, uid, gid, &bytecode);
 	if (ret) {
 		ret_code = LTTNG_ERR_FILTER_INVAL;
-		goto end;
 	}
 
 	tracepoint->internal_filter.bytecode = bytecode;
@@ -489,11 +488,7 @@ lttng_event_rule_tracepoint_generate_exclusions(struct lttng_event_rule *rule)
 		 * Part of this should be validated on set exclusion
 		 */
 		const char *tmp;
-		enum lttng_event_rule_status status;
-		status = lttng_event_rule_tracepoint_get_exclusion_at_index(rule, i, &tmp);
-		if (status != LTTNG_EVENT_RULE_STATUS_OK) {
-			goto end;
-		}
+		(void) lttng_event_rule_tracepoint_get_exclusion_at_index(rule, i, &tmp);
 		strncpy(local_exclusions->names[i], tmp, LTTNG_SYMBOL_NAME_LEN);
 		local_exclusions->names[i][LTTNG_SYMBOL_NAME_LEN-1] = '\0';
 	}

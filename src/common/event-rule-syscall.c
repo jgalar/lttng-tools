@@ -186,7 +186,7 @@ enum lttng_error_code lttng_event_rule_syscall_populate(struct lttng_event_rule 
 
 	if (filter == NULL) {
 		/* Nothing to do */
-		ret_code = LTTNG_OK;
+		ret = LTTNG_OK;
 		goto end;
 	}
 

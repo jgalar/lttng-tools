@@ -577,7 +577,6 @@ ssize_t lttng_triggers_create_from_buffer(
 		trigger_size = lttng_trigger_create_from_buffer(&trigger_view,
 				&trigger);
 		if (trigger_size  < 0) {
-			lttng_trigger_destroy(trigger);
 			ret = trigger_size;
 			goto error;
 		}
