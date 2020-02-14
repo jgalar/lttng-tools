@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (C) 2017 Jonathan Rajotte <jonathan.rajotte-julien@efficios.com>
+# Copyright (C) 2017 Jonathan Rajotte-Julien <jonathan.rajotte-julien@efficios.com>
 #
 # SPDX-License-Identifier: LGPL-2.1-only
 
@@ -78,70 +78,12 @@ function kernel_event_generator
 	done
 }
 
-function test_basic_error_path
-{
-	kernel_event_generator generate_filter_events $TESTAPP_STATE_PATH &
-	APP_PID=$!
-
-	$CURDIR/notification 1 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
-
-	kill -9 $APP_PID
-	wait $APP_PID 2> /dev/null
-}
-
-function test_buffer_usage_notification
-{
-	local consumerd_pipe=$1
-	local event_name="lttng_test_filter_event"
-
-	create_lttng_session_notap $SESSION_NAME $TRACE_PATH
-
-	lttng_enable_kernel_channel_notap $SESSION_NAME $CHANNEL_NAME \
-		--subbuf-size=$PAGE_SIZE
-	enable_kernel_lttng_event_notap $SESSION_NAME $event_name $CHANNEL_NAME
-
-	kernel_event_generator generate_filter_events $TESTAPP_STATE_PATH &
-	APP_PID=$!
-
-	$CURDIR/notification 2 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH \
-		$SESSION_NAME $CHANNEL_NAME ${consumerd_pipe[@]}
-
-	destroy_lttng_session_notap $SESSION_NAME
-
-	kill -9 $APP_PID
-	wait $APP_PID 2> /dev/null
-}
-
-function test_kernel_instrumentation_notification
-{
-	kernel_event_generator generate_filter_events $TESTAPP_STATE_PATH &
-	APP_PID=$!
-
-	$CURDIR/notification 4 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
-
-	kill -9 $APP_PID
-	wait $APP_PID 2> /dev/null
-}
-
 function test_kernel_syscall_notification
 {
 	kernel_event_generator generate_syscalls $TESTAPP_STATE_PATH &
 	APP_PID=$!
 
 	$CURDIR/notification 5 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
-
-	kill -9 $APP_PID
-	wait $APP_PID 2> /dev/null
-}
-
-function test_kernel_userspace_probe_notification
-{
-	kernel_event_generator userspace_probe_testapp $TESTAPP_STATE_PATH &
-	APP_PID=$!
-
-	$CURDIR/notification 6 LTTNG_DOMAIN_KERNEL \
-		$APP_PID $TESTAPP_STATE_PATH \
-		$USERSPACE_PROBE_ELF_TESTAPP_BIN "test_function"
 
 	kill -9 $APP_PID
 	wait $APP_PID 2> /dev/null
@@ -166,11 +108,7 @@ if [ "$(id -u)" == "0" ]; then
 
 	start_lttng_sessiond_notap
 
-	test_basic_error_path
-	test_buffer_usage_notification $consumerd_pipe
-	test_kernel_instrumentation_notification
 	test_kernel_syscall_notification
-	test_kernel_userspace_probe_notification
 
 	stop_lttng_sessiond_notap
 	rmmod lttng-test
