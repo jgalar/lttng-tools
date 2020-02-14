@@ -1,18 +1,18 @@
-lttng-create-trigger(1)
+lttng-add-trigger(1)
 =====================
 :revdate: 17 January 2020
 
 
 NAME
 ----
-lttng-create-trigger - Create LTTng triggers
+lttng-add-trigger - Create LTTng triggers
 
 
 SYNOPSIS
 --------
 
 [verse]
-*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *create-trigger* [--id ID]
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *add-trigger* [--id ID]
       [--fire-every N] [--fire-once-after N]
       --condition CONDITION-NAME CONDITION-ARGS
       --action ACTION-NAME ACTION-ARGS
@@ -22,7 +22,7 @@ SYNOPSIS
 DESCRIPTION
 -----------
 
-The `lttng create-trigger` command is used to create triggers.  A
+The `lttng add-trigger` command is used to create triggers.  A
 trigger is an association between a *condition* and one or more
 *actions*.  When the condition associated to a trigger is met, the
 actions associated to that trigger are executed.  The tracing does not
@@ -42,7 +42,7 @@ Conditions
 Conditions are specified with the `--condition` option, followed by a
 condition name, and possibly some more arguments, depending on the
 specific condition.  There must be exactly one condition given in the
-`lttng create-trigger` invocation.
+`lttng add-trigger` invocation.
 
 The available conditions are:
 
@@ -61,7 +61,7 @@ Actions
 Actions are specified with the `--action` option, followed by an action
 name, and possibly some more arguments, depending on the specific
 action.  There must be at least one action given in the
-`lttng create-trigger` invocation.
+`lttng add-trigger` invocation.
 
 The available actions are:
 
@@ -120,5 +120,5 @@ include::common-cmd-footer.txt[]
 SEE ALSO
 --------
 man:lttng-list-triggers(1),
-man:lttng-destroy-trigger(1),
+man:lttng-remove-trigger(1),
 man:lttng(1)

@@ -15,7 +15,7 @@
 # along with this library; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
-# Test the `lttng destroy-trigger` command line interface.
+# Test the `lttng remove-trigger` command line interface.
 
 CURDIR="$(dirname "$0")"
 TESTDIR="$CURDIR/../../.."
@@ -31,10 +31,10 @@ tmp_stdout=$(mktemp -t test_list_triggers_cli_stdout.XXXXXX)
 tmp_stderr=$(mktemp -t test_list_triggers_cli_stderr.XXXXXX)
 tmp_expected_stdout=$(mktemp -t test_list_triggers_cli_expected_stdout.XXXXXX)
 
-function create_trigger ()
+function add_trigger ()
 {
-	"${FULL_LTTNG_BIN}" create-trigger "$@"
-	ok $? "create trigger \`$*\`: exit code is 0"
+	"${FULL_LTTNG_BIN}" add-trigger "$@"
+	ok $? "add trigger \`$*\`: exit code is 0"
 }
 
 function list_triggers ()
@@ -52,15 +52,15 @@ function list_triggers ()
 	ok $? "${test_name}: expected stderr"
 }
 
-function destroy_trigger ()
+function remove_trigger ()
 {
 	local id="$1"
-	local test_name="destroy trigger ${id}"
+	local test_name="remove trigger ${id}"
 
-	"${FULL_LTTNG_BIN}" destroy-trigger "${id}" > "${tmp_stdout}" 2> "${tmp_stderr}"
+	"${FULL_LTTNG_BIN}" remove-trigger "${id}" > "${tmp_stdout}" 2> "${tmp_stderr}"
 	ok $? "${test_name}: exit code is 0"
 
-	diff -u <(echo "Destroyed trigger \`${id}\`.") "${tmp_stdout}"
+	diff -u <(echo "Removed trigger \`${id}\`.") "${tmp_stdout}"
 	ok $? "${test_name}: expected stdout"
 
 	diff -u /dev/null "${tmp_stderr}"
@@ -70,9 +70,9 @@ function destroy_trigger ()
 # shellcheck disable=SC2119
 start_lttng_sessiond_notap
 
-# Create a few triggers
-create_trigger --condition on-event -u -a --action notify
-create_trigger --id ABC --condition on-event aaa -u --filter 'p == 2' --action notify
+# Add a few triggers
+add_trigger --condition on-event -u -a --action notify
+add_trigger --id ABC --condition on-event aaa -u --filter 'p == 2' --action notify
 
 cat > "${tmp_expected_stdout}" <<- EOF
 - id: ABC
@@ -88,7 +88,7 @@ cat > "${tmp_expected_stdout}" <<- EOF
 EOF
 list_triggers "two triggers left" "${tmp_expected_stdout}"
 
-destroy_trigger "ABC"
+remove_trigger "ABC"
 
 cat > "${tmp_expected_stdout}" <<- EOF
 - id: TJORAJ1
@@ -99,7 +99,7 @@ cat > "${tmp_expected_stdout}" <<- EOF
 EOF
 list_triggers "one trigger left" "${tmp_expected_stdout}"
 
-destroy_trigger "TJORAJ1"
+remove_trigger "TJORAJ1"
 
 list_triggers "no triggers left" "/dev/null"
 

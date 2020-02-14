@@ -17,7 +17,7 @@
 
 #ifdef LTTNG_EMBED_HELP
 static const char help_msg[] =
-#include <lttng-create-trigger.1.h>
+#include <lttng-add-trigger.1.h>
 ;
 #endif
 
@@ -1438,7 +1438,7 @@ end:
 }
 
 static const
-struct argpar_opt_descr create_trigger_options[] = {
+struct argpar_opt_descr add_trigger_options[] = {
 	{ OPT_HELP, 'h', "help", false },
 	{ OPT_LIST_OPTIONS, '\0', "list-options", false },
 	{ OPT_CONDITION, '\0', "condition", false },
@@ -1457,7 +1457,7 @@ void lttng_actions_destructor(void *p)
 	lttng_action_destroy(action);
 }
 
-int cmd_create_trigger(int argc, const char **argv)
+int cmd_add_trigger(int argc, const char **argv)
 {
 	int ret;
 	int my_argc = argc - 1;
@@ -1484,7 +1484,7 @@ int cmd_create_trigger(int argc, const char **argv)
 
 		argpar_state_destroy(argpar_state);
 		argpar_state = argpar_state_create(my_argc, my_argv,
-			create_trigger_options);
+			add_trigger_options);
 		if (!argpar_state) {
 			fprintf(stderr, "Failed to create argpar state.\n");
 			goto error;
@@ -1528,7 +1528,7 @@ int cmd_create_trigger(int argc, const char **argv)
 			goto end;
 
 		case OPT_LIST_OPTIONS:
-			list_cmd_options_argpar(stdout, create_trigger_options);
+			list_cmd_options_argpar(stdout, add_trigger_options);
 			ret = 0;
 			goto end;
 

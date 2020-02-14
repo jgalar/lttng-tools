@@ -15,7 +15,7 @@
 # along with this library; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
-# Test the `lttng create-trigger` command line interface.
+# Test the `lttng add-trigger` command line interface.
 
 CURDIR="$(dirname "$0")"
 TESTDIR="$CURDIR/../../.."
@@ -45,8 +45,8 @@ function test_success ()
 	local test_name="$1"
 	shift
 
-	diag "${FULL_LTTNG_BIN} create-trigger $*"
-	"${FULL_LTTNG_BIN}" create-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
+	diag "${FULL_LTTNG_BIN} add-trigger $*"
+	"${FULL_LTTNG_BIN}" add-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
 	ok $? "${test_name}: exit code is 0"
 
 	diff -u "${tmp_stdout}" <(echo "Trigger registered successfully.")
@@ -63,8 +63,8 @@ function test_failure ()
 
 	shift 2
 
-	diag "${FULL_LTTNG_BIN} create-trigger $*"
-	"${FULL_LTTNG_BIN}" create-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
+	diag "${FULL_LTTNG_BIN} add-trigger $*"
+	"${FULL_LTTNG_BIN}" add-trigger "$@" > "${tmp_stdout}" 2> "${tmp_stderr}"
 	isnt $? 0 "${test_name}: exit code is not 0"
 
 	diff -u "${tmp_stdout}" /dev/null

@@ -6,7 +6,7 @@
 
 #ifdef LTTNG_EMBED_HELP
 static const char help_msg[] =
-#include <lttng-destroy-trigger.1.h>
+#include <lttng-remove-trigger.1.h>
 ;
 #endif
 
@@ -16,13 +16,13 @@ enum {
 };
 
 static const
-struct argpar_opt_descr destroy_trigger_options[] = {
+struct argpar_opt_descr remove_trigger_options[] = {
 	{ OPT_HELP, 'h', "help", false },
 	{ OPT_LIST_OPTIONS, '\0', "list-options", false },
 	ARGPAR_OPT_DESCR_SENTINEL,
 };
 
-int cmd_destroy_trigger(int argc, const char **argv)
+int cmd_remove_trigger(int argc, const char **argv)
 {
 	int ret;
 	struct argpar_parse_ret argpar_parse_ret = { 0 };
@@ -31,10 +31,10 @@ int cmd_destroy_trigger(int argc, const char **argv)
 	struct lttng_triggers *triggers = NULL;
 	unsigned int triggers_count;
 	enum lttng_trigger_status trigger_status;
-	const struct lttng_trigger *trigger_to_destroy = NULL;
+	const struct lttng_trigger *trigger_to_remove = NULL;
 
 	argpar_parse_ret = argpar_parse(argc - 1, argv + 1,
-		destroy_trigger_options, true);
+		remove_trigger_options, true);
 	if (!argpar_parse_ret.items) {
 		fprintf(stderr, "Error: %s\n", argpar_parse_ret.error);
 		goto error;
@@ -55,7 +55,7 @@ int cmd_destroy_trigger(int argc, const char **argv)
 
 			case OPT_LIST_OPTIONS:
 				list_cmd_options_argpar(stdout,
-					destroy_trigger_options);
+					remove_trigger_options);
 				ret = 0;
 				goto end;
 
@@ -99,23 +99,23 @@ int cmd_destroy_trigger(int argc, const char **argv)
 		assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
 
 		if (strcmp(trigger_name, id) == 0) {
-			trigger_to_destroy = trigger;
+			trigger_to_remove = trigger;
 			break;
 		}
 	}
 
-	if (!trigger_to_destroy) {
+	if (!trigger_to_remove) {
 		fprintf(stderr, "Couldn't find trigger with id `%s`.\n", id);
 		goto error;
 	}
 
-	ret = lttng_unregister_trigger(trigger_to_destroy);
+	ret = lttng_unregister_trigger(trigger_to_remove);
 	if (ret != 0) {
 		fprintf(stderr, "Failed to unregister trigger `%s`.\n", id);
 		goto error;
 	}
 
-	printf("Destroyed trigger `%s`.\n", id);
+	printf("Removed trigger `%s`.\n", id);
 
 	ret = 0;
 	goto end;

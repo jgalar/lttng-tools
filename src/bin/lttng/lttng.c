@@ -65,11 +65,10 @@ static struct option long_options[] = {
 /* First level command */
 static struct cmd_struct commands[] =  {
 	{ "add-context", cmd_add_context},
+	{ "add-trigger", cmd_add_trigger},
 	{ "create", cmd_create},
 	{ "clear", cmd_clear},
-	{ "create-trigger", cmd_create_trigger},
 	{ "destroy", cmd_destroy},
-	{ "destroy-trigger", cmd_destroy_trigger},
 	{ "disable-channel", cmd_disable_channels},
 	{ "disable-event", cmd_disable_events},
 	{ "enable-channel", cmd_enable_channels},
@@ -80,6 +79,7 @@ static struct cmd_struct commands[] =  {
 	{ "load", cmd_load},
 	{ "metadata", cmd_metadata},
 	{ "regenerate", cmd_regenerate},
+	{ "remove-trigger", cmd_remove_trigger},
 	{ "rotate", cmd_rotate},
 	{ "enable-rotation", cmd_enable_rotation},
 	{ "disable-rotation", cmd_disable_rotation},

@@ -38,10 +38,10 @@ else
 	ist_root=0
 fi
 
-function create_trigger ()
+function add_trigger ()
 {
-	"${FULL_LTTNG_BIN}" create-trigger "$@"
-	ok $? "create trigger \`$*\`: exit code is 0"
+	"${FULL_LTTNG_BIN}" add-trigger "$@"
+	ok $? "add trigger \`$*\`: exit code is 0"
 }
 
 function list_triggers ()
@@ -65,9 +65,9 @@ test_top_level_options ()
 	start_lttng_sessiond_notap
 
 
-	create_trigger --id hello --condition on-event -u test-id --action notify
-	create_trigger --fire-once-after 123 --condition on-event -u test-fire-once-after --action notify
-	create_trigger --fire-every 124 --condition on-event -u test-fire-every --action notify
+	add_trigger --id hello --condition on-event -u test-id --action notify
+	add_trigger --fire-once-after 123 --condition on-event -u test-fire-once-after --action notify
+	add_trigger --fire-every 124 --condition on-event -u test-fire-every --action notify
 
 	cat > "${tmp_expected_stdout}" <<- EOF
 	- id: TJORAJ2
@@ -99,11 +99,11 @@ test_on_event_tracepoint ()
 	# shellcheck disable=SC2119
 	start_lttng_sessiond_notap
 
-	create_trigger --condition on-event -u -a --action notify
-	create_trigger --id ABC --condition on-event aaa -u --filter 'p == 2' --action notify
-	create_trigger --condition on-event 'hello*' -u -x 'hello2,hello3,hello4' --action notify
-	create_trigger --id BCD --condition on-event -u gerboise --loglevel INFO --action notify
-	create_trigger --condition on-event -u lemming --loglevel-only WARNING --action notify
+	add_trigger --condition on-event -u -a --action notify
+	add_trigger --id ABC --condition on-event aaa -u --filter 'p == 2' --action notify
+	add_trigger --condition on-event 'hello*' -u -x 'hello2,hello3,hello4' --action notify
+	add_trigger --id BCD --condition on-event -u gerboise --loglevel INFO --action notify
+	add_trigger --condition on-event -u lemming --loglevel-only WARNING --action notify
 
 	cat > "${tmp_expected_stdout}" <<- EOF
 	- id: ABC
@@ -147,10 +147,10 @@ test_on_event_probe ()
 
 	sys_open_addr=$(grep ' T do_sys_open$' /proc/kallsyms | cut -f 1 -d ' ')
 
-	create_trigger --condition on-event -k --probe=do_sys_open my_sys_open --action notify
-	create_trigger --condition on-event -k --probe=do_sys_open+10 my_sys_open --action notify
-	create_trigger --condition on-event -k --probe="${sys_open_addr}" my_sys_open --action notify
-	create_trigger --condition on-event -k --probe="${sys_open_addr}+10" my_sys_open --action notify
+	add_trigger --condition on-event -k --probe=do_sys_open my_sys_open --action notify
+	add_trigger --condition on-event -k --probe=do_sys_open+10 my_sys_open --action notify
+	add_trigger --condition on-event -k --probe="${sys_open_addr}" my_sys_open --action notify
+	add_trigger --condition on-event -k --probe="${sys_open_addr}+10" my_sys_open --action notify
 
 	cat > "${tmp_expected_stdout}" <<- EOF
 	- id: TJORAJ1
@@ -185,7 +185,7 @@ test_on_event_userspace_probe ()
 	# shellcheck disable=SC2119
 	start_lttng_sessiond_notap
 
-	create_trigger --condition on-event -k --userspace-probe=${uprobe_elf_binary}:test_function ma-probe --action notify
+	add_trigger --condition on-event -k --userspace-probe=${uprobe_elf_binary}:test_function ma-probe --action notify
 
 	cat > "${tmp_expected_stdout}" <<- EOF
 	- id: TJORAJ1
@@ -205,8 +205,8 @@ test_on_event_syscall ()
 	# shellcheck disable=SC2119
 	start_lttng_sessiond_notap
 
-	create_trigger --condition on-event -k --syscall open --action notify
-	create_trigger --condition on-event -k --syscall ptrace --filter 'a > 2' --action notify
+	add_trigger --condition on-event -k --syscall open --action notify
+	add_trigger --condition on-event -k --syscall ptrace --filter 'a > 2' --action notify
 
 	cat > "${tmp_expected_stdout}" <<- EOF
 	- id: TJORAJ1
@@ -230,14 +230,14 @@ test_snapshot_action ()
 {
 	start_lttng_sessiond_notap
 
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session file:///some/other/path
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session net://1.2.3.4
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session net://1.2.3.4:1234:1235
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session --ctrl-url=tcp://1.2.3.4:1111 --data-url=tcp://1.2.3.4:1112
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path --max-size=1234
-	create_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path --name=meh
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session file:///some/other/path
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session net://1.2.3.4
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session net://1.2.3.4:1234:1235
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session --ctrl-url=tcp://1.2.3.4:1111 --data-url=tcp://1.2.3.4:1112
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path --max-size=1234
+	add_trigger --condition on-event -u some-event --action snapshot-session ze-session /some/path --name=meh
 
 
 	cat > "${tmp_expected_stdout}" <<- EOF

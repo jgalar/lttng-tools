@@ -32,6 +32,6 @@ include::common-cmd-footer.txt[]
 
 SEE ALSO
 --------
-man:lttng-create-trigger(1),
-man:lttng-destroy-trigger(1),
+man:lttng-add-trigger(1),
+man:lttng-remove-trigger(1),
 man:lttng(1)

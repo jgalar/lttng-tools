@@ -1,24 +1,24 @@
-lttng-destroy-trigger(1)
+lttng-remove-trigger(1)
 ========================
 :revdate: 20 January 2020
 
 
 NAME
 ----
-lttng-destroy-trigger - Destroy LTTng triggers
+lttng-remove-trigger - Remove LTTng triggers
 
 
 SYNOPSIS
 --------
 
 [verse]
-*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *destroy-trigger* 'ID'
+*lttng* ['linkgenoptions:(GENERAL OPTIONS)'] *remove-trigger* 'ID'
 
 
 DESCRIPTION
 -----------
 
-The `lttng destroy-trigger` command destroys the trigger with the given
+The `lttng remove-trigger` command removes the trigger with the given
 'ID'.
 
 
@@ -33,6 +33,6 @@ include::common-cmd-footer.txt[]
 
 SEE ALSO
 --------
-man:lttng-create-trigger(1),
+man:lttng-add-trigger(1),
 man:lttng-list-trigger(1),
 man:lttng(1)
