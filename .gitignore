@@ -166,6 +166,9 @@ health_check
 
 # examples
 /doc/examples/rotation/rotate-client
+/doc/examples/trigger-on-event/performance/consumer
+/doc/examples/trigger-on-event/performance/producer
+/doc/examples/trigger-on-event/performance/performance.a
 
 /benchmark/
 
