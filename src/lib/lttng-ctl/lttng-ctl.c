@@ -2892,7 +2892,7 @@ int lttng_list_tracker_ids(struct lttng_handle *handle,
 			break;
 		case LTTNG_ID_VALUE:
 			id->value = tracker_id->u.value;
-			status = lttng_tracker_id_set_value(
+			status = lttng_tracker_id_set_integer(
 					id, tracker_id->u.value);
 			break;
 		case LTTNG_ID_STRING:
@@ -2967,7 +2967,7 @@ int lttng_list_tracker_pids(struct lttng_handle *handle,
 	}
 	for (i = 0; i < nr_ids; i++) {
 		id = lttng_tracker_ids_get_at_index(ids, i);
-		status = lttng_tracker_id_get_value(id, &pids[i]);
+		status = lttng_tracker_id_get_integer(id, &pids[i]);
 		if (status != LTTNG_TRACKER_ID_STATUS_OK) {
 			ret = -LTTNG_ERR_UNK;
 			goto end;
@@ -3117,85 +3117,6 @@ end:
 	return ret;
 }
 
-static int lttng_track_untrack_id(struct lttng_handle *handle,
-		enum lttng_tracker_type tracker_type,
-		const struct lttng_tracker_id *id,
-		enum lttcomm_sessiond_command cmd)
-{
-	int ret;
-	struct lttcomm_session_msg lsm;
-	const char *var_data = NULL;
-	size_t var_data_len = 0;
-	int value;
-	enum lttng_tracker_id_status status;
-
-	/* NULL arguments are forbidden. No default values. */
-	if (handle == NULL) {
-		goto error;
-	}
-
-	memset(&lsm, 0, sizeof(lsm));
-
-	lsm.cmd_type = cmd;
-	lsm.u.id_tracker.tracker_type = tracker_type;
-	lsm.u.id_tracker.id_type = lttng_tracker_id_get_type(id);
-	switch (lsm.u.id_tracker.id_type) {
-	case LTTNG_ID_ALL:
-		break;
-	case LTTNG_ID_VALUE:
-		status = lttng_tracker_id_get_value(id, &value);
-		if (status != LTTNG_TRACKER_ID_STATUS_OK) {
-			goto error;
-		}
-		lsm.u.id_tracker.u.value = value;
-		break;
-	case LTTNG_ID_STRING:
-		status = lttng_tracker_id_get_string(id, &var_data);
-		if (status != LTTNG_TRACKER_ID_STATUS_OK) {
-			goto error;
-		}
-		var_data_len = strlen(var_data) + 1; /* Includes \0. */
-		lsm.u.id_tracker.u.var_len = var_data_len;
-		break;
-	default:
-		goto error;
-	}
-
-	COPY_DOMAIN_PACKED(lsm.domain, handle->domain);
-
-	lttng_ctl_copy_string(lsm.session.name, handle->session_name,
-			sizeof(lsm.session.name));
-
-	ret = lttng_ctl_ask_sessiond_varlen_no_cmd_header(
-			&lsm, (char *) var_data, var_data_len, NULL);
-	return ret;
-error:
-	return -LTTNG_ERR_INVALID;
-}
-
-/*
- * Add ID to session tracker.
- * Return 0 on success else a negative LTTng error code.
- */
-int lttng_track_id(struct lttng_handle *handle,
-		enum lttng_tracker_type tracker_type,
-		const struct lttng_tracker_id *id)
-{
-	return lttng_track_untrack_id(handle, tracker_type, id, LTTNG_TRACK_ID);
-}
-
-/*
- * Remove ID from session tracker.
- * Return 0 on success else a negative LTTng error code.
- */
-int lttng_untrack_id(struct lttng_handle *handle,
-		enum lttng_tracker_type tracker_type,
-		const struct lttng_tracker_id *id)
-{
-	return lttng_track_untrack_id(
-			handle, tracker_type, id, LTTNG_UNTRACK_ID);
-}
-
 /*
  * Add PID to session tracker.
  * Return 0 on success else a negative LTTng error code.
@@ -3207,7 +3128,7 @@ int lttng_track_pid(struct lttng_handle *handle, int pid)
 	enum lttng_tracker_id_status status;
 
 	id = lttng_tracker_id_create();
-	status = lttng_tracker_id_set_value(id, pid);
+	status = lttng_tracker_id_set_integer(id, pid);
 	if (status == LTTNG_TRACKER_ID_STATUS_INVALID) {
 		ret = -LTTNG_ERR_INVALID;
 		goto error;
@@ -3230,7 +3151,7 @@ int lttng_untrack_pid(struct lttng_handle *handle, int pid)
 	enum lttng_tracker_id_status status;
 
 	id = lttng_tracker_id_create();
-	status = lttng_tracker_id_set_value(id, pid);
+	status = lttng_tracker_id_set_integer(id, pid);
 	if (status == LTTNG_TRACKER_ID_STATUS_INVALID) {
 		ret = -LTTNG_ERR_INVALID;
 		goto error;

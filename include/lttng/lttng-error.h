@@ -172,6 +172,7 @@ enum lttng_error_code {
 	LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR = 159, /* Session was already cleared since it became inactive. */
 	LTTNG_ERR_USER_NOT_FOUND         = 160, /* User not found. */
 	LTTNG_ERR_GROUP_NOT_FOUND        = 161, /* Group not found. */
+	LTTNG_ERR_UNSUPPORTED_DOMAIN     = 162,  /* Unsupported domain used. */
 
 	/* MUST be last element of the manually-assigned section of the enum */
 	LTTNG_ERR_NR,

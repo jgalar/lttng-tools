@@ -1956,7 +1956,8 @@ static int save_id_tracker(struct config_writer *writer,
 					ret = LTTNG_ERR_SAVE_IO_FAIL;
 					goto end;
 				}
-				status = lttng_tracker_id_get_value(id, &value);
+				status = lttng_tracker_id_get_integer(
+						id, &value);
 				ret = config_writer_write_element_unsigned_int(
 						writer, element_id, value);
 				break;

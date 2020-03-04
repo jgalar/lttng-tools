@@ -85,9 +85,11 @@ enum lttcomm_sessiond_command {
 	/* 29 */
 	/* 30 */
 	LTTNG_SAVE_SESSION                    = 31,
-	LTTNG_TRACK_ID                       = 32,
-	LTTNG_UNTRACK_ID                     = 33,
-	LTTNG_LIST_TRACKER_IDS               = 34,
+	LTTNG_TRACK_PROCESS_ATTR              = 32,
+	LTTNG_UNTRACK_PROCESS_ATTR            = 33,
+	LTTNG_GET_TRACKER_POLICY              = 34,
+	LTTNG_SET_TRACKER_POLICY              = 35,
+	LTTNG_GET_PROCESS_ATTR_INCLUDE_LIST   = 36,
 	LTTNG_SET_SESSION_SHM_PATH            = 40,
 	LTTNG_REGENERATE_METADATA             = 41,
 	LTTNG_REGENERATE_STATEDUMP            = 42,

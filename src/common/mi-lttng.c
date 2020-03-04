@@ -1697,7 +1697,7 @@ int mi_lttng_id_target(struct mi_writer *writer,
 			goto end;
 		}
 
-		status = lttng_tracker_id_get_value(id, &value);
+		status = lttng_tracker_id_get_integer(id, &value);
 		if (status != LTTNG_TRACKER_ID_STATUS_OK) {
 			ret = -1;
 			goto end;

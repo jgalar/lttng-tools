@@ -250,7 +250,7 @@ static int parse_id_string(const char *_id_string,
 			unsigned long v;
 
 			v = strtoul(one_id_str, NULL, 10);
-			status = lttng_tracker_id_set_value(item, (int) v);
+			status = lttng_tracker_id_set_integer(item, (int) v);
 			if (status == LTTNG_TRACKER_ID_STATUS_INVALID) {
 				ERR("Invalid value");
 				retval = CMD_ERROR;
@@ -417,7 +417,7 @@ static enum cmd_error_code track_untrack_id(enum cmd_type cmd_type,
 			/* Nothing to check */
 			break;
 		case LTTNG_ID_VALUE:
-			status = lttng_tracker_id_get_value(item, &value);
+			status = lttng_tracker_id_get_integer(item, &value);
 			break;
 		case LTTNG_ID_STRING:
 			status = lttng_tracker_id_get_string(

@@ -65,7 +65,7 @@ static unsigned long hash_tracker_key(
 
 	/* We do not care for invalid state during hash computation */
 	type = lttng_tracker_id_get_type(tracker_key);
-	(void) lttng_tracker_id_get_value(tracker_key, &value);
+	(void) lttng_tracker_id_get_integer(tracker_key, &value);
 	(void) lttng_tracker_id_get_string(tracker_key, &string);
 
 	switch (type) {
@@ -371,7 +371,7 @@ int lttng_tracker_id_lookup_string(enum lttng_tracker_type tracker_type,
 		*result = -1;
 		return LTTNG_OK;
 	case LTTNG_ID_VALUE:
-		status = lttng_tracker_id_get_value(id, &value);
+		status = lttng_tracker_id_get_integer(id, &value);
 		if (status != LTTNG_TRACKER_ID_STATUS_OK) {
 			return LTTNG_ERR_INVALID;
 		}

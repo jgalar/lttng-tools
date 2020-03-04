@@ -2818,7 +2818,7 @@ static int process_id_tracker_node(xmlNodePtr id_tracker_node,
 					goto end;
 				}
 
-				status = lttng_tracker_id_set_value(
+				status = lttng_tracker_id_set_integer(
 						tracker_id, id);
 				if (status != LTTNG_TRACKER_ID_STATUS_OK) {
 					lttng_tracker_id_destroy(tracker_id);

@@ -1212,7 +1212,7 @@ error_add_context:
 			status = lttng_tracker_id_set_all(id);
 			break;
 		case LTTNG_ID_VALUE:
-			status = lttng_tracker_id_set_value(
+			status = lttng_tracker_id_set_integer(
 					id, cmd_ctx->lsm->u.id_tracker.u.value);
 			break;
 		case LTTNG_ID_STRING:
@@ -1279,7 +1279,7 @@ error_add_context:
 			status = lttng_tracker_id_set_all(id);
 			break;
 		case LTTNG_ID_VALUE:
-			status = lttng_tracker_id_set_value(
+			status = lttng_tracker_id_set_integer(
 					id, cmd_ctx->lsm->u.id_tracker.u.value);
 			break;
 		case LTTNG_ID_STRING:

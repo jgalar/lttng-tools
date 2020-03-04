@@ -217,6 +217,7 @@ static const char *error_string_array[] = {
 	[ ERROR_INDEX(LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR) ] = "Session was already cleared since it became inactive",
 	[ ERROR_INDEX(LTTNG_ERR_USER_NOT_FOUND) ] = "User not found",
 	[ ERROR_INDEX(LTTNG_ERR_GROUP_NOT_FOUND) ] = "Group not found",
+	[ ERROR_INDEX(LTTNG_ERR_UNSUPPORTED_DOMAIN) ] = "Unsupported domain used",
 
 	/* Last element */
 	[ ERROR_INDEX(LTTNG_ERR_NR) ] = "Unknown error code"

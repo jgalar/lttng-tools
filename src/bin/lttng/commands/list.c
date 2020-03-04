@@ -1580,7 +1580,8 @@ static int list_tracker_ids(enum lttng_tracker_type tracker_type)
 			case LTTNG_ID_ALL:
 				break;
 			case LTTNG_ID_VALUE:
-				status = lttng_tracker_id_get_value(id, &value);
+				status = lttng_tracker_id_get_integer(
+						id, &value);
 				break;
 			case LTTNG_ID_STRING:
 				status = lttng_tracker_id_get_string(
