@@ -13,6 +13,7 @@
 #include <common/payload-view.h>
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-rule/kprobe-internal.h>
+#include <lttng/event-rule/kretprobe-internal.h>
 #include <lttng/event-rule/syscall-internal.h>
 #include <lttng/event-rule/tracepoint-internal.h>
 #include <lttng/event-rule/uprobe-internal.h>
@@ -166,7 +167,8 @@ ssize_t lttng_event_rule_create_from_payload(
 		create_from_payload = lttng_event_rule_kprobe_create_from_payload;
 		break;
 	case LTTNG_EVENT_RULE_TYPE_KRETPROBE:
-		/* TODO */
+		create_from_payload =
+				lttng_event_rule_kretprobe_create_from_payload;
 		break;
 	case LTTNG_EVENT_RULE_TYPE_UPROBE:
 		create_from_payload = lttng_event_rule_uprobe_create_from_payload;

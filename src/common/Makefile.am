@@ -50,6 +50,7 @@ libcommon_la_SOURCES = \
 	event.c \
 	event-rule/event-rule.c \
 	event-rule/kprobe.c \
+	event-rule/kretprobe.c \
 	event-rule/syscall.c \
 	event-rule/uprobe.c \
 	event-rule/tracepoint.c \
