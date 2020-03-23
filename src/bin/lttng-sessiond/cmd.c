@@ -4257,7 +4257,8 @@ end:
 }
 
 int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
-		struct notification_thread_handle *notification_thread)
+		struct notification_thread_handle *notification_thread,
+		struct lttng_trigger **return_trigger)
 {
 	int ret;
 	size_t trigger_len;
@@ -4314,12 +4315,27 @@ int cmd_register_trigger(struct command_ctx *cmd_ctx, int sock,
 		}
 	}
 
+	/*
+	 * Since we return the trigger object, take a reference to it
+	 * Caller is responsible for calling lttng_destroy_trigger on it.
+	 * This thread does not OWN the trigger.
+	 */
+	lttng_trigger_get(trigger);
+
 	/* Set the trigger credential */
 	lttng_trigger_set_credentials(trigger, &cmd_creds);
 
 	/* Inform the notification thread */
 	ret = notification_thread_command_register_trigger(notification_thread,
 			trigger);
+	if (ret != LTTNG_OK) {
+		goto end_notification_thread;
+	}
+
+	/* Return an image of the updated object to the client */
+	*return_trigger = trigger;
+
+end_notification_thread:
 	/* Ownership of trigger was transferred. */
 	trigger = NULL;
 end:

@@ -14,6 +14,7 @@
 #include <common/error.h>
 #include <common/optional.h>
 #include <assert.h>
+#include <inttypes.h>
 
 LTTNG_HIDDEN
 bool lttng_trigger_validate(struct lttng_trigger *trigger)
@@ -110,6 +111,7 @@ static void trigger_destroy_ref(struct urcu_ref *ref)
 	lttng_action_put(action);
 	lttng_condition_put(condition);
 
+	free(trigger->name);
 	free(trigger);
 }
 
@@ -123,10 +125,12 @@ ssize_t lttng_trigger_create_from_payload(
 		struct lttng_payload_view *src_view,
 		struct lttng_trigger **trigger)
 {
-	ssize_t ret, offset = 0, condition_size, action_size;
+	ssize_t ret, offset = 0, condition_size, action_size, name_size = 0;
+	enum lttng_trigger_status status;
 	struct lttng_condition *condition = NULL;
 	struct lttng_action *action = NULL;
 	const struct lttng_trigger_comm *trigger_comm;
+	const char *name = NULL;
 
 	if (!src_view || !trigger) {
 		ret = -1;
@@ -136,6 +140,22 @@ ssize_t lttng_trigger_create_from_payload(
 	/* lttng_trigger_comm header */
 	trigger_comm = (typeof(trigger_comm)) src_view->buffer.data;
 	offset += sizeof(*trigger_comm);
+
+	if (trigger_comm->name_length != 0) {
+		/* Name */
+		struct lttng_payload_view name_view =
+				lttng_payload_view_from_view(
+						src_view, offset, trigger_comm->name_length);
+
+		name = name_view.buffer.data;
+		if (!lttng_buffer_view_contains_string(&name_view.buffer, name, trigger_comm->name_length)){
+			ret = -1;
+			goto end;
+		}
+		offset += trigger_comm->name_length;
+		name_size = trigger_comm->name_length;
+	}
+
 	{
 		/* struct lttng_condition */
 		struct lttng_payload_view condition_view =
@@ -168,7 +188,7 @@ ssize_t lttng_trigger_create_from_payload(
 	offset += action_size;
 
 	/* Unexpected size of inner-elements; the buffer is corrupted. */
-	if ((ssize_t) trigger_comm->length != condition_size + action_size) {
+	if ((ssize_t) trigger_comm->length != condition_size + action_size + name_size) {
 		ret = -1;
 		goto error;
 	}
@@ -189,6 +209,14 @@ ssize_t lttng_trigger_create_from_payload(
 	lttng_action_put(action);
 	action = NULL;
 
+	if (name) {
+		status = lttng_trigger_set_name(*trigger, name);
+		if (status != LTTNG_TRIGGER_STATUS_OK) {
+			ret = -1;
+			goto end;
+		}
+	}
+
 	ret = offset;
 
 error:
@@ -207,9 +235,17 @@ int lttng_trigger_serialize(struct lttng_trigger *trigger,
 		struct lttng_payload *payload)
 {
 	int ret;
-	size_t header_offset, size_before_payload;
+	size_t header_offset, size_before_payload, size_name;
 	struct lttng_trigger_comm trigger_comm = {};
 	struct lttng_trigger_comm *header;
+
+	if (trigger->name != NULL) {
+		size_name = strlen(trigger->name) + 1;
+	} else {
+		size_name = 0;
+	}
+
+	trigger_comm.name_length = size_name;
 
 	header_offset = payload->buffer.size;
 	ret = lttng_dynamic_buffer_append(&payload->buffer, &trigger_comm,
@@ -219,6 +255,14 @@ int lttng_trigger_serialize(struct lttng_trigger *trigger,
 	}
 
 	size_before_payload = payload->buffer.size;
+
+	/* Trigger name */
+	ret = lttng_dynamic_buffer_append(
+			&payload->buffer, trigger->name, size_name);
+	if (ret) {
+		goto end;
+	}
+
 	ret = lttng_condition_serialize(trigger->condition, payload);
 	if (ret) {
 		goto end;
@@ -251,6 +295,85 @@ bool lttng_trigger_is_equal(
 	}
 
 	return true;
+}
+
+enum lttng_trigger_status lttng_trigger_set_name(struct lttng_trigger *trigger, const char* name)
+{
+	char *name_copy = NULL;
+	enum lttng_trigger_status status = LTTNG_TRIGGER_STATUS_OK;
+
+	if (!trigger || !name ||
+			strlen(name) == 0) {
+		status = LTTNG_TRIGGER_STATUS_INVALID;
+		goto end;
+	}
+
+	name_copy = strdup(name);
+	if (!name_copy) {
+		status = LTTNG_TRIGGER_STATUS_ERROR;
+		goto end;
+	}
+
+	free(trigger->name);
+
+	trigger->name = name_copy;
+	name_copy = NULL;
+end:
+	return status;
+}
+
+enum lttng_trigger_status lttng_trigger_get_name(struct lttng_trigger *trigger, const char **name)
+{
+	enum lttng_trigger_status status = LTTNG_TRIGGER_STATUS_OK;
+
+	if (!trigger || !name) {
+		status = LTTNG_TRIGGER_STATUS_INVALID;
+		goto end;
+	}
+
+	if (!trigger->name) {
+		status = LTTNG_TRIGGER_STATUS_UNSET;
+	}
+
+	*name = trigger->name;
+end:
+	return status;
+}
+
+LTTNG_HIDDEN
+int lttng_trigger_assign_name(struct lttng_trigger *dst,
+		const struct lttng_trigger *src)
+{
+	int ret = 0;
+	enum lttng_trigger_status status;
+
+	status = lttng_trigger_set_name(dst, src->name);
+	if (status != LTTNG_TRIGGER_STATUS_OK) {
+		ret = -1;
+		ERR("Failed to set name for trigger");
+		goto end;
+	}
+end:
+	return ret;
+}
+
+LTTNG_HIDDEN
+int lttng_trigger_generate_name(struct lttng_trigger *trigger, uint64_t offset)
+{
+	int ret = 0;
+	char *generated_name = NULL;
+
+	ret = asprintf(&generated_name, "T%" PRIu64 "", offset);
+	if (ret < 0) {
+		ERR("Failed to generate trigger name");
+		ret = -1;
+		goto end;
+	}
+
+	free(trigger->name);
+	trigger->name = generated_name;
+end:
+	return ret;
 }
 
 LTTNG_HIDDEN

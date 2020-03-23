@@ -26,13 +26,15 @@ struct lttng_trigger {
 
 	struct lttng_condition *condition;
 	struct lttng_action *action;
+	char *name;
 	LTTNG_OPTIONAL(struct lttng_credentials) creds;
 };
 
 struct lttng_trigger_comm {
 	/* length excludes its own length. */
+	uint32_t name_length /* Includes '\0' */;
 	uint32_t length;
-	/* A condition and action object follow. */
+	/* A name, condition and action object follow. */
 	char payload[];
 } LTTNG_PACKED;
 
@@ -54,6 +56,13 @@ const struct lttng_action *lttng_trigger_get_const_action(
 
 LTTNG_HIDDEN
 bool lttng_trigger_validate(struct lttng_trigger *trigger);
+
+LTTNG_HIDDEN
+int lttng_trigger_assign_name(struct lttng_trigger *dst,
+		const struct lttng_trigger *src);
+
+LTTNG_HIDDEN
+int lttng_trigger_generate_name(struct lttng_trigger *trigger, uint64_t offset);
 
 LTTNG_HIDDEN
 bool lttng_trigger_is_equal(const struct lttng_trigger *a,
