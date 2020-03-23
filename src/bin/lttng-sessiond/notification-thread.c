@@ -29,6 +29,9 @@
 #include "health-sessiond.h"
 #include "thread.h"
 
+#include "kernel.h"
+#include <common/kernel-ctl/kernel-ctl.h>
+
 #include <urcu.h>
 #include <urcu/list.h>
 #include <urcu/rculfhash.h>
@@ -70,14 +73,27 @@ void notification_thread_handle_destroy(
 			PERROR("close kernel consumer channel monitoring pipe");
 		}
 	}
+
+	/* TODO: refactor this if needed. Lifetime of the kernel notification
+	 * event source.
+	 * event_trigger_sources.kernel_tracer is owned by the main thread and
+	 * is closed at this point.
+	 */
+	handle->event_trigger_sources.kernel_tracer = -1;
 end:
 	free(handle);
 }
 
+/*
+ * TODO: refactor this if needed. Lifetime of the kernel notification event source.
+ * The kernel_notification_monitor_fd ownwership remain to the main thread.
+ * This is because we need to close this fd before removing the modules.
+ */
 struct notification_thread_handle *notification_thread_handle_create(
 		struct lttng_pipe *ust32_channel_monitor_pipe,
 		struct lttng_pipe *ust64_channel_monitor_pipe,
-		struct lttng_pipe *kernel_channel_monitor_pipe)
+		struct lttng_pipe *kernel_channel_monitor_pipe,
+		int kernel_notification_monitor_fd)
 {
 	int ret;
 	struct notification_thread_handle *handle;
@@ -87,6 +103,8 @@ struct notification_thread_handle *notification_thread_handle_create(
 	if (!handle) {
 		goto end;
 	}
+
+	handle->event_trigger_sources.kernel_tracer = -1;
 
 	sem_init(&handle->ready, 0, 0);
 
@@ -135,6 +153,8 @@ struct notification_thread_handle *notification_thread_handle_create(
 	} else {
 		handle->channel_monitoring_pipes.kernel_consumer = -1;
 	}
+
+	handle->event_trigger_sources.kernel_tracer = kernel_notification_monitor_fd;
 
 	CDS_INIT_LIST_HEAD(&handle->event_trigger_sources.list);
 	ret = pthread_mutex_init(&handle->event_trigger_sources.lock, NULL);
@@ -272,14 +292,15 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	int ret;
 
 	/*
-	 * Create pollset with size 5:
+	 * Create pollset with size 6:
 	 *	- notification channel socket (listen for new connections),
 	 *	- command queue event fd (internal sessiond commands),
 	 *	- consumerd (32-bit user space) channel monitor pipe,
 	 *	- consumerd (64-bit user space) channel monitor pipe,
 	 *	- consumerd (kernel) channel monitor pipe.
+	 *	- kernel trigger event pipe,
 	 */
-	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
+	ret = lttng_poll_create(poll_set, 6, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto end;
 	}
@@ -311,13 +332,26 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 		goto error;
 	}
 	if (handle->channel_monitoring_pipes.kernel_consumer < 0) {
-		goto end;
+		goto skip_kernel_consumer;
 	}
 	ret = lttng_poll_add(poll_set,
 			handle->channel_monitoring_pipes.kernel_consumer,
 			LPOLLIN | LPOLLERR);
 	if (ret < 0) {
 		ERR("[notification-thread] Failed to add kernel channel monitoring pipe fd to pollset");
+		goto error;
+	}
+
+skip_kernel_consumer:
+	if (handle->event_trigger_sources.kernel_tracer < 0) {
+		goto end;
+	}
+
+	ret = lttng_poll_add(poll_set,
+			handle->event_trigger_sources.kernel_tracer,
+			LPOLLIN | LPOLLERR);
+	if (ret < 0) {
+		ERR("[notification-thread] Failed to add kernel trigger notification monitoring pipe fd to pollset");
 		goto error;
 	}
 end:
@@ -566,8 +600,11 @@ static int handle_trigger_event_pipe(int fd,
 		goto end;
 	}
 
-	/* For now only ust tracer can generate event */
-	domain = LTTNG_DOMAIN_UST;
+	if (fd == handle->event_trigger_sources.kernel_tracer) {
+		domain = LTTNG_DOMAIN_KERNEL;
+	} else {
+		domain = LTTNG_DOMAIN_UST;
+	}
 
 	ret = handle_notification_thread_event(state, fd, domain);
 	if (ret) {
@@ -587,6 +624,9 @@ static bool fd_is_event_source(struct notification_thread_handle *handle, int fd
 		if (source_element->fd != fd) {
 			continue;
 		}
+		return true;
+	}
+	if (fd == handle->event_trigger_sources.kernel_tracer) {
 		return true;
 	}
 	return false;

@@ -63,6 +63,7 @@ struct notification_thread_handle {
 		/* List of notification_event_trigger_source_element */
 		struct cds_list_head list;
 		pthread_mutex_t lock;
+		int kernel_tracer;
 	} event_trigger_sources;
 	/* Used to wait for the launch of the notification thread. */
 	sem_t ready;
@@ -251,7 +252,8 @@ struct notification_thread_state {
 struct notification_thread_handle *notification_thread_handle_create(
 		struct lttng_pipe *ust32_channel_monitor_pipe,
 		struct lttng_pipe *ust64_channel_monitor_pipe,
-		struct lttng_pipe *kernel_channel_monitor_pipe);
+		struct lttng_pipe *kernel_channel_monitor_pipe,
+		int kernel_notification_monitor_fd);
 void notification_thread_handle_destroy(
 		struct notification_thread_handle *handle);
 struct lttng_thread *launch_notification_thread(
