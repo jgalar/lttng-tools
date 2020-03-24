@@ -268,13 +268,29 @@ int match_channel_info(struct cds_lfht_node *node, const void *key)
 static
 int match_trigger(struct cds_lfht_node *node, const void *key)
 {
+	bool match = false;
 	struct lttng_trigger *trigger_key = (struct lttng_trigger *) key;
 	struct lttng_trigger_ht_element *trigger_ht_element;
+	const struct lttng_credentials *creds_key;
+	const struct lttng_credentials *creds_node;
 
 	trigger_ht_element = caa_container_of(node, struct lttng_trigger_ht_element,
 			node);
 
-	return !!lttng_trigger_is_equal(trigger_key, trigger_ht_element->trigger);
+	match = lttng_trigger_is_equal(trigger_key, trigger_ht_element->trigger);
+	if (!match) {
+		goto end;
+	}
+
+	/* Validate credential */
+	/* TODO: this could be moved to lttng_trigger_equal depending on how we
+	 * handle root behaviour on disable and listing.
+	 */
+	creds_key = lttng_trigger_get_credentials(trigger_key);
+	creds_node = lttng_trigger_get_credentials(trigger_ht_element->trigger);
+	match = lttng_credentials_is_equal(creds_key, creds_node);
+end:
+	return !!match;
 }
 
 static
@@ -2186,6 +2202,8 @@ int handle_notification_thread_command_register_trigger(
 	struct lttng_credentials object_creds;
 	enum action_executor_status executor_status;
 
+	assert(trigger->creds.is_set);
+
 	rcu_read_lock();
 
 	/* Set the trigger's tracer token */
@@ -2459,6 +2477,9 @@ int handle_notification_thread_command_unregister_trigger(
 
 	rcu_read_lock();
 
+	/* TODO Disabling for the root user is not complete, for now the root
+	 * user cannot disable the trigger from another user.
+	 */
 	cds_lfht_lookup(state->triggers_ht,
 			lttng_condition_hash(condition),
 			match_trigger,
