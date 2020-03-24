@@ -237,6 +237,23 @@ end:
 }
 
 LTTNG_HIDDEN
+bool lttng_trigger_is_equal(
+		const struct lttng_trigger *a, const struct lttng_trigger *b)
+{
+	/*
+	 * Name is not taken into account since it is cosmetic only.
+	 */
+	if (!lttng_condition_is_equal(a->condition, b->condition)) {
+		return false;
+	}
+	if (!lttng_action_is_equal(a->action, b->action)) {
+		return false;
+	}
+
+	return true;
+}
+
+LTTNG_HIDDEN
 void lttng_trigger_get(struct lttng_trigger *trigger)
 {
 	urcu_ref_get(&trigger->ref);
