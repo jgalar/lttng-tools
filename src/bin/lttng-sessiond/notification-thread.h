@@ -20,8 +20,12 @@
 #include <urcu/list.h>
 #include <urcu/rculfhash.h>
 
-
 typedef uint64_t notification_client_id;
+
+struct notification_event_trigger_source_element {
+	int fd;
+	struct cds_list_head node;
+};
 
 struct notification_thread_handle {
 	/*
@@ -43,6 +47,15 @@ struct notification_thread_handle {
 		int ust64_consumer;
 		int kernel_consumer;
 	} channel_monitoring_pipes;
+	/*
+	 * Read side of pipes used to reveice event trigger generetated by
+	 * registered applications
+	 */
+	struct {
+		/* List of notification_event_trigger_source_element */
+		struct cds_list_head list;
+		pthread_mutex_t lock;
+	} event_trigger_sources;
 	/* Used to wait for the launch of the notification thread. */
 	sem_t ready;
 };
