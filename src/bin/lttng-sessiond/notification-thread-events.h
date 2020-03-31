@@ -44,4 +44,8 @@ int handle_notification_thread_channel_sample(
 		struct notification_thread_state *state, int pipe,
 		enum lttng_domain_type domain);
 
+int handle_notification_thread_event(
+		struct notification_thread_state *state, int pipe,
+		enum lttng_domain_type domain);
+
 #endif /* NOTIFICATION_THREAD_EVENTS_H */

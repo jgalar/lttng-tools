@@ -4246,6 +4246,93 @@ end:
 	return ret;
 }
 
+int handle_notification_thread_event(struct notification_thread_state *state,
+		int pipe,
+		enum lttng_domain_type domain)
+{
+	int ret;
+	struct lttng_ust_trigger_notification notification;
+	struct cds_lfht_node *node;
+	struct cds_lfht_iter iter;
+	struct notification_trigger_tokens_ht_element *element;
+	enum lttng_action_type action_type;
+	const struct lttng_action *action;
+
+	/* Only ust is supported for now */
+	/* TODO split this into ust and kernel since received struct will not be
+	 * the same.
+	 */
+	assert(domain == LTTNG_DOMAIN_UST);
+	/*
+	 * The monitoring pipe only holds messages smaller than PIPE_BUF,
+	 * ensuring that read/write of sampling messages are atomic.
+	 */
+	/* TODO: should we read as much as we can ? EWOULDBLOCK? */
+
+	ret = lttng_read(pipe, &notification, sizeof(notification));
+	if (ret != sizeof(notification)) {
+		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
+				pipe);
+		/* TODO: Should this error out completly.
+		 * This can happen when an app is killed as of today
+		 * ret = -1 cause the whole thread to die and fuck up
+		 * everything.
+		 */
+		goto end;
+	}
+
+
+	/* Find triggers associated with this token. */
+	rcu_read_lock();
+	cds_lfht_lookup(state->trigger_tokens_ht,
+			hash_key_u64(&notification.id, lttng_ht_seed), match_trigger_token,
+			&notification.id, &iter);
+	node = cds_lfht_iter_get_node(&iter);
+	if (caa_likely(!node)) {
+		/* TODO: is this an error? This might happen if the receive side
+		 * is slow to process event from source and that the trigger was
+		 * removed but the app still kicking. This yield another
+		 * question on the trigger lifetime and when we can remove a
+		 * trigger. How to guarantee that all event with the token idea
+		 * have be processed? Do we want to provide this guarantee?
+		 *
+		 * Update: I have encountered this when using a trigger on
+		 * sched_switch and then removing it. The frequency is quite
+		 * high hence we en up exactly in the mentionned scenario.
+		 * AFAIK this might be the best way to handle this.
+		 */
+		ret = 0;
+		goto end_unlock;
+	}
+	element = caa_container_of(node,
+			struct notification_trigger_tokens_ht_element,
+			node);
+
+	action = lttng_trigger_get_const_action(element->trigger);
+	action_type = lttng_action_get_type_const(action);
+	DBG("Message from event source %d value:%" PRIu64 " action type: %s", pipe,
+			notification.id, lttng_action_type_string(action_type));
+	/* Debugging only */
+	if (action_type == LTTNG_ACTION_TYPE_GROUP) {
+		unsigned int nb_action = 0;
+		(void) lttng_action_group_get_count(action, &nb_action);
+		for (int i = 0; i < nb_action; i++) {
+			const struct lttng_action *p_action = NULL;
+			p_action = lttng_action_group_get_at_index(action, i);
+			assert(p_action);
+			DBG("Message from event source %d value:%" PRIu64 " action type internal index: %d value: %s", pipe,
+					notification.id, i, lttng_action_type_string(lttng_action_get_type_const(p_action)));
+		}
+	}
+
+	ret = 0;
+
+end_unlock:
+	rcu_read_unlock();
+end:
+	return ret;
+}
+
 int handle_notification_thread_channel_sample(
 		struct notification_thread_state *state, int pipe,
 		enum lttng_domain_type domain)
