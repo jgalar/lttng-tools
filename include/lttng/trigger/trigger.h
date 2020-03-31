@@ -48,6 +48,9 @@ enum lttng_trigger_firing_policy_type {
  * The caller retains the ownership of both the condition and action
  * and both must be kept alive for the lifetime of the trigger object.
  *
+ * If the action is a notification action with capture descriptors,
+ * the condition must be an event rule condition.
+ *
  * A trigger must be registered in order to become activate and can
  * be destroyed after its registration.
  *
@@ -158,7 +161,7 @@ extern int lttng_unregister_trigger(const struct lttng_trigger *trigger);
 
 /*
  * List current triggers.
- * 
+ *
  * On success, triggers is allocated.
  * The trigger collection must be free by the caller with lttng_destroy_triggers
  *
