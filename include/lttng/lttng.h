@@ -42,6 +42,7 @@
 #include <lttng/event-rule/tracepoint.h>
 #include <lttng/event-rule/uprobe.h>
 #include <lttng/event.h>
+#include <lttng/event-expr.h>
 #include <lttng/handle.h>
 #include <lttng/health.h>
 #include <lttng/load.h>
