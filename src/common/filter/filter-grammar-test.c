@@ -16,9 +16,9 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
+#include "common/bytecode/bytecode.h"
 #include "filter-ast.h"
 #include "filter-parser.h"
-#include "filter-bytecode.h"
 
 int main(int argc, char **argv)
 {
