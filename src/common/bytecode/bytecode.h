@@ -242,6 +242,18 @@ LTTNG_HIDDEN int bytecode_push(struct lttng_bytecode_alloc **fb,
 LTTNG_HIDDEN int bytecode_push_logical(struct lttng_bytecode_alloc **fb,
 		struct logical_op *data, uint32_t align, uint32_t len,
 		uint16_t *skip_offset);
+LTTNG_HIDDEN int bytecode_push_get_payload_root(
+		struct lttng_bytecode_alloc **bytecode);
+LTTNG_HIDDEN int bytecode_push_get_context_root(
+		struct lttng_bytecode_alloc **bytecode);
+LTTNG_HIDDEN int bytecode_push_get_app_context_root(
+		struct lttng_bytecode_alloc **bytecode);
+LTTNG_HIDDEN int bytecode_push_get_index_u64(
+		struct lttng_bytecode_alloc **bytecode, uint64_t index);
+LTTNG_HIDDEN int bytecode_push_get_symbol(
+		struct lttng_bytecode_alloc **bytecode,
+		struct lttng_bytecode_alloc **bytecode_reloc,
+		const char *symbol);
 LTTNG_HIDDEN struct lttng_bytecode *bytecode_copy(
 		const struct lttng_bytecode *orig_f);
 
