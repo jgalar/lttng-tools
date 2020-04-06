@@ -1801,13 +1801,13 @@ LTTNG_HIDDEN
 int run_as_generate_filter_bytecode(const char *filter_expression,
 		uid_t uid,
 		gid_t gid,
-		struct lttng_filter_bytecode **bytecode)
+		struct lttng_bytecode **bytecode)
 {
 	int ret;
 	struct run_as_data data = {};
 	struct run_as_ret run_as_ret = {};
-	const struct lttng_filter_bytecode *view_bytecode = NULL;
-	struct lttng_filter_bytecode *local_bytecode = NULL;
+	const struct lttng_bytecode *view_bytecode = NULL;
+	struct lttng_bytecode *local_bytecode = NULL;
 
 	DBG3("generate_filter_bytecode() from expression=\"%s\" for uid %d and gid %d",
 			filter_expression, (int) uid, (int) gid);
@@ -1825,7 +1825,7 @@ int run_as_generate_filter_bytecode(const char *filter_expression,
 		goto error;
 	}
 
-	view_bytecode = (const struct lttng_filter_bytecode *) run_as_ret.u.generate_filter_bytecode.bytecode;
+	view_bytecode = (const struct lttng_bytecode *) run_as_ret.u.generate_filter_bytecode.bytecode;
 
 	local_bytecode = zmalloc(sizeof(*local_bytecode) + view_bytecode->len);
 	if (!local_bytecode) {

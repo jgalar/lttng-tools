@@ -74,7 +74,7 @@ LTTNG_HIDDEN
 int run_as_generate_filter_bytecode(const char *filter_expression,
 		uid_t uid,
 		gid_t gid,
-		struct lttng_filter_bytecode **bytecode);
+		struct lttng_bytecode **bytecode);
 LTTNG_HIDDEN
 int run_as_create_worker(const char *procname,
 		post_fork_cleanup_cb clean_up_func, void *clean_up_user_data);

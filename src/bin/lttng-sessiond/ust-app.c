@@ -1262,7 +1262,7 @@ error:
  * Return allocated filter or NULL on error.
  */
 static struct lttng_ust_filter_bytecode *create_ust_bytecode_from_bytecode(
-		const struct lttng_filter_bytecode *orig_f)
+		const struct lttng_bytecode *orig_f)
 {
 	struct lttng_ust_filter_bytecode *filter = NULL;
 
@@ -1273,7 +1273,7 @@ static struct lttng_ust_filter_bytecode *create_ust_bytecode_from_bytecode(
 		goto error;
 	}
 
-	assert(sizeof(struct lttng_filter_bytecode) ==
+	assert(sizeof(struct lttng_bytecode) ==
 			sizeof(struct lttng_ust_filter_bytecode));
 	memcpy(filter, orig_f, sizeof(*filter) + orig_f->len);
 error:
@@ -1332,7 +1332,7 @@ error:
  * Return an ust_app_event object or NULL on error.
  */
 static struct ust_app_event *find_ust_app_event(struct lttng_ht *ht,
-		const char *name, const struct lttng_filter_bytecode *filter,
+		const char *name, const struct lttng_bytecode *filter,
 		int loglevel_value,
 		const struct lttng_event_exclusion *exclusion)
 {
@@ -1438,7 +1438,7 @@ error:
  * Set the filter on the tracer.
  */
 static int set_ust_filter(struct ust_app *app,
-		const struct lttng_filter_bytecode *bytecode,
+		const struct lttng_bytecode *bytecode,
 		struct lttng_ust_object_data *ust_object)
 {
 	int ret;
