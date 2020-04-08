@@ -16,6 +16,7 @@
 #include <lttng/condition/event-rule.h>
 #include <lttng/event-rule/event-rule.h>
 #include <lttng/event-rule/event-rule-internal.h>
+#include <common/bytecode/bytecode.h>
 #include <common/error.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 #include <common/filter.h>
@@ -620,8 +621,7 @@ int trigger_agent_enable(const struct lttng_trigger *trigger, struct agent *agt)
 		/* Get the filter bytecode */
 		filter_bytecode = lttng_event_rule_get_filter_bytecode(rule);
 		if (filter_bytecode) {
-			filter_bytecode_copy =
-					copy_filter_bytecode(filter_bytecode);
+			filter_bytecode_copy = bytecode_copy (filter_bytecode);
 			if (!filter_bytecode_copy) {
 				ret = LTTNG_ERR_NOMEM;
 				goto end;

@@ -19,6 +19,7 @@
 #include <urcu/compiler.h>
 #include <signal.h>
 
+#include <common/bytecode/bytecode.h>
 #include <common/common.h>
 #include <common/hashtable/utils.h>
 #include <lttng/event-rule/event-rule.h>
@@ -2012,7 +2013,7 @@ static void shadow_copy_event(struct ust_app_event *ua_event,
 
 	/* Copy filter bytecode */
 	if (uevent->filter) {
-		ua_event->filter = copy_filter_bytecode(uevent->filter);
+		ua_event->filter = bytecode_copy(uevent->filter);
 		/* Filter might be NULL here in case of ENONEM. */
 	}
 

@@ -99,3 +99,24 @@ int bytecode_push_logical(struct lttng_filter_bytecode_alloc **fb,
 			- (void *) &(*fb)->b.data[0];
 	return 0;
 }
+
+/*
+ * Allocate an lttng_bytecode object and copy the given original bytecode.
+ *
+ * Return allocated bytecode or NULL on error.
+ */
+struct lttng_filter_bytecode *bytecode_copy(
+		const struct lttng_filter_bytecode *orig_f)
+{
+	struct lttng_filter_bytecode *bytecode = NULL;
+
+	bytecode = zmalloc(sizeof(*bytecode) + orig_f->len);
+	if (!bytecode) {
+		goto error;
+	}
+
+	memcpy(bytecode, orig_f, sizeof(*bytecode) + orig_f->len);
+
+error:
+	return bytecode;
+}
