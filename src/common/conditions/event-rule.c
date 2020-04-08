@@ -21,8 +21,10 @@
 #include <lttng/event-rule/event-rule-internal.h>
 #include <lttng/event-expr-internal.h>
 #include <lttng/event-expr.h>
+#include <lttng/lttng-error.h>
 #include <common/macros.h>
 #include <common/error.h>
+#include <common/event-expr-to-bytecode.h>
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -978,4 +980,141 @@ lttng_evaluation_event_rule_get_trigger_name(
 	*name = hit->name;
 end:
 	return status;
+}
+
+LTTNG_HIDDEN
+enum lttng_error_code
+lttng_condition_event_rule_generate_capture_descriptor_bytecode_set(
+		struct lttng_condition *condition,
+		struct lttng_dynamic_pointer_array *bytecode_set)
+{
+	enum lttng_error_code ret;
+	enum lttng_condition_status status;
+	unsigned int capture_count;
+	const struct lttng_condition_event_rule_capture_bytecode_element *set_element;
+	struct lttng_capture_descriptor *local_capture_desc;
+	ssize_t set_count;
+	struct lttng_condition_event_rule_capture_bytecode_element *set_element_to_append =
+			NULL;
+	struct lttng_bytecode *bytecode = NULL;
+
+	if (!condition || !IS_EVENT_RULE_CONDITION(condition) ||
+			!bytecode_set) {
+		ret = LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	status = lttng_condition_event_rule_get_capture_descriptor_count(
+			condition, &capture_count);
+	if (status != LTTNG_CONDITION_STATUS_OK) {
+		ret = LTTNG_ERR_FATAL;
+		goto end;
+	}
+
+	/*
+	 * O(n^2), don't care. This code path is not hot.
+	 * Before inserting into the set, validate that the expression is not
+	 * already present in it.
+	 */
+	for (unsigned int i = 0; i < capture_count; i++) {
+		int found_in_set = false;
+
+		set_count = lttng_dynamic_pointer_array_get_count(bytecode_set);
+
+		local_capture_desc =
+				lttng_condition_event_rule_get_internal_capture_descriptor_at_index(
+						condition, i);
+		if (local_capture_desc == NULL) {
+			ret = LTTNG_ERR_FATAL;
+			goto end;
+		}
+
+		/*
+		 * Iterate over the set to check if already present in the set.
+		 */
+		for (ssize_t j = 0; j < set_count; j++) {
+			set_element = (struct lttng_condition_event_rule_capture_bytecode_element
+							*)
+					lttng_dynamic_pointer_array_get_pointer(
+							bytecode_set, j);
+			if (set_element == NULL) {
+				ret = LTTNG_ERR_FATAL;
+				goto end;
+			}
+
+			if (!lttng_event_expr_is_equal(
+					    local_capture_desc->event_expression,
+					    set_element->expression)) {
+				/* Check against next set element */
+				continue;
+			}
+
+			/*
+			 * Already present in the set, assign the
+			 * capture index of the capture descriptor for
+			 * future use.
+			 */
+			found_in_set = true;
+			local_capture_desc->capture_index = j;
+			/* Exit inner loop */
+			break;
+		}
+
+		if (found_in_set) {
+			/* Process next local capture descriptor */
+			continue;
+		}
+
+		/*
+		 * Not found in the set.
+		 * Insert the capture descriptor in the set.
+		 */
+		set_element_to_append = malloc(sizeof(*set_element_to_append));
+		if (set_element_to_append == NULL) {
+			ret = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+
+		/* Generate the bytecode */
+		status = lttng_event_expr_to_bytecode(
+				local_capture_desc->event_expression,
+				&bytecode);
+		if (status < 0 || bytecode == NULL) {
+			/* TODO: return pertinent capture related error code */
+			ret = LTTNG_ERR_FILTER_INVAL;
+			goto end;
+		}
+
+		set_element_to_append->bytecode = bytecode;
+
+		/* 
+		 * Ensure the lifetime of the event expression.
+		 * Our reference will be put on condition destroy.
+		 */
+		lttng_event_expr_get(local_capture_desc->event_expression);
+		set_element_to_append->expression =
+				local_capture_desc->event_expression;
+
+		ret = lttng_dynamic_pointer_array_add_pointer(
+				bytecode_set, set_element_to_append);
+		if (ret < 0) {
+			ret = LTTNG_ERR_NOMEM;
+			goto end;
+		}
+
+		/* Ownership tranfered to the bytecode set */
+		set_element_to_append = NULL;
+		bytecode = NULL;
+
+		/* Assign the capture descriptor for future use */
+		local_capture_desc->capture_index = set_count;
+	}
+
+	/* Everything went better than expected */
+	ret = LTTNG_OK;
+
+end:
+	free(set_element_to_append);
+	free(bytecode);
+	return ret;
 }
