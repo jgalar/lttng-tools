@@ -116,7 +116,7 @@ struct ust_app_token_event_rule {
 	int enabled;
 	int handle;
 	struct lttng_ust_object_data *obj;
-	struct lttng_event_rule *event_rule;
+	struct lttng_trigger *trigger;
 	uint64_t token;
 	struct lttng_ht_node_u64 node;
 	/* The event_rule object own this pointer */

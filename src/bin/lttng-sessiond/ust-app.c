@@ -346,7 +346,7 @@ void delete_ust_app_token_event_rule(int sock, struct ust_app_token_event_rule *
 		}
 		free(ua_token->obj);
 	}
-	lttng_event_rule_put(ua_token->event_rule);
+	lttng_trigger_put(ua_token->trigger);
 	free(ua_token);
 }
 
@@ -1185,9 +1185,11 @@ error:
  * Alloc new UST app token event rule.
  */
 static struct ust_app_token_event_rule *alloc_ust_app_token_event_rule(
-		struct lttng_event_rule *event_rule, uint64_t token)
+		struct lttng_trigger *trigger)
 {
 	struct ust_app_token_event_rule *ua_token;
+	struct lttng_condition *condition = NULL;
+	struct lttng_event_rule *event_rule = NULL;
 
 	ua_token = zmalloc(sizeof(struct ust_app_token_event_rule));
 	if (ua_token == NULL) {
@@ -1195,18 +1197,26 @@ static struct ust_app_token_event_rule *alloc_ust_app_token_event_rule(
 		goto error;
 	}
 
+	/* Get reference of the trigger */
+	/* TODO should this be like lttng_event_rule_get with a returned bool? */
+	lttng_trigger_get(trigger);
+
 	ua_token->enabled = 1;
-	ua_token->token = token;
-	lttng_ht_node_init_u64(&ua_token->node, token);
+	ua_token->token = lttng_trigger_get_tracer_token(trigger);
+	lttng_ht_node_init_u64(&ua_token->node, ua_token->token);
 
-	/* Get reference of the event_rule */
-	if (!lttng_event_rule_get(event_rule)) {
-		assert(0);
-	}
+	condition = lttng_trigger_get_condition(trigger);
+	assert(condition);
+	assert(lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT);
 
-	ua_token->event_rule = event_rule;
+	assert(LTTNG_CONDITION_STATUS_OK == lttng_condition_event_rule_get_rule_no_const(condition, &event_rule));
+	assert(event_rule);
+
+	ua_token->trigger = trigger;
 	ua_token->filter = lttng_event_rule_get_filter_bytecode(event_rule);
 	ua_token->exclusion = lttng_event_rule_generate_exclusions(event_rule);
+
+	/* TODO put capture here? or later*/
 
 	DBG3("UST app token event rule %" PRIu64 " allocated", ua_token->token);
 
@@ -1906,18 +1916,33 @@ void init_ust_trigger_from_event_rule(const struct lttng_event_rule *rule, struc
 
 /*
  * Create the specified event rule token onto the UST tracer for a UST app.
- *
  */
 static
 int create_ust_token_event_rule(struct ust_app *app, struct ust_app_token_event_rule *ua_token)
 {
 	int ret = 0;
 	struct lttng_ust_trigger trigger;
+	struct lttng_condition *condition = NULL;
+	struct lttng_event_rule *event_rule = NULL;
+	struct lttng_action *action = NULL;
 
 	health_code_update();
 	assert(app->token_communication.handle);
 
-	init_ust_trigger_from_event_rule(ua_token->event_rule, &trigger);
+	condition = lttng_trigger_get_condition(ua_token->trigger);
+	assert(condition);
+	assert(lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT);
+
+	lttng_condition_event_rule_get_rule_no_const(condition, &event_rule);
+	assert(event_rule);
+	assert(lttng_event_rule_get_type(event_rule) == LTTNG_EVENT_RULE_TYPE_TRACEPOINT);
+	/* Should we also test for UST at this point, or do we trust all the
+	 * upper level? */
+
+	action = lttng_trigger_get_action(ua_token->trigger);
+	assert(action);
+
+	init_ust_trigger_from_event_rule(event_rule, &trigger);
 	trigger.id = ua_token->token;
 
 	/* Create UST trigger on tracer */
@@ -3418,13 +3443,13 @@ error:
  * Called with ust app session mutex held.
  */
 static
-int create_ust_app_token_event_rule(struct lttng_event_rule *rule,
-		struct ust_app *app, uint64_t token)
+int create_ust_app_token_event_rule(struct lttng_trigger *trigger,
+		struct ust_app *app)
 {
 	int ret = 0;
 	struct ust_app_token_event_rule *ua_token;
 
-	ua_token = alloc_ust_app_token_event_rule(rule, token);
+	ua_token = alloc_ust_app_token_event_rule(trigger);
 	if (ua_token == NULL) {
 		ret = -ENOMEM;
 		goto end;
@@ -3442,7 +3467,7 @@ int create_ust_app_token_event_rule(struct lttng_event_rule *rule,
 		if (ret == -LTTNG_UST_ERR_EXIST) {
 			ERR("Tracer for application reported that a token event rule being created already existed: "
 					"token = \"%" PRIu64 "\", pid = %d, ppid = %d, uid = %d, gid = %d",
-					token,
+					lttng_trigger_get_tracer_token(trigger),
 					app->pid, app->ppid, app->uid,
 					app->gid);
 		}
@@ -3451,7 +3476,7 @@ int create_ust_app_token_event_rule(struct lttng_event_rule *rule,
 
 	lttng_ht_add_unique_u64(app->tokens_ht, &ua_token->node);
 
-	DBG2("UST app create token event rule %" PRIu64 " for PID %d completed", token,
+	DBG2("UST app create token event rule %" PRIu64 " for PID %d completed", lttng_trigger_get_tracer_token(trigger),
 			app->pid);
 
 end:
@@ -5412,7 +5437,7 @@ void ust_app_synchronize_tokens(struct ust_app *app)
 		/* Iterate over all known token trigger */
 		ua_token = find_ust_app_token_event_rule(app->tokens_ht, token);
 		if (!ua_token) {
-			ret = create_ust_app_token_event_rule(event_rule, app, token);
+			ret = create_ust_app_token_event_rule(trigger, app);
 			if (ret < 0) {
 				goto end;
 			}
