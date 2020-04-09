@@ -28,6 +28,7 @@
 #include <lttng/condition/condition.h>
 #include <lttng/condition/event-rule-internal.h>
 #include <lttng/condition/event-rule.h>
+#include <lttng/trigger/trigger-internal.h>
 #include <common/sessiond-comm/sessiond-comm.h>
 
 #include "buffer-registry.h"
@@ -1993,7 +1994,7 @@ int create_ust_token_event_rule(struct ust_app *app, struct ust_app_token_event_
 	struct lttng_ust_trigger trigger;
 	struct lttng_condition *condition = NULL;
 	struct lttng_event_rule *event_rule = NULL;
-	struct lttng_action *action = NULL;
+	unsigned int capture_bytecode_count = 0;
 
 	health_code_update();
 	assert(app->token_communication.handle);
@@ -2007,9 +2008,6 @@ int create_ust_token_event_rule(struct ust_app *app, struct ust_app_token_event_
 	assert(lttng_event_rule_get_type(event_rule) == LTTNG_EVENT_RULE_TYPE_TRACEPOINT);
 	/* Should we also test for UST at this point, or do we trust all the
 	 * upper level? */
-
-	action = lttng_trigger_get_action(ua_token->trigger);
-	assert(action);
 
 	init_ust_trigger_from_event_rule(event_rule, &trigger);
 	trigger.id = ua_token->token;
@@ -2053,6 +2051,20 @@ int create_ust_token_event_rule(struct ust_app *app, struct ust_app_token_event_
 	/* Set exclusions for the event */
 	if (ua_token->exclusion) {
 		ret = set_ust_exclusions(app, ua_token->exclusion, ua_token->obj);
+		if (ret < 0) {
+			goto error;
+		}
+	}
+
+	/* Set the capture bytecode
+	 * TODO: do we want to emulate what is done with exclusion and provide
+	 * and object with a count of capture bytecode? instead of multiple
+	 * call?
+	 * */
+	capture_bytecode_count = lttng_trigger_get_capture_bytecode_count(ua_token->trigger);
+	for (unsigned int i = 0; i < capture_bytecode_count; i++) {
+		const struct lttng_bytecode *capture_bytecode = lttng_trigger_get_capture_bytecode_at_index(ua_token->trigger, i);
+		ret = set_ust_capture(app, capture_bytecode, ua_token->obj);
 		if (ret < 0) {
 			goto error;
 		}

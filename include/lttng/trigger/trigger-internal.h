@@ -166,4 +166,13 @@ LTTNG_HIDDEN
 enum lttng_domain_type lttng_trigger_get_underlying_domain_type_restriction(
 		const struct lttng_trigger *trigger);
 
+LTTNG_HIDDEN
+unsigned int lttng_trigger_get_capture_bytecode_count(
+		const struct lttng_trigger *trigger);
+
+LTTNG_HIDDEN
+const struct lttng_bytecode *
+lttng_trigger_get_capture_bytecode_at_index(
+		const struct lttng_trigger *trigger, unsigned int index);
+
 #endif /* LTTNG_TRIGGER_INTERNAL_H */
