@@ -4277,6 +4277,7 @@ static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigge
 	 * "populate" internal field e.g filter bytecode
 	 */
 	struct lttng_condition *condition = NULL;
+
 	condition = lttng_trigger_get_condition(trigger);
 	if (!condition) {
 		ret = LTTNG_ERR_INVALID_TRIGGER;
@@ -4297,6 +4298,13 @@ static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigge
 			goto end;
 		}
 
+		/* Generate the capture bytecode set */
+		ret = lttng_condition_event_rule_generate_capture_descriptor_bytecode_set(
+				condition, &trigger->capture_bytecode_set);
+		if (ret != LTTNG_OK) {
+			goto end;
+		}
+
 		ret = LTTNG_OK;
 		break;
 	}
@@ -4306,6 +4314,7 @@ static enum lttng_error_code prepare_trigger_object(struct lttng_trigger *trigge
 		break;
 	}
 	}
+
 end:
 	return ret;
 }
