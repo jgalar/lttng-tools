@@ -13,6 +13,7 @@
 
 #include <common/common.h>
 #include <common/sessiond-comm/agent.h>
+#include <common/dynamic-buffer.h>
 
 #include <common/compat/endian.h>
 
@@ -489,6 +490,26 @@ end:
 	return ret;
 }
 
+static
+int append_pstring(struct lttng_dynamic_buffer *buffer, const char *str, uint32_t len)
+{
+	int ret;
+	uint32_t len_be;
+
+	len_be = htobe32(len);
+	ret = lttng_dynamic_buffer_append(buffer, &len_be, sizeof(len_be));
+	if (ret) {
+		goto end;
+	}
+
+	ret = lttng_dynamic_buffer_append(buffer, str, len);
+	if (ret) {
+		goto end;
+	}
+end:
+	return ret;
+}
+
 /*
  * Internal enable application context on an agent application. This function
  * communicates with the agent to enable a given application context.
@@ -502,6 +523,7 @@ static int app_context_op(const struct agent_app *app,
 	uint32_t reply_ret_code;
 	struct lttcomm_agent_generic_reply reply;
 	size_t app_ctx_provider_name_len, app_ctx_name_len, data_size;
+	struct lttng_dynamic_buffer buffer;
 
 	assert(app);
 	assert(app->sock);
@@ -514,6 +536,7 @@ static int app_context_op(const struct agent_app *app,
 			ctx->provider_name, ctx->ctx_name,
 			app->pid, app->sock->fd);
 
+	lttng_dynamic_buffer_init(&buffer);
 	/*
 	 * Calculate the payload's size, which consists of the size (u32, BE)
 	 * of the provider name, the NULL-terminated provider name string, the
@@ -537,15 +560,19 @@ static int app_context_op(const struct agent_app *app,
 		goto error;
 	}
 
-	ret = send_pstring(app->sock, ctx->provider_name,
+	ret = append_pstring(&buffer, ctx->provider_name,
 			(uint32_t) app_ctx_provider_name_len);
 	if (ret < 0) {
 		goto error_io;
 	}
 
-	ret = send_pstring(app->sock, ctx->ctx_name,
+	ret = append_pstring(&buffer, ctx->ctx_name,
 			(uint32_t) app_ctx_name_len);
 	if (ret < 0) {
+		goto error_io;
+	}
+	ret = send_payload(app->sock, buffer.data, buffer.size);
+	if (ret) {
 		goto error_io;
 	}
 
@@ -569,6 +596,7 @@ static int app_context_op(const struct agent_app *app,
 error_io:
 	ret = LTTNG_ERR_UST_ENABLE_FAIL;
 error:
+	lttng_dynamic_buffer_reset(&buffer);
 	return ret;
 }
 
