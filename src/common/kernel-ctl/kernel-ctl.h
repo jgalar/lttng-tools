@@ -94,6 +94,7 @@ int kernctl_buffer_flush_empty(int fd);
 int kernctl_buffer_clear(int fd);
 int kernctl_get_metadata_version(int fd, uint64_t *version);
 int kernctl_metadata_cache_dump(int fd);
+int kernctl_metadata_incomplete(int fd);
 
 /* index */
 int kernctl_get_timestamp_begin(int fd, uint64_t *timestamp_begin);

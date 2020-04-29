@@ -510,6 +510,11 @@ int kernctl_buffer_clear(int fd)
 	return LTTNG_IOCTL_CHECK(fd, RING_BUFFER_CLEAR);
 }
 
+int kernctl_metadata_incomplete(int fd)
+{
+	return LTTNG_IOCTL_NO_CHECK(fd, RING_BUFFER_METADATA_INCOMPLETE);
+}
+
 /* returns the version of the metadata. */
 int kernctl_get_metadata_version(int fd, uint64_t *version)
 {
