@@ -53,6 +53,7 @@
 #define RING_BUFFER_GET_METADATA_VERSION    _IOR(0xF6, 0x0D, uint64_t)
 /* Flush the current sub-buffer, even if empty. */
 #define RING_BUFFER_FLUSH_EMPTY			_IO(0xF6, 0x0F)
+#define RING_RING_BUFFER_GET_NEXT_SUBBUF_METADATA_CHECK _IOR(0xF6, 0x12, uint32_t)
 
 /* returns the timestamp begin of the current sub-buffer */
 #define LTTNG_RING_BUFFER_GET_TIMESTAMP_BEGIN     _IOR(0xF6, 0x20, uint64_t)
