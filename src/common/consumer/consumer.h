@@ -26,6 +26,7 @@
 #include <common/index/ctf-index.h>
 #include <common/trace-chunk-registry.h>
 #include <common/credentials.h>
+#include <common/dynamic-buffer.h>
 
 /* Commands for consumer */
 enum lttng_consumer_command {
@@ -464,6 +465,17 @@ struct lttng_consumer_stream {
 	 * file before writing in it (regeneration).
 	 */
 	unsigned int reset_metadata_flag:1;
+	/*
+	 * Metadata content accumulated until a parseable metadata unit
+	 * has been reached.
+	 */
+	struct {
+		struct lttng_dynamic_buffer buffer;
+		/*
+		 * Bound of the currently accumulated parseable metadata unit.
+		 */
+		LTTNG_OPTIONAL(unsigned long) end_position;
+	} metadata_unit;
 };
 
 /*

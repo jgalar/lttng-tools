@@ -88,7 +88,9 @@ int lttng_kconsumer_get_produced_snapshot(struct lttng_consumer_stream *stream,
 
 	ret = kernctl_snapshot_get_produced(infd, pos);
 	if (ret != 0) {
-		PERROR("kernctl_snapshot_get_produced");
+		PERROR("Failed to get produced position of stream %" PRIu64
+				" of channel `%s`", stream->key,
+				stream->chan->name);
 	}
 
 	return ret;
@@ -107,7 +109,9 @@ int lttng_kconsumer_get_consumed_snapshot(struct lttng_consumer_stream *stream,
 
 	ret = kernctl_snapshot_get_consumed(infd, pos);
 	if (ret != 0) {
-		PERROR("kernctl_snapshot_get_consumed");
+		PERROR("Failed to get consumed position of stream %" PRIu64
+				" of channel `%s`", stream->key,
+				stream->chan->name);
 	}
 
 	return ret;
@@ -1440,8 +1444,8 @@ int lttng_kconsumer_sync_metadata(struct lttng_consumer_stream *metadata)
 			ERR("Sync metadata, taking kernel snapshot failed.");
 			goto end;
 		}
-		DBG("Sync metadata, no new kernel metadata");
 		/* No new metadata, exit. */
+		DBG("Sync metadata, no new kernel metadata");
 		ret = ENODATA;
 		goto end;
 	}
@@ -1550,6 +1554,85 @@ end:
 	return ret;
 }
 
+enum sample_parseable_metadata_unit_end_status {
+	SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_OK,
+	SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_UNKNOWN,
+	SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR,
+};
+
+static
+enum sample_parseable_metadata_unit_end_status
+lttng_kconsumer_sample_parseable_metadata_unit_end(
+		struct lttng_consumer_stream *stream,
+		unsigned long *end_position)
+{
+	int ret;
+	enum sample_parseable_metadata_unit_end_status status;
+	unsigned long pos1, pos2;
+
+	/*
+	 * Sample first production position.
+	 *
+	 * -EAGAIN is unexpected here (as opposed to other callsites) since we
+	 * know there is data to be read.
+	 */
+	ret = kernctl_snapshot(stream->wait_fd);
+	if (ret < 0) {
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR;
+		goto end;
+	}
+
+	ret = lttng_kconsumer_get_produced_snapshot(stream, &pos1);
+	if (ret < 0) {
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR;
+		goto end;
+	}
+
+	/* Is the tracer still producing metadata at this point? */
+	ret = kernctl_metadata_incomplete(stream->wait_fd);
+	if (ret < 0) {
+		PERROR("Failed to query kernel metadata stream completeness status: stream %" PRIu64,
+				stream->key);
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR;
+		goto end;
+	}
+
+	if (ret) {
+		/* Incomplete metadata; can't sample a quiescent position. */
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_UNKNOWN;
+		goto end;
+	}
+
+	/* Sample second production position. */
+	ret = kernctl_snapshot(stream->wait_fd);
+	if (ret < 0) {
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR;
+		goto end;
+	}
+
+	ret = lttng_kconsumer_get_produced_snapshot(stream, &pos2);
+	if (ret < 0) {
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR;
+		goto end;
+	}
+
+	if (pos1 == pos2) {
+		/* We got a reliable sample. */
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_OK;
+		*end_position = pos1;
+	} else {
+		/*
+		 * The tracer produced metadata at some point before or after
+		 * the sampling of the "incomplete metadata" state. There is
+		 * nothing we can conclude.
+		 */
+		status = SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_UNKNOWN;
+	}
+
+end:
+	return status;
+}
+
 /*
  * Consume data on a file descriptor and write it on a trace file.
  * The stream and channel locks must be held by the caller.
@@ -1576,6 +1659,29 @@ ssize_t lttng_kconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 			ERR("Stream rotation error");
 			ret = -1;
 			goto error;
+		}
+	}
+
+	if (stream->metadata_flag && !stream->metadata_unit.end_position.is_set) {
+		unsigned long metadata_unit_end_position;
+		const enum sample_parseable_metadata_unit_end_status sample_status =
+				lttng_kconsumer_sample_parseable_metadata_unit_end(
+						stream,
+						&metadata_unit_end_position);
+
+		switch (sample_status) {
+		case SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_OK:
+			LTTNG_OPTIONAL_SET(&stream->metadata_unit.end_position,
+					metadata_unit_end_position);
+			break;
+		case SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_ERROR:
+			ret = -1;
+			goto error;
+		case SAMPLE_PARSEABLE_METADATA_UNIT_END_STATUS_UNKNOWN:
+			/* Metadata is still being produced, accumulate it. */
+			break;
+		default:
+			abort();
 		}
 	}
 

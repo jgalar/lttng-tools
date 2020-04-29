@@ -335,9 +335,17 @@ void consumer_stream_destroy(struct lttng_consumer_stream *stream,
 		destroy_close_stream(stream);
 	}
 
-	/* Free stream within a RCU call. */
+
 	lttng_trace_chunk_put(stream->trace_chunk);
 	stream->trace_chunk = NULL;
+	if (stream->metadata_unit.buffer.size != 0) {
+		WARN("Metadata stream %" PRIu64
+				" has %zu bytes of unflushed metadata",
+				stream->key,
+				stream->metadata_unit.buffer.size);
+	}
+	lttng_dynamic_buffer_reset(&stream->metadata_unit.buffer);
+	/* Free stream within a RCU call. */
 	consumer_stream_free(stream);
 }
 
