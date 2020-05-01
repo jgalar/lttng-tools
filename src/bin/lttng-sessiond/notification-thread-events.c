@@ -4376,6 +4376,7 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 	enum action_executor_status executor_status;
 	struct notification_client_list *client_list = NULL;
 	const char *trigger_name;
+	unsigned int capture_count = 0;
 
 	notification = receive_notification(pipe, domain);
 	if (notification == NULL) {
@@ -4419,14 +4420,36 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 	trigger_status = lttng_trigger_get_name(element->trigger, &trigger_name);
 	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
 
+	if (LTTNG_CONDITION_STATUS_OK !=
+			lttng_condition_event_rule_get_capture_descriptor_count(
+					lttng_trigger_get_const_condition(
+							element->trigger),
+					&capture_count)) {
+		ERR("Get capture count");
+		ret = -1;
+		goto end;
+	}
+
+	if (!notification->capture_buffer && capture_count != 0) {
+		ERR("Expected capture but capture buffer is null");
+		ret = -1;
+		goto end;
+	}
+
 	evaluation = lttng_evaluation_event_rule_create(
-			trigger_name);
+			container_of(lttng_trigger_get_const_condition(
+						     element->trigger),
+					struct lttng_condition_event_rule,
+					parent),
+			trigger_name,
+			notification->capture_buffer,
+			notification->capture_buf_size, false);
+
 	if (evaluation == NULL) {
 		ERR("[notification-thread] Failed to create event rule hit evaluation");
 		ret = -1;
 		goto end_unlock;
 	}
-
 	client_list = get_client_list_from_condition(state,
 			lttng_trigger_get_const_condition(element->trigger));
 	executor_status = action_executor_enqueue(state->executor,

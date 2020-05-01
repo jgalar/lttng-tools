@@ -109,7 +109,8 @@ libcommon_la_LIBADD = \
 	$(top_builddir)/src/common/compat/libcompat.la \
 	$(top_builddir)/src/common/hashtable/libhashtable.la \
 	$(top_builddir)/src/common/fd-tracker/libfd-tracker.la \
-	$(top_builddir)/src/common/filter/libfilter.la
+	$(top_builddir)/src/common/filter/libfilter.la \
+	-lmsgpackc
 
 if BUILD_LIB_COMPAT
 SUBDIRS += compat
