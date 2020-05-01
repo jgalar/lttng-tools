@@ -43,6 +43,7 @@
 #include <lttng/event-rule/uprobe.h>
 #include <lttng/event.h>
 #include <lttng/event-expr.h>
+#include <lttng/event-field-value.h>
 #include <lttng/handle.h>
 #include <lttng/health.h>
 #include <lttng/load.h>

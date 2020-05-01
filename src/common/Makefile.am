@@ -61,6 +61,7 @@ libcommon_la_SOURCES = \
 	event.c \
 	event-expr.c \
 	event-expr-to-bytecode.c event-expr-to-bytecode.h \
+	event-field-value.c \
 	event-rule/event-rule.c \
 	event-rule/kprobe.c \
 	event-rule/kretprobe.c \
