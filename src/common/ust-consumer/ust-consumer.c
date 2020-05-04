@@ -1223,6 +1223,7 @@ static int snapshot_channel(uint64_t key, char *path, uint64_t relayd_id,
 			ssize_t read_len;
 			unsigned long len, padded_len;
 			const char *subbuf_addr;
+			struct lttng_buffer_view subbuf_view;
 
 			health_code_update();
 
@@ -1257,9 +1258,11 @@ static int snapshot_channel(uint64_t key, char *path, uint64_t relayd_id,
 				goto error_put_subbuf;
 			}
 
+			subbuf_view = lttng_buffer_view_init(
+					subbuf_addr, 0, padded_len);
 			read_len = lttng_consumer_on_read_subbuffer_mmap(ctx,
-					stream, subbuf_addr, len,
-					padded_len - len, NULL);
+					stream, &subbuf_view, padded_len - len,
+					NULL);
 			if (use_relayd) {
 				if (read_len != len) {
 					ret = -EPERM;
@@ -2475,6 +2478,7 @@ int lttng_ustconsumer_read_subbuffer(struct lttng_consumer_stream *stream,
 	struct ustctl_consumer_stream *ustream;
 	struct ctf_packet_index index;
 	const char *subbuf_addr;
+	struct lttng_buffer_view subbuf_view;
 
 	assert(stream);
 	assert(stream->ustream);
@@ -2577,9 +2581,11 @@ retry:
 		goto error_put_subbuf;
 	}
 
+	subbuf_view = lttng_buffer_view_init(subbuf_addr, 0, len);
+
 	/* write the subbuffer to the tracefile */
 	ret = lttng_consumer_on_read_subbuffer_mmap(
-			ctx, stream, subbuf_addr, subbuf_size, padding, &index);
+			ctx, stream, &subbuf_view, padding, &index);
 	/*
 	 * The mmap operation should write subbuf_size amount of data when
 	 * network streaming or the full padding (len) size when we are _not_
