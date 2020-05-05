@@ -170,6 +170,8 @@ struct lttng_consumer_channel {
 	int live_timer_enabled;
 	timer_t live_timer;
 	int live_timer_error;
+	/* Channel is part of a live session ? */
+	bool is_live;
 
 	/* On-disk circular buffer */
 	uint64_t tracefile_size;
@@ -672,6 +674,7 @@ struct lttng_consumer_channel *consumer_allocate_channel(uint64_t key,
 		uint64_t session_id_per_pid,
 		unsigned int monitor,
 		unsigned int live_timer_interval,
+		bool is_in_live_session,
 		const char *root_shm_path,
 		const char *shm_path);
 void consumer_del_stream(struct lttng_consumer_stream *stream,

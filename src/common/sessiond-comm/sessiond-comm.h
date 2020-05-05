@@ -452,6 +452,8 @@ struct lttcomm_consumer_msg {
 			uint32_t monitor;
 			/* timer to check the streams usage in live mode (usec). */
 			unsigned int live_timer_interval;
+			/* is part of a live session */
+			uint8_t is_live;
 		} LTTNG_PACKED channel; /* Only used by Kernel. */
 		struct {
 			uint64_t stream_key;
@@ -483,6 +485,7 @@ struct lttcomm_consumer_msg {
 			uint32_t switch_timer_interval;		/* usec */
 			uint32_t read_timer_interval;		/* usec */
 			unsigned int live_timer_interval;		/* usec */
+			uint8_t is_live;			/* is part of a live session */
 			int32_t output;				/* splice, mmap */
 			int32_t type;				/* metadata or per_cpu */
 			uint64_t session_id;			/* Tracing session id */
