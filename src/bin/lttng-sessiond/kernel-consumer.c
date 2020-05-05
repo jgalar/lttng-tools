@@ -192,12 +192,15 @@ int kernel_consumer_add_metadata(struct consumer_socket *sock,
 			session->uid,
 			session->gid,
 			consumer->net_seq_index,
-			DEFAULT_METADATA_NAME,
+			session->metadata->conf->name,
 			1,
-			DEFAULT_KERNEL_CHANNEL_OUTPUT,
+			session->metadata->conf->attr.output,
 			CONSUMER_CHANNEL_TYPE_METADATA,
-			0, 0,
-			monitor, 0, session->is_live_session);
+			session->metadata->conf->attr.tracefile_size,
+			session->metadata->conf->attr.tracefile_count,
+			monitor,
+			session->metadata->conf->attr.live_timer_interval,
+			session->is_live_session);
 
 	health_code_update();
 
