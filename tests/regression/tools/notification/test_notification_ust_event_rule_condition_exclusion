@@ -38,40 +38,16 @@ DIR=$(readlink -f $TESTDIR)
 
 
 source $TESTDIR/utils/utils.sh
-
-function ust_event_generator_toggle_state
-{
-	ust_event_generator_suspended=$((ust_event_generator_suspended==0))
-
-}
-function ust_event_generator
-{
-	test_app=$1
-	state_file=$2
-	ust_event_generator_suspended=0
-	trap ust_event_generator_toggle_state SIGUSR1
-
-	while (true); do
-		if [[ $ust_event_generator_suspended -eq "1" ]]; then
-			touch $state_file
-			sleep 0.5
-		else
-			if [[ -f $state_file ]]; then
-				rm -rf $state_file 2> /dev/null
-			fi
-			taskset  -c 0 $test_app -i $NR_ITER -w $NR_USEC_WAIT > /dev/null 2>&1
-		fi
-	done
-}
+source $CURDIR/util_event_generator.sh
 
 function test_event_rule_condition_exclusion_notification
 {
-	ust_event_generator $GEN_UST_NEVENTS_TESTAPP_BIN $TESTAPP_STATE_PATH &
+	ust_event_generator_run_once_per_transition "$GEN_UST_NEVENTS_TESTAPP_BIN" "$TESTAPP_STATE_PATH" 5 5 &
 	APP_PID=$!
 
 	$CURDIR/notification 3 LTTNG_DOMAIN_UST $APP_PID $TESTAPP_STATE_PATH
 
-	kill -9 $APP_PID
+	kill -SIGUSR2 $APP_PID
 	wait $APP_PID 2> /dev/null
 }
 

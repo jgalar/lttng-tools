@@ -36,47 +36,7 @@ DIR=$(readlink -f $TESTDIR)
 NUM_TESTS=104
 
 source $TESTDIR/utils/utils.sh
-
-function kernel_event_generator_toggle_state
-{
-	kernel_event_generator_suspended=$((kernel_event_generator_suspended==0))
-}
-
-function generate_filter_events
-{
-	/bin/echo -n "10" > /proc/lttng-test-filter-event 2> /dev/null
-}
-
-function generate_syscalls
-{
-	# Pass /dev/null so to generate the syscall right away.
-	$SYSCALL_TESTAPP_BIN /dev/null
-}
-
-function userspace_probe_testapp
-{
-	 $USERSPACE_PROBE_ELF_TESTAPP_BIN
-}
-
-function kernel_event_generator
-{
-	command_to_run=$1
-	state_file=$2
-	kernel_event_generator_suspended=0
-	trap kernel_event_generator_toggle_state SIGUSR1
-
-	while (true); do
-		if [[ $kernel_event_generator_suspended -eq "1" ]]; then
-			touch $state_file
-			sleep 0.5
-		else
-			if [[ -f $state_file ]]; then
-				rm $state_file 2> /dev/null
-			fi
-			$command_to_run
-		fi
-	done
-}
+source $CURDIR/util_event_generator.sh
 
 function test_kernel_instrumentation_notification
 {
@@ -85,7 +45,7 @@ function test_kernel_instrumentation_notification
 
 	$CURDIR/notification 4 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
 
-	kill -9 $APP_PID
+	kill -SIGUSR2 $APP_PID
 	wait $APP_PID 2> /dev/null
 }
 
