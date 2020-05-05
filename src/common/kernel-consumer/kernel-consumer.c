@@ -650,7 +650,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
-		new_stream = consumer_allocate_stream(channel->key,
+		pthread_mutex_lock(&channel->lock);
+		new_stream = consumer_allocate_stream(
+				channel,
+				channel->key,
 				fd,
 				LTTNG_CONSUMER_ACTIVE_STREAM,
 				channel->name,
@@ -670,10 +673,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				lttng_consumer_send_error(ctx, LTTCOMM_CONSUMERD_OUTFD_ERROR);
 				break;
 			}
+			pthread_mutex_unlock(&channel->lock);
 			goto end_nosignal;
 		}
 
-		new_stream->chan = channel;
 		new_stream->wait_fd = fd;
 		switch (channel->output) {
 		case CONSUMER_CHANNEL_SPLICE:
@@ -733,6 +736,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 					"relayd id %" PRIu64, new_stream->name,
 					new_stream->relayd_id);
 			cds_list_add(&new_stream->send_node, &channel->streams.head);
+			pthread_mutex_unlock(&channel->lock);
 			break;
 		}
 
@@ -741,6 +745,7 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			ret = consumer_send_relayd_stream(new_stream,
 					new_stream->chan->pathname);
 			if (ret < 0) {
+				pthread_mutex_unlock(&channel->lock);
 				consumer_stream_free(new_stream);
 				goto end_nosignal;
 			}
@@ -754,10 +759,12 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 				ret = consumer_send_relayd_streams_sent(
 						new_stream->relayd_id);
 				if (ret < 0) {
+					pthread_mutex_unlock(&channel->lock);
 					goto end_nosignal;
 				}
 			}
 		}
+		pthread_mutex_unlock(&channel->lock);
 
 		/* Get the right pipe where the stream will be sent. */
 		if (new_stream->metadata_flag) {
