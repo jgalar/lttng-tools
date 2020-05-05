@@ -645,7 +645,9 @@ void lttng_consumer_cleanup(void);
  */
 int lttng_consumer_poll_socket(struct pollfd *kconsumer_sockpoll);
 
-struct lttng_consumer_stream *consumer_allocate_stream(uint64_t channel_key,
+struct lttng_consumer_stream *consumer_allocate_stream(
+		struct lttng_consumer_channel *channel,
+		uint64_t channel_key,
 		uint64_t stream_key,
 		enum lttng_consumer_stream_state state,
 		const char *channel_name,

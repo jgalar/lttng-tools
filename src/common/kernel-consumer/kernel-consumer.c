@@ -650,7 +650,10 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 
 		health_code_update();
 
-		new_stream = consumer_allocate_stream(channel->key,
+		pthread_mutex_lock(&channel->lock);
+		new_stream = consumer_allocate_stream(
+				channel,
+				channel->key,
 				fd,
 				LTTNG_CONSUMER_ACTIVE_STREAM,
 				channel->name,
@@ -673,7 +676,6 @@ int lttng_kconsumer_recv_cmd(struct lttng_consumer_local_data *ctx,
 			goto end_nosignal;
 		}
 
-		new_stream->chan = channel;
 		new_stream->wait_fd = fd;
 		switch (channel->output) {
 		case CONSUMER_CHANNEL_SPLICE:
