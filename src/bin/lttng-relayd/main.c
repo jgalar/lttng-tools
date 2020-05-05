@@ -1975,6 +1975,10 @@ static int relay_recv_metadata(const struct lttcomm_relayd_hdr *recv_hdr,
 		ret = -1;
 		goto end_put;
 	}
+
+	/* Force slow metadata reception */
+	sleep(1);
+
 end_put:
 	stream_put(metadata_stream);
 end:
