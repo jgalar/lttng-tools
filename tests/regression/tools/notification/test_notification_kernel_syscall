@@ -4,76 +4,44 @@
 #
 # SPDX-License-Identifier: LGPL-2.1-only
 
-CURDIR=$(dirname $0)/
+CURDIR=$(dirname "$0")/
 TESTDIR=$CURDIR/../../../
 
 TMPDIR=$(mktemp -d)
 
-#This is needed since the testpoint create a pipe with the consumerd type suffixed
-TESTPOINT_BASE_PATH=$(readlink -f "$TMPDIR/lttng.t_p_n")
-TESTPOINT_PIPE_PATH=$(mktemp -u "${TESTPOINT_BASE_PATH}.XXXXXX")
-TESTPOINT=$(readlink -f ${CURDIR}/.libs/libpause_consumer.so)
-
-
-TESTAPP_PATH="$TESTDIR/utils/testapp"
-TESTAPP_NAME="gen-ust-events"
-TESTAPP_BIN="$TESTAPP_PATH/$TESTAPP_NAME/$TESTAPP_NAME"
 TESTAPP_STATE_PATH=$(mktemp -u "$TMPDIR/application_state.XXXXXXXXXX")
 
-SYSCALL_TESTAPP_NAME="gen-syscall-events"
-SYSCALL_TESTAPP_BIN="$TESTAPP_PATH/$SYSCALL_TESTAPP_NAME/$SYSCALL_TESTAPP_NAME"
-
-USERSPACE_PROBE_ELF_TESTAPP_NAME="userspace-probe-elf-binary"
-USERSPACE_PROBE_ELF_TESTAPP_BIN="$TESTAPP_PATH/$USERSPACE_PROBE_ELF_TESTAPP_NAME/.libs/$USERSPACE_PROBE_ELF_TESTAPP_NAME"
-
-SESSION_NAME="my_session"
-CHANNEL_NAME="my_channel"
-
-TRACE_PATH=$(mktemp -d)
-PAGE_SIZE=$(getconf PAGE_SIZE)
-
-DIR=$(readlink -f $TESTDIR)
 NUM_TESTS=104
 
-source $TESTDIR/utils/utils.sh
-source $CURDIR/util_event_generator.sh
+# shellcheck source=../../../utils/utils.sh
+source "$TESTDIR/utils/utils.sh"
+# shellcheck source=./util_event_generator.sh
+source "$CURDIR/util_event_generator.sh"
 
 function test_kernel_syscall_notification
 {
-	kernel_event_generator_run_once_per_transition generate_syscalls $TESTAPP_STATE_PATH 10 /proc/cpuinfo /proc/cmdline &
+	kernel_event_generator_run_once_per_transition generate_syscalls \
+		"$TESTAPP_STATE_PATH" 10 /proc/cpuinfo /proc/cmdline &
 	APP_PID=$!
 
-	$CURDIR/notification 5 LTTNG_DOMAIN_KERNEL $APP_PID $TESTAPP_STATE_PATH
+	# Pass the syscall_generator_file for filtering
+	"$CURDIR/notification" 5 LTTNG_DOMAIN_KERNEL $APP_PID \
+		"$TESTAPP_STATE_PATH"
+
 
 	kill -SIGUSR2 $APP_PID
 	wait $APP_PID 2> /dev/null
 }
 
 if [ "$(id -u)" == "0" ]; then
-	consumerd_pipe=()
-
 	validate_lttng_modules_present
-
-	# This is needed since the testpoint create a pipe with the consumer
-	# type suffixed.
-	for f in "$TESTPOINT_BASE_PATH"*; do
-		consumerd_pipe+=("$f")
-	done
-
-	modprobe lttng-test
-
-	LTTNG_SESSIOND_ENV_VARS="LTTNG_TESTPOINT_ENABLE=1 \
-		CONSUMER_PAUSE_PIPE_PATH=${TESTPOINT_PIPE_PATH} \
-		LD_PRELOAD=${TESTPOINT}"
 
 	start_lttng_sessiond_notap
 
 	test_kernel_syscall_notification
 
 	stop_lttng_sessiond_notap
-	rmmod lttng-test
 
-	rm -rf ${consumerd_pipe[@]} 2> /dev/null
 else
 	# Kernel tests are skipped.
 	plan_tests $NUM_TESTS
@@ -81,5 +49,4 @@ else
 fi
 
 # Just in case cleanup
-rm -rf $TRACE_PATH
-rm -rf $TMPDIR
+rm -rf "$TMPDIR"
