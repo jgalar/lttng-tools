@@ -21,6 +21,26 @@
 #include "consumer.h"
 
 /*
+ * Create a consumer stream.
+ *
+ * The channel lock MUST be acquired.
+ */
+struct lttng_consumer_stream *consumer_stream_create(
+		struct lttng_consumer_channel *channel,
+		uint64_t channel_key,
+		uint64_t stream_key,
+		enum lttng_consumer_stream_state state,
+		const char *channel_name,
+		uid_t uid,
+		gid_t gid,
+		uint64_t relayd_id,
+		uint64_t session_id,
+		int cpu,
+		int *alloc_ret,
+		enum consumer_channel_type type,
+		unsigned int monitor);
+
+/*
  * Close stream's file descriptors and, if needed, close stream also on the
  * relayd side.
  *
