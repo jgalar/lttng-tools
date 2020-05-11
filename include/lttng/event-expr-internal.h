@@ -9,9 +9,12 @@
 #define LTTNG_EVENT_EXPR_INTERNAL_H
 
 #include <assert.h>
+#include <common/macros.h>
 #include <lttng/event-expr.h>
+#include <urcu/ref.h>
 
 struct lttng_event_expr {
+	struct urcu_ref ref;
 	enum lttng_event_expr_type type;
 };
 
@@ -53,5 +56,11 @@ bool lttng_event_expr_is_lvalue(const struct lttng_event_expr *expr)
 			expr->type == LTTNG_EVENT_EXPR_TYPE_APP_SPECIFIC_CONTEXT_FIELD ||
 			expr->type == LTTNG_EVENT_EXPR_TYPE_ARRAY_FIELD_ELEMENT;
 }
+
+LTTNG_HIDDEN
+void lttng_event_expr_get(struct lttng_event_expr *expr);
+
+LTTNG_HIDDEN
+void lttng_event_expr_put(struct lttng_event_expr *expr);
 
 #endif /* LTTNG_EVENT_EXPR_INTERNAL_H */
