@@ -41,6 +41,7 @@
 #include <lttng/lttng.h>
 #include <lttng/notification/channel.h>
 #include <lttng/notification/notification.h>
+#include <lttng/condition/evaluation.h>
 #include <lttng/trigger/trigger.h>
 #include <lttng/userspace-probe.h>
 
@@ -50,6 +51,65 @@ int nb_args = 0;
 int named_pipe_args_start = 0;
 pid_t app_pid = 0;
 const char *app_state_file = NULL;
+
+static const char *get_notification_trigger_name(
+		struct lttng_notification *notification)
+{
+	const char *name = NULL;
+	enum lttng_evaluation_status status;
+	const struct lttng_evaluation *evaluation;
+	evaluation = lttng_notification_get_evaluation(notification);
+	if (evaluation == NULL) {
+		fail("lttng_notification_get_evaluation");
+		goto end;
+	}
+
+	switch (lttng_evaluation_get_type(evaluation)) {
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+	{
+		status = lttng_evaluation_event_rule_get_trigger_name(
+				evaluation, &name);
+		if (status != LTTNG_EVALUATION_STATUS_OK) {
+			fail("lttng_evaluation_event_rule_get_trigger_name");
+			name = NULL;
+			goto end;
+		}
+		break;
+	}
+	default:
+		fail("Wrong notification evaluation type \n");
+		goto end;
+	}
+end:
+	return name;
+}
+
+static int validator_notification_trigger_name(
+		struct lttng_notification *notification,
+		const char *trigger_name)
+{
+	int ret;
+	bool name_is_equal;
+	const char *name;
+
+	assert(notification);
+	assert(trigger_name);
+
+	name = get_notification_trigger_name(notification);
+	if (name == NULL) {
+		ret = 1;
+		goto end;
+	}
+
+	name_is_equal = (strcmp(trigger_name, name) == 0);
+	ok(name_is_equal, "Expected trigger name: %s got %s", trigger_name,
+			name);
+
+	ret = !name_is_equal;
+
+end:
+	return ret;
+}
 
 static
 void wait_on_file(const char *path, bool file_exist)
@@ -945,53 +1005,38 @@ static void create_tracepoint_event_rule_trigger(const char *event_pattern,
 	return;
 }
 
-static char *get_next_notification_trigger_name(
+static struct lttng_notification *get_next_notification(
 		struct lttng_notification_channel *notification_channel)
 {
-	struct lttng_notification *notification;
+	struct lttng_notification *local_notification = NULL;
 	enum lttng_notification_channel_status status;
-	const struct lttng_evaluation *notification_evaluation;
-	char *trigger_name = NULL;
-	const char *name;
 
 	/* Receive the next notification. */
 	status = lttng_notification_channel_get_next_notification(
-			notification_channel, &notification);
+			notification_channel, &local_notification);
 
 	switch (status) {
 	case LTTNG_NOTIFICATION_CHANNEL_STATUS_OK:
 		break;
+	case LTTNG_NOTIFICATION_CHANNEL_STATUS_NOTIFICATIONS_DROPPED:
+		fail("Notifications have been dropped");
+		local_notification = NULL;
+		break;
 	default:
 		/* Unhandled conditions / errors. */
 		fail("error: Unknown notification channel status\n");
-		goto end;
-	}
-
-	notification_evaluation =
-			lttng_notification_get_evaluation(notification);
-
-	switch (lttng_evaluation_get_type(notification_evaluation)) {
-	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
-		lttng_evaluation_event_rule_get_trigger_name(
-				notification_evaluation, &name);
-
-		trigger_name = strdup(name);
-		break;
-	default:
-		fail("error: Wrong notification evaluation type \n");
+		local_notification = NULL;
 		break;
 	}
 
-	lttng_notification_destroy(notification);
-
-end:
-	return trigger_name;
+	return local_notification;
 }
 
 static void test_tracepoint_event_rule_notification(
 		enum lttng_domain_type domain_type)
 {
 	int i;
+	int ret;
 	enum lttng_notification_channel_status nc_status;
 
 	struct lttng_action *action = NULL;
@@ -1023,14 +1068,23 @@ static void test_tracepoint_event_rule_notification(
 
 	/* Get 3 notifications */
 	for (i = 0; i < 3; i++) {
-		char *name = get_next_notification_trigger_name(
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
-		ok(strcmp(trigger_name, name) == 0,
-				"Received notification for the expected trigger name: %s",
-				trigger_name);
-		free(name);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		ret = validator_notification_trigger_name(notification, trigger_name);
+		lttng_notification_destroy(notification);
+		if (ret) {
+			goto end;
+		}
 	}
 
+end:
 	suspend_application();
 	lttng_notification_channel_destroy(notification_channel);
 	lttng_unregister_trigger(trigger);
@@ -1101,18 +1155,33 @@ static void test_tracepoint_event_rule_notification_filter(
 	 * the order we receive the notifications.
 	 */
 	for (i = 0; i < 3; i++) {
-		char *name = get_next_notification_trigger_name(
+		const char *name;
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		name = get_notification_trigger_name(notification);
+		if (name == NULL) {
+			lttng_notification_destroy(notification);
+			goto end;
+		}
+
 		if (strcmp(ctrl_trigger_name, name) == 0) {
 			ctrl_count++;
 		} else if (strcmp(trigger_name, name) == 0) {
 			count++;
 		}
-		free(name);
+		lttng_notification_destroy(notification);
 	}
 	ok(ctrl_count / 2 == count,
 			"Get twice as many control notif as of regular notif");
 
+end:
 	suspend_application();
 	lttng_unregister_trigger(trigger);
 	lttng_unregister_trigger(ctrl_trigger);
@@ -1181,18 +1250,33 @@ static void test_tracepoint_event_rule_notification_exclusion(
 	 * the order we receive the notifications.
 	 */
 	for (i = 0; i < 6; i++) {
-		char *name = get_next_notification_trigger_name(
+		const char *name;
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		name = get_notification_trigger_name(notification);
+		if (name == NULL) {
+			lttng_notification_destroy(notification);
+			goto end;
+		}
+
 		if (strcmp(ctrl_trigger_name, name) == 0) {
 			ctrl_count++;
 		} else if (strcmp(trigger_name, name) == 0) {
 			count++;
 		}
-		free(name);
+		lttng_notification_destroy(notification);
 	}
 	ok(ctrl_count / 5 == count,
 			"Got 5 times as many control notif as of regular notif");
 
+end:
 	suspend_application();
 	lttng_unregister_trigger(trigger);
 	lttng_unregister_trigger(ctrl_trigger);
@@ -1280,12 +1364,20 @@ static void test_kprobe_event_rule_notification(
 	resume_application();
 
 	for (i = 0; i < 3; i++) {
-		char *name = get_next_notification_trigger_name(
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
-		ok(strcmp(trigger_name, name) == 0,
-				"Received notification for the expected trigger name: %s",
-				trigger_name);
-		free(name);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		ret = validator_notification_trigger_name(notification, trigger_name);
+		lttng_notification_destroy(notification);
+		if (ret) {
+			goto end;
+		}
 	}
 
 end:
@@ -1383,12 +1475,20 @@ static void test_uprobe_event_rule_notification(
 	resume_application();
 
 	for (i = 0; i < 3; i++) {
-		char *name = get_next_notification_trigger_name(
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
-		ok(strcmp(trigger_name, name) == 0,
-				"Received notification for the expected trigger name: %s",
-				trigger_name);
-		free(name);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		ret = validator_notification_trigger_name(notification, trigger_name);
+		lttng_notification_destroy(notification);
+		if (ret) {
+			goto end;
+		}
 	}
 end:
 	suspend_application();
@@ -1462,12 +1562,20 @@ static void test_syscall_event_rule_notification(
 	resume_application();
 
 	for (i = 0; i < 3; i++) {
-		char *name = get_next_notification_trigger_name(
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
-		ok(strcmp(trigger_name, name) == 0,
-				"Received notification for the expected trigger name: %s",
-				trigger_name);
-		free(name);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		ret = validator_notification_trigger_name(notification, trigger_name);
+		lttng_notification_destroy(notification);
+		if (ret) {
+			goto end;
+		}
 	}
 end:
 	suspend_application();
@@ -1546,12 +1654,20 @@ static void test_syscall_event_rule_notification_filter(
 	resume_application();
 
 	for (i = 0; i < 3; i++) {
-		char *name = get_next_notification_trigger_name(
+		struct lttng_notification *notification = get_next_notification(
 				notification_channel);
-		ok(strcmp(trigger_name, name) == 0,
-				"Received notification for the expected trigger name: %s",
-				trigger_name);
-		free(name);
+		ok(notification, "Received notification");
+
+		/* Error */
+		if (notification == NULL) {
+			goto end;
+		}
+
+		ret = validator_notification_trigger_name(notification, trigger_name);
+		lttng_notification_destroy(notification);
+		if (ret) {
+			goto end;
+		}
 	}
 
 end:
@@ -1599,7 +1715,7 @@ int main(int argc, const char *argv[])
 	switch (test_scenario) {
 	case 1:
 	{
-		plan_tests(38);
+		plan_tests(44);
 
 		/* Test cases that need gen-ust-event testapp. */
 		diag("Test basic notification error paths for domain %s",
@@ -1664,7 +1780,7 @@ int main(int argc, const char *argv[])
 		 * Test cases that need a test app with more than one event
 		 * type.
 		 */
-		plan_tests(19);
+		plan_tests(25);
 
 		/*
 		 * At the moment, the only test case of this scenario is
@@ -1679,7 +1795,7 @@ int main(int argc, const char *argv[])
 	}
 	case 4:
 	{
-		plan_tests(10);
+		plan_tests(13);
 		/* Test cases that need the kernel tracer. */
 		assert(domain_type == LTTNG_DOMAIN_KERNEL);
 
@@ -1692,7 +1808,7 @@ int main(int argc, const char *argv[])
 	}
 	case 5:
 	{
-		plan_tests(19);
+		plan_tests(25);
 		/* Test cases that need the kernel tracer. */
 		assert(domain_type == LTTNG_DOMAIN_KERNEL);
 
@@ -1712,7 +1828,7 @@ int main(int argc, const char *argv[])
 	{
 		const char *testapp_path, *test_symbol_name;
 
-		plan_tests(10);
+		plan_tests(13);
 
 		if (argc < 7) {
 			fail("Missing parameter for tests to run %d", argc);
