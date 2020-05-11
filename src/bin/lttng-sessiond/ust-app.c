@@ -934,6 +934,8 @@ void delete_ust_app(struct ust_app *app)
 {
 	int ret, sock;
 	struct ust_app_session *ua_sess, *tmp_ua_sess;
+	struct lttng_ht_iter iter;
+	struct ust_app_token_event_rule *token;
 
 	/*
 	 * The session list lock must be held during this function to guarantee
@@ -953,9 +955,18 @@ void delete_ust_app(struct ust_app *app)
 		rcu_read_unlock();
 	}
 
+	/* Wipe token associated with the app */
+	cds_lfht_for_each_entry(app->tokens_ht->ht, &iter.iter, token,
+			node.node) {
+		ret = lttng_ht_del(app->tokens_ht, &iter);
+		assert(!ret);
+		delete_ust_app_token_event_rule(app->sock, token, app);
+	}
+
 	ht_cleanup_push(app->sessions);
 	ht_cleanup_push(app->ust_sessions_objd);
 	ht_cleanup_push(app->ust_objd);
+	ht_cleanup_push(app->tokens_ht);
 
 	/* This can happen if trigger setup failed. e.g killed app */
 	if (app->token_communication.handle) {
