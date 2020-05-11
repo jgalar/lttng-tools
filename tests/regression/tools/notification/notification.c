@@ -866,6 +866,7 @@ static void create_tracepoint_event_rule_trigger(const char *event_pattern,
 		const char **exclusions,
 		enum lttng_domain_type domain_type,
 		struct lttng_condition **condition,
+		struct lttng_action **action,
 		struct lttng_trigger **trigger)
 {
 	enum lttng_event_rule_status event_rule_status;
@@ -938,6 +939,7 @@ static void create_tracepoint_event_rule_trigger(const char *event_pattern,
 	ok(ret == 0, "Trigger registration %s", trigger_name);
 
 	*condition = tmp_condition;
+	*action = tmp_action;
 	*trigger = tmp_trigger;
 
 	return;
@@ -1006,7 +1008,7 @@ static void test_tracepoint_event_rule_notification(
 	}
 
 	create_tracepoint_event_rule_trigger(pattern, trigger_name, NULL, 0,
-			NULL, domain_type, &condition, &trigger);
+			NULL, domain_type, &condition, &action, &trigger);
 
 	notification_channel = lttng_notification_channel_create(
 			lttng_session_daemon_notification_endpoint);
@@ -1045,6 +1047,7 @@ static void test_tracepoint_event_rule_notification_filter(
 	enum lttng_notification_channel_status nc_status;
 
 	struct lttng_condition *ctrl_condition = NULL, *condition = NULL;
+	struct lttng_action *ctrl_action = NULL, *action = NULL;
 	struct lttng_notification_channel *notification_channel = NULL;
 	struct lttng_trigger *ctrl_trigger = NULL, *trigger = NULL;
 	const char *ctrl_trigger_name = "control_trigger";
@@ -1063,7 +1066,8 @@ static void test_tracepoint_event_rule_notification_filter(
 	ok(notification_channel, "Notification channel object creation");
 
 	create_tracepoint_event_rule_trigger(pattern, ctrl_trigger_name, NULL,
-			0, NULL, domain_type, &ctrl_condition, &ctrl_trigger);
+			0, NULL, domain_type, &ctrl_condition,
+			&ctrl_action, &ctrl_trigger);
 
 	nc_status = lttng_notification_channel_subscribe(
 			notification_channel, ctrl_condition);
@@ -1075,8 +1079,8 @@ static void test_tracepoint_event_rule_notification_filter(
 	 * `intfield` is even.
 	 */
 	create_tracepoint_event_rule_trigger(pattern, trigger_name,
-			"(intfield & 1) == 0", 0, NULL, domain_type, &condition,
-			&trigger);
+			"(intfield & 1) == 0", 0, NULL, domain_type,
+			&condition, &action, &trigger);
 
 	nc_status = lttng_notification_channel_subscribe(
 			notification_channel, condition);
@@ -1117,6 +1121,8 @@ static void test_tracepoint_event_rule_notification_filter(
 	lttng_trigger_destroy(ctrl_trigger);
 	lttng_condition_destroy(condition);
 	lttng_condition_destroy(ctrl_condition);
+	lttng_action_destroy(action);
+	lttng_action_destroy(ctrl_action);
 	return;
 }
 
@@ -1125,6 +1131,7 @@ static void test_tracepoint_event_rule_notification_exclusion(
 {
 	enum lttng_notification_channel_status nc_status;
 	struct lttng_condition *ctrl_condition = NULL, *condition = NULL;
+	struct lttng_action *ctrl_action = NULL, *action = NULL;
 	struct lttng_notification_channel *notification_channel = NULL;
 	struct lttng_trigger *ctrl_trigger = NULL, *trigger = NULL;
 	const char *ctrl_trigger_name = "control_exclusion_trigger";
@@ -1140,7 +1147,8 @@ static void test_tracepoint_event_rule_notification_exclusion(
 	ok(notification_channel, "Notification channel object creation");
 
 	create_tracepoint_event_rule_trigger(pattern, ctrl_trigger_name, NULL,
-			0, NULL, domain_type, &ctrl_condition, &ctrl_trigger);
+			0, NULL, domain_type, &ctrl_condition, &ctrl_action,
+			&ctrl_trigger);
 
 	nc_status = lttng_notification_channel_subscribe(
 			notification_channel, ctrl_condition);
@@ -1148,7 +1156,7 @@ static void test_tracepoint_event_rule_notification_exclusion(
 			"Subscribe to tracepoint event rule condition");
 
 	create_tracepoint_event_rule_trigger(pattern, trigger_name, NULL, 4,
-			exclusions, domain_type, &condition, &trigger);
+			exclusions, domain_type, &condition, &action, &trigger);
 
 	nc_status = lttng_notification_channel_subscribe(
 			notification_channel, condition);
@@ -1193,6 +1201,8 @@ static void test_tracepoint_event_rule_notification_exclusion(
 	lttng_trigger_destroy(ctrl_trigger);
 	lttng_condition_destroy(condition);
 	lttng_condition_destroy(ctrl_condition);
+	lttng_action_destroy(action);
+	lttng_action_destroy(ctrl_action);
 	return;
 }
 
