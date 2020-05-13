@@ -169,6 +169,21 @@ struct lttng_kernel_trigger {
 	} u;
 } LTTNG_PACKED;
 
+#define LTTNG_KERNEL_TRIGGER_NOTIFICATION_PADDING 32
+struct lttng_kernel_trigger_notification {
+	uint64_t id;
+	uint16_t capture_buf_size;
+	char padding[LTTNG_KERNEL_TRIGGER_NOTIFICATION_PADDING];
+} LTTNG_PACKED;
+
+#define LTTNG_KERNEL_CAPTURE_BYTECODE_MAX_LEN		65536
+struct lttng_kernel_capture_bytecode {
+	uint32_t len;
+	uint32_t reloc_offset;
+	uint64_t seqnum;
+	char data[0];
+} LTTNG_PACKED;
+
 struct lttng_kernel_tracer_version {
 	uint32_t major;
 	uint32_t minor;

@@ -2209,25 +2209,36 @@ enum lttng_error_code kernel_destroy_trigger_group_notification_fd(
 	return ret;
 }
 
-static enum lttng_error_code  kernel_create_token_event_rule(struct lttng_event_rule *rule,
+static enum lttng_error_code kernel_create_token_event_rule(struct lttng_trigger *trigger,
 		const struct lttng_credentials *creds, uint64_t token)
 {
 	int err, fd, ret = 0;
 	enum lttng_error_code error_code_ret;
 	struct ltt_kernel_token_event_rule *event;
-	struct lttng_kernel_trigger trigger;
+	struct lttng_kernel_trigger kernel_trigger = {};
+	unsigned int capture_bytecode_count = 0;
+	struct lttng_condition *condition = NULL;
+	struct lttng_event_rule *event_rule = NULL;
 
-	assert(rule);
+	assert(trigger);
 
-	error_code_ret = trace_kernel_create_token_event_rule(rule, token, &event);
+	condition = lttng_trigger_get_condition(trigger);
+	assert(condition);
+	assert(lttng_condition_get_type(condition) == LTTNG_CONDITION_TYPE_EVENT_RULE_HIT);
+
+	lttng_condition_event_rule_get_rule_no_const(condition, &event_rule);
+	assert(event_rule);
+	assert(lttng_event_rule_get_type(event_rule) != LTTNG_EVENT_RULE_TYPE_UNKNOWN);
+
+	error_code_ret = trace_kernel_create_token_event_rule(event_rule, token, &event);
 	if (error_code_ret != LTTNG_OK) {
 		goto error;
 	}
 	
-	trace_kernel_init_trigger_from_event_rule(event->event_rule, &trigger);
-	trigger.id = event->token;
+	trace_kernel_init_trigger_from_event_rule(event->event_rule, &kernel_trigger);
+	kernel_trigger.id = event->token;
 
-	fd = kernctl_create_trigger(kernel_tracer_trigger_group_fd, &trigger);
+	fd = kernctl_create_trigger(kernel_tracer_trigger_group_fd, &kernel_trigger);
 	if (fd < 0) {
 		switch (-fd) {
 		case EEXIST:
@@ -2238,7 +2249,7 @@ static enum lttng_error_code  kernel_create_token_event_rule(struct lttng_event_
 			error_code_ret = LTTNG_ERR_KERN_EVENT_ENOSYS;
 			break;
 		case ENOENT:
-			WARN("Event %s not found!", trigger.name);
+			WARN("Event %s not found!", kernel_trigger.name);
 			error_code_ret = LTTNG_ERR_KERN_ENABLE_FAIL;
 			break;
 		default:
@@ -2273,10 +2284,21 @@ static enum lttng_error_code  kernel_create_token_event_rule(struct lttng_event_
 	if (lttng_event_rule_get_type(event->event_rule) ==
 			LTTNG_EVENT_RULE_TYPE_UPROBE) {
 		ret = userspace_probe_event_rule_add_callsites(
-				rule, creds, event->fd);
+				event->event_rule, creds, event->fd);
 		if (ret) {
 			error_code_ret = LTTNG_ERR_KERN_ENABLE_FAIL;
 			goto add_callsite_error;
+		}
+	}
+
+	/* Set the capture bytecode */
+	capture_bytecode_count = lttng_trigger_get_capture_bytecode_count(trigger);
+	for (unsigned int i = 0; i < capture_bytecode_count; i++) {
+		const struct lttng_bytecode *capture_bytecode = lttng_trigger_get_capture_bytecode_at_index(trigger, i);
+		ret = kernctl_capture(event->fd, capture_bytecode);
+		if (ret < 0) {
+			error_code_ret = LTTNG_ERR_KERN_ENABLE_FAIL;
+			goto error;
 		}
 	}
 
@@ -2297,7 +2319,7 @@ static enum lttng_error_code  kernel_create_token_event_rule(struct lttng_event_
 	/* Add event to event list */
 	cds_list_add(&event->list, &kernel_tracer_token_list.head);
 
-	DBG("Trigger %s created (fd: %d)", trigger.name, event->fd);
+	DBG("Trigger %s created (fd: %d)", kernel_trigger.name, event->fd);
 
 	return LTTNG_OK;
 
@@ -2369,7 +2391,7 @@ enum lttng_error_code kernel_update_tokens(void)
 		/* Iterate over all known token trigger */
 		k_token = trace_kernel_find_trigger_by_token(&kernel_tracer_token_list, token);
 		if (!k_token) {
-			ret = kernel_create_token_event_rule(event_rule, creds, token);
+			ret = kernel_create_token_event_rule(trigger, creds, token);
 			if (ret != LTTNG_OK) {
 				goto end;
 			}

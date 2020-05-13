@@ -790,7 +790,7 @@ lttng_condition_event_rule_append_capture_descriptor(
 		goto end;
 	}
 
-	status = lttng_condition_event_rule_get_rule(event_rule_cond, &rule);
+	status = lttng_condition_event_rule_get_rule(condition, &rule);
 	if (status != LTTNG_CONDITION_STATUS_OK) {
 		goto end;
 	}

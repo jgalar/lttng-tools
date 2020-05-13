@@ -4266,13 +4266,13 @@ static struct lttng_trigger_notification *receive_notification(int pipe,
 	int ret;
 	uint64_t id;
 	struct lttng_trigger_notification *notification = NULL;
-	uint64_t kernel_notification;
 	char *capture_buffer = NULL;
 	size_t capture_buffer_size;
 	void *reception_buffer;
 	size_t reception_size;
 
 	struct lttng_ust_trigger_notification ust_notification;
+	struct lttng_kernel_trigger_notification kernel_notification;
 
 	/* Init lttng_trigger_notification */
 
@@ -4314,8 +4314,9 @@ static struct lttng_trigger_notification *receive_notification(int pipe,
 				ust_notification.capture_buf_size;
 		break;
 	case LTTNG_DOMAIN_KERNEL:
-		id = kernel_notification;
-		capture_buffer_size = 0;
+		id = kernel_notification.id;
+		capture_buffer_size =
+			kernel_notification.capture_buf_size;
 		break;
 	default:
 		assert(0);

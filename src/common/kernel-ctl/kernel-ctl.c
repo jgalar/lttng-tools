@@ -433,6 +433,25 @@ int kernctl_create_trigger(int group_fd, struct lttng_kernel_trigger *trigger)
 		return LTTNG_IOCTL_NO_CHECK(group_fd, LTTNG_KERNEL_TRIGGER_CREATE, trigger);
 }
 
+int kernctl_capture(int fd, const struct lttng_bytecode *capture)
+{
+	struct lttng_kernel_capture_bytecode *kb;
+	uint32_t len;
+	int ret;
+
+	/* Translate bytecode to kernel bytecode */
+	kb = zmalloc(sizeof(*kb) + capture->len);
+	if (!kb)
+		return -ENOMEM;
+	kb->len = len = capture->len;
+	kb->reloc_offset = capture->reloc_table_offset;
+	kb->seqnum = capture->seqnum;
+	memcpy(kb->data, capture->data, len);
+	ret = LTTNG_IOCTL_CHECK(fd, LTTNG_KERNEL_CAPTURE, kb);
+	free(kb);
+	return ret;
+}
+
 int kernctl_filter(int fd, const struct lttng_bytecode *filter)
 {
 	struct lttng_kernel_filter_bytecode *kb;

@@ -37,6 +37,7 @@ int kernctl_create_trigger(int fd, struct lttng_kernel_trigger *trigger);
 /* Apply on event FD */
 int kernctl_filter(int fd, const struct lttng_bytecode *filter);
 int kernctl_add_callsite(int fd, struct lttng_kernel_event_callsite *callsite);
+int kernctl_capture(int fd, const struct lttng_bytecode *capture);
 
 int kernctl_tracepoint_list(int fd);
 int kernctl_syscall_list(int fd);

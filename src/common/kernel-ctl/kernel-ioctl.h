@@ -124,6 +124,7 @@
 #define LTTNG_KERNEL_TRIGGER_GROUP_NOTIFICATION_FD _IO(0xF6, 0x30)
 #define LTTNG_KERNEL_TRIGGER_CREATE \
 	_IOW(0xF6, 0x31, struct lttng_kernel_trigger)
+#define LTTNG_KERNEL_CAPTURE _IO(0xF6, 0x32)
 
 /* Session FD ioctl */
 #define LTTNG_KERNEL_METADATA			\
