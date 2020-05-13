@@ -1074,6 +1074,9 @@ struct lttng_condition *handle_condition_event(int *argc, const char ***argv)
 		status = lttng_condition_event_rule_append_capture_descriptor(
 				c, *expr);
 		if (status != LTTNG_CONDITION_STATUS_OK) {
+			if (status == LTTNG_CONDITION_STATUS_UNSUPPORTED) {
+				ERR("The capture feature is unsupported by the event-rule type");
+			}
 			goto error;
 		}
 
