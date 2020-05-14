@@ -97,4 +97,13 @@ int consumer_stream_write_index(struct lttng_consumer_stream *stream,
 int consumer_stream_sync_metadata(struct lttng_consumer_local_data *ctx,
 		uint64_t session_id);
 
+/*
+ * Enable metadata bucketization. This must only be enabled if the tracer
+ * provides a reliable metadata `coherent` flag.
+ *
+ * This must be called on initialization before any subbuffer is consumed.
+ */
+int consumer_stream_enable_metadata_bucketization(
+		struct lttng_consumer_stream *stream);
+
 #endif /* LTTNG_CONSUMER_STREAM_H */
