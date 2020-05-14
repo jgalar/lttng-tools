@@ -107,6 +107,7 @@ struct lttng_ust_trigger {
 #define LTTNG_TRIGGER_NOTIFICATION_PADDING 32
 struct lttng_ust_trigger_notification {
 	uint64_t id;
+	uint16_t capture_buf_size;
 	char padding[LTTNG_TRIGGER_NOTIFICATION_PADDING];
 } LTTNG_PACKED;
 
@@ -271,6 +272,16 @@ struct lttng_ust_filter_bytecode {
 	uint32_t reloc_offset;
 	uint64_t seqnum;
 	char padding[LTTNG_UST_FILTER_PADDING];
+	char data[0];
+} LTTNG_PACKED;
+
+#define CAPTURE_BYTECODE_MAX_LEN	65536
+#define LTTNG_UST_CAPTURE_PADDING	32
+struct lttng_ust_capture_bytecode {
+	uint32_t len;
+	uint32_t reloc_offset;
+	uint64_t seqnum;
+	char padding[LTTNG_UST_CAPTURE_PADDING];
 	char data[0];
 } LTTNG_PACKED;
 
