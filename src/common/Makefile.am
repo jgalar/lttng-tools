@@ -72,7 +72,8 @@ libcommon_la_SOURCES = error.h error.c utils.c utils.h runas.c runas.h \
                        dynamic-buffer.h dynamic-buffer.c \
                        buffer-view.h buffer-view.c \
                        unix.c unix.h \
-                       filter.c filter.h context.c context.h
+                       filter.c filter.h context.c context.h \
+                       optional.h
 
 libcommon_la_LIBADD = \
 		$(top_builddir)/src/common/config/libconfig.la
