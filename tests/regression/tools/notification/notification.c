@@ -687,7 +687,12 @@ static void test_buffer_usage_notification_channel(const char *session_name,
 	struct lttng_condition *high_condition = NULL;
 
 	double low_ratio = 0.0;
-	double high_ratio = 0.99;
+	/* This is not 99 since we can end up in scenario where an event is
+	 * bigger than 1% of the buffer and hence the buffer ratio will never
+	 * trigger since the event will always be discarder by the tracer.
+	 */
+
+	double high_ratio = 0.90;
 
 	ret = register_buffer_usage_notify_trigger(session_name, channel_name,
 			domain_type, BUFFER_USAGE_TYPE_LOW, low_ratio,
