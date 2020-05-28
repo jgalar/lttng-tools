@@ -211,7 +211,7 @@ end:
 	return ret;
 }
 
-static
+LTTNG_HIDDEN
 struct lttng_capture_descriptor *
 lttng_condition_event_rule_get_internal_capture_descriptor_at_index(
 		const struct lttng_condition *condition, unsigned int index)

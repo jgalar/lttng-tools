@@ -81,4 +81,9 @@ lttng_condition_event_rule_generate_capture_descriptor_bytecode_set(
 		struct lttng_condition *condition,
 		struct lttng_dynamic_pointer_array *bytecode_set);
 
+LTTNG_HIDDEN
+struct lttng_capture_descriptor *
+lttng_condition_event_rule_get_internal_capture_descriptor_at_index(
+		const struct lttng_condition *condition, unsigned int index);
+
 #endif /* LTTNG_CONDITION_event_rule_INTERNAL_H */
