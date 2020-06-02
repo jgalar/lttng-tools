@@ -2036,6 +2036,13 @@ void cleanup_kernel_tracer(void)
 
 	DBG2("Closing kernel trigger group notification fd");
 	if (kernel_tracer_trigger_group_notification_fd >= 0) {
+		
+		ret = notification_thread_command_remove_application(
+				notification_thread_handle,
+				kernel_tracer_trigger_group_notification_fd);
+		if (ret != LTTNG_OK) {
+			ERR("Failed to remove kernel trigger notification from notification thread");
+		}
 		ret = close(kernel_tracer_trigger_group_notification_fd);
 		if (ret) {
 			PERROR("close");

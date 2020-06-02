@@ -2006,6 +2006,7 @@ int handle_notification_thread_command_add_application(
 	struct notification_thread_handle *handle,
 	struct notification_thread_state *state,
 	int read_side_trigger_event_application_pipe,
+	enum lttng_domain_type domain_type,
 	enum lttng_error_code *_cmd_result)
 {
 	int ret = 0;
@@ -2021,6 +2022,7 @@ int handle_notification_thread_command_add_application(
 
 	CDS_INIT_LIST_HEAD(&element->node);
 	element->fd = read_side_trigger_event_application_pipe;
+	element->domain = domain_type;
 
 	pthread_mutex_lock(&handle->event_trigger_sources.lock);
 	cds_list_add(&element->node, &handle->event_trigger_sources.list);
@@ -2054,22 +2056,30 @@ int handle_notification_thread_command_remove_application(
 {
 	int ret = 0;
 	enum lttng_error_code cmd_result = LTTNG_OK;
+	/* Used for logging */
+	enum lttng_domain_type domain = LTTNG_DOMAIN_NONE;
 
 	/* TODO: missing a lock propably to revisit */
-	struct notification_event_trigger_source_element *source_element, *tmp;
+	struct notification_event_trigger_source_element *source_element = NULL, *tmp;
+
 	cds_list_for_each_entry_safe(source_element, tmp,
 			&handle->event_trigger_sources.list, node) {
 		if (source_element->fd != read_side_trigger_event_application_pipe) {
 			continue;
 		}
 
-		DBG("[notification-thread] Removed event source from event source list");
 		cds_list_del(&source_element->node);
-		free(source_element);
 		break;
 	}
 
-	DBG3("[notification-thread] Removing application event source from fd: %d", read_side_trigger_event_application_pipe);
+	/* It should always be found */
+	assert(source_element);
+
+	DBG3("[notification-thread] Removing application event source from fd: %d of domain: %s",
+			read_side_trigger_event_application_pipe,
+			lttng_domain_type_str(domain));
+	free(source_element);
+
 	/* Removing the read side pipe to the event poll */
 	ret = lttng_poll_del(&state->events,
 			read_side_trigger_event_application_pipe);
@@ -2964,6 +2974,7 @@ int handle_notification_thread_command(
 				handle,
 				state,
 				cmd->parameters.application.read_side_trigger_event_application_pipe,
+				cmd->parameters.application.domain,
 				&cmd->reply_code);
 		break;
 	case NOTIFICATION_COMMAND_TYPE_REMOVE_APPLICATION:
@@ -4304,8 +4315,8 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 
 	ret = lttng_read(pipe, reception_buffer, reception_size);
 	if (ret != reception_size) {
-		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
-				pipe);
+		PERROR("Failed to read from event source pipe (fd = %i, size to read=%zu, ret=%d)",
+				pipe, reception_size, ret);
 		/* TODO: Should this error out completly.
 		 * This can happen when an app is killed as of today
 		 * ret = -1 cause the whole thread to die and fuck up

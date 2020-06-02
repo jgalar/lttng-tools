@@ -14,6 +14,7 @@
 #include <common/hashtable/hashtable.h>
 #include <common/pipe.h>
 #include <lttng/trigger/trigger.h>
+#include <lttng/domain.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <urcu.h>
@@ -24,6 +25,7 @@ typedef uint64_t notification_client_id;
 
 struct notification_event_trigger_source_element {
 	int fd;
+	enum lttng_domain_type domain;
 	struct cds_list_head node;
 };
 
@@ -63,7 +65,6 @@ struct notification_thread_handle {
 		/* List of notification_event_trigger_source_element */
 		struct cds_list_head list;
 		pthread_mutex_t lock;
-		int kernel_tracer;
 	} event_trigger_sources;
 	/* Used to wait for the launch of the notification thread. */
 	sem_t ready;

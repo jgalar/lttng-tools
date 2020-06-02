@@ -74,12 +74,6 @@ void notification_thread_handle_destroy(
 		}
 	}
 
-	/* TODO: refactor this if needed. Lifetime of the kernel notification
-	 * event source.
-	 * event_trigger_sources.kernel_tracer is owned by the main thread and
-	 * is closed at this point.
-	 */
-	handle->event_trigger_sources.kernel_tracer = -1;
 end:
 	free(handle);
 }
@@ -103,8 +97,6 @@ struct notification_thread_handle *notification_thread_handle_create(
 	if (!handle) {
 		goto end;
 	}
-
-	handle->event_trigger_sources.kernel_tracer = -1;
 
 	sem_init(&handle->ready, 0, 0);
 
@@ -153,8 +145,6 @@ struct notification_thread_handle *notification_thread_handle_create(
 	} else {
 		handle->channel_monitoring_pipes.kernel_consumer = -1;
 	}
-
-	handle->event_trigger_sources.kernel_tracer = kernel_notification_monitor_fd;
 
 	CDS_INIT_LIST_HEAD(&handle->event_trigger_sources.list);
 	ret = pthread_mutex_init(&handle->event_trigger_sources.lock, NULL);
@@ -292,15 +282,14 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	int ret;
 
 	/*
-	 * Create pollset with size 6:
+	 * Create pollset with size 5:
 	 *	- notification channel socket (listen for new connections),
 	 *	- command queue event fd (internal sessiond commands),
 	 *	- consumerd (32-bit user space) channel monitor pipe,
 	 *	- consumerd (64-bit user space) channel monitor pipe,
 	 *	- consumerd (kernel) channel monitor pipe.
-	 *	- kernel trigger event pipe,
 	 */
-	ret = lttng_poll_create(poll_set, 6, LTTNG_CLOEXEC);
+	ret = lttng_poll_create(poll_set, 5, LTTNG_CLOEXEC);
 	if (ret < 0) {
 		goto end;
 	}
@@ -343,17 +332,6 @@ int init_poll_set(struct lttng_poll_event *poll_set,
 	}
 
 skip_kernel_consumer:
-	if (handle->event_trigger_sources.kernel_tracer < 0) {
-		goto end;
-	}
-
-	ret = lttng_poll_add(poll_set,
-			handle->event_trigger_sources.kernel_tracer,
-			LPOLLIN | LPOLLERR);
-	if (ret < 0) {
-		ERR("[notification-thread] Failed to add kernel trigger notification monitoring pipe fd to pollset");
-		goto error;
-	}
 end:
 	return ret;
 error:
@@ -585,12 +563,11 @@ end:
 }
 
 static int handle_trigger_event_pipe(int fd,
+		enum lttng_domain_type domain,
 		uint32_t revents,
-		struct notification_thread_handle *handle,
 		struct notification_thread_state *state)
 {
 	int ret = 0;
-	enum lttng_domain_type domain;
 
 	if (revents & (LPOLLERR | LPOLLHUP | LPOLLRDHUP)) {
 		ret = lttng_poll_del(&state->events, fd);
@@ -598,12 +575,6 @@ static int handle_trigger_event_pipe(int fd,
 			ERR("[notification-thread] Failed to remove event monitoring pipe from poll set");
 		}
 		goto end;
-	}
-
-	if (fd == handle->event_trigger_sources.kernel_tracer) {
-		domain = LTTNG_DOMAIN_KERNEL;
-	} else {
-		domain = LTTNG_DOMAIN_UST;
 	}
 
 	ret = handle_notification_thread_event(state, fd, domain);
@@ -616,17 +587,21 @@ end:
 	return ret;
 }
 
-static bool fd_is_event_source(struct notification_thread_handle *handle, int fd)
+/*
+ * Return the event source domain type via parameter.
+ */
+static bool fd_is_event_source(struct notification_thread_handle *handle, int fd, enum lttng_domain_type *domain)
 {
 	struct notification_event_trigger_source_element *source_element, *tmp;
+
+	assert(domain);
+
 	cds_list_for_each_entry_safe(source_element, tmp,
 			&handle->event_trigger_sources.list, node) {
 		if (source_element->fd != fd) {
 			continue;
 		}
-		return true;
-	}
-	if (fd == handle->event_trigger_sources.kernel_tracer) {
+		*domain = source_element->domain;
 		return true;
 	}
 	return false;
@@ -642,6 +617,7 @@ void *thread_notification(void *data)
 	int ret;
 	struct notification_thread_handle *handle = data;
 	struct notification_thread_state state;
+	enum lttng_domain_type domain;
 
 	DBG("[notification-thread] Started notification thread");
 
@@ -719,8 +695,8 @@ void *thread_notification(void *data)
 				if (ret) {
 					goto error;
 				}
-			} else if (fd_is_event_source(handle, fd)) {
-				ret = handle_trigger_event_pipe(fd, revents, handle, &state);
+			} else if (fd_is_event_source(handle, fd, &domain)) {
+				ret = handle_trigger_event_pipe(fd, domain, revents, &state);
 				if (ret) {
 					goto error;
 				}

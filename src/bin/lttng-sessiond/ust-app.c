@@ -3762,7 +3762,7 @@ int ust_app_setup_trigger_group(struct ust_app *app)
 	}
 
 	lttng_ret = notification_thread_command_add_application(
-			notification_thread_handle, app->token_communication.trigger_event_pipe);
+			notification_thread_handle, lttng_pipe_get_readfd(app->token_communication.trigger_event_pipe), LTTNG_DOMAIN_UST);
 	if (lttng_ret != LTTNG_OK) {
 		/* TODO: error */
 		ret = - 1;
@@ -3893,9 +3893,12 @@ void ust_app_unregister(int sock)
 
 	/* trigger handle can be null in certain scenario such as a dead app */
 	if (lta->token_communication.handle) {
+		int fd = lttng_pipe_get_readfd(
+				lta->token_communication.trigger_event_pipe);
+
 		ret_code = notification_thread_command_remove_application(
 				notification_thread_handle,
-				lta->token_communication.trigger_event_pipe);
+				fd);
 		if (ret_code != LTTNG_OK) {
 			ERR("Failed to remove application from notification thread");
 		}

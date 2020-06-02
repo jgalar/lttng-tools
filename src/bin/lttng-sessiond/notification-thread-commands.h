@@ -71,6 +71,7 @@ struct notification_thread_command {
 		/* Add/Remove application */
 		struct {
 			int read_side_trigger_event_application_pipe;
+			enum lttng_domain_type domain;
 		} application;
 		/* List triggers */
 		struct {
@@ -133,11 +134,13 @@ enum lttng_error_code notification_thread_command_session_rotation_completed(
 
 enum lttng_error_code notification_thread_command_add_application(
 		struct notification_thread_handle *handle,
-		struct lttng_pipe *trigger_event_application_pipe);
+		int fd,
+		enum lttng_domain_type domain
+		);
 
 enum lttng_error_code notification_thread_command_remove_application(
 		struct notification_thread_handle *handle,
-		struct lttng_pipe *trigger_event_application_pipe);
+		int trigger_event_application_pipe);
 
 /* Must hold the notification_trigger_tokens_ht_lock to protect against
  * insertion removal of triggers TODO: is it the case even with refcounting? */
