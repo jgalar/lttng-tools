@@ -22,6 +22,7 @@
 #include <lttng/condition/condition.h>
 #include <lttng/action/action-internal.h>
 #include <lttng/action/group-internal.h>
+#include <lttng/domain-internal.h>
 #include <lttng/notification/notification-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
@@ -122,19 +123,6 @@ struct lttng_trigger_ht_element {
 struct lttng_condition_list_element {
 	struct lttng_condition *condition;
 	struct cds_list_head node;
-};
-
-/*
- * Facilities to carry the different notifications type in the action processing
- * code path.
- */
-struct lttng_trigger_notification {
-	union {
-		struct lttng_ust_trigger_notification *ust;
-		uint64_t *kernel;
-	} u;
-	uint64_t id;
-	enum lttng_domain_type type;
 };
 
 struct channel_state_sample {
@@ -4271,37 +4259,30 @@ end:
 	return ret;
 }
 
-int handle_notification_thread_event(struct notification_thread_state *state,
-		int pipe,
+static struct lttng_trigger_notification *receive_notification(int pipe,
 		enum lttng_domain_type domain)
 {
 	int ret;
-	struct lttng_ust_trigger_notification ust_notification;
-	struct lttng_evaluation *evaluation = NULL;
+	uint64_t id;
+	struct lttng_trigger_notification *notification = NULL;
 	uint64_t kernel_notification;
-	struct cds_lfht_node *node;
-	struct cds_lfht_iter iter;
-	struct notification_trigger_tokens_ht_element *element;
-	enum lttng_trigger_status status;
-	struct lttng_trigger_notification notification;
+	char *capture_buffer = NULL;
+	size_t capture_buffer_size;
 	void *reception_buffer;
 	size_t reception_size;
-	enum action_executor_status executor_status;
-	struct notification_client_list *client_list = NULL;
-	const char *trigger_name;
 
-	notification.type = domain;
+	struct lttng_ust_trigger_notification ust_notification;
+
+	/* Init lttng_trigger_notification */
 
 	switch(domain) {
 	case LTTNG_DOMAIN_UST:
 		reception_buffer = (void *) &ust_notification;
 		reception_size = sizeof(ust_notification);
-		notification.u.ust = &ust_notification;
 		break;
 	case LTTNG_DOMAIN_KERNEL:
 		reception_buffer = (void *) &kernel_notification;
 		reception_size = sizeof(kernel_notification);
-		notification.u.kernel = &kernel_notification;
 		break;
 	default:
 		assert(0);
@@ -4327,20 +4308,87 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 
 	switch(domain) {
 	case LTTNG_DOMAIN_UST:
-		notification.id = ust_notification.id;
+		id = ust_notification.id;
+		capture_buffer_size =
+				ust_notification.capture_buf_size;
 		break;
 	case LTTNG_DOMAIN_KERNEL:
-		notification.id = kernel_notification;
+		id = kernel_notification;
+		capture_buffer_size = 0;
 		break;
 	default:
 		assert(0);
 	}
 
+	if (capture_buffer_size == 0) {
+		capture_buffer = NULL;
+		goto skip_capture;
+	}
+
+	capture_buffer = zmalloc(capture_buffer_size);
+	if (!capture_buffer) {
+		ERR("[notification-thread] Failed to allocate capture buffer");
+		goto end;
+	}
+
+	/*
+	 * Fetch additional payload (capture).
+	 */
+	ret = lttng_read(pipe, capture_buffer, capture_buffer_size);
+	if (ret != capture_buffer_size) {
+		ERR("[notification-thread] Failed to read from event source pipe (fd = %i)",
+				pipe);
+		/* TODO: Should this error out completly.
+		 * This can happen when an app is killed as of today
+		 * ret = -1 cause the whole thread to die and fuck up
+		 * everything.
+		 */
+		goto end;
+	}
+
+skip_capture:
+	notification = lttng_trigger_notification_create(
+			id, domain, capture_buffer, capture_buffer_size);
+	if (notification == NULL) {
+		goto end;
+	}
+
+	/* Ownership transfered to the lttng_trigger_notification object */
+	capture_buffer = NULL;
+
+end:
+	free(capture_buffer);
+	return notification;
+}
+
+int handle_notification_thread_event(struct notification_thread_state *state,
+		int pipe,
+		enum lttng_domain_type domain)
+{
+	int ret;
+	enum lttng_trigger_status trigger_status;
+	struct cds_lfht_node *node;
+	struct cds_lfht_iter iter;
+	struct notification_trigger_tokens_ht_element *element;
+	struct lttng_evaluation *evaluation = NULL;
+	struct lttng_trigger_notification *notification = NULL;
+	enum action_executor_status executor_status;
+	struct notification_client_list *client_list = NULL;
+	const char *trigger_name;
+
+	notification = receive_notification(pipe, domain);
+	if (notification == NULL) {
+		ERR("[notification-thread] Error receiving notification from tracer (fd = %i, domain = %s)",
+				pipe, lttng_domain_type_str(domain));
+		ret = -1;
+		goto end;
+	}
+
 	/* Find triggers associated with this token. */
 	rcu_read_lock();
 	cds_lfht_lookup(state->trigger_tokens_ht,
-			hash_key_u64(&notification.id, lttng_ht_seed), match_trigger_token,
-			&notification.id, &iter);
+			hash_key_u64(&notification->id, lttng_ht_seed),
+			match_trigger_token, &notification->id, &iter);
 	node = cds_lfht_iter_get_node(&iter);
 	if (caa_unlikely(!node)) {
 		/* TODO: is this an error? This might happen if the receive side
@@ -4367,12 +4415,13 @@ int handle_notification_thread_event(struct notification_thread_state *state,
 		goto end_unlock;
 	}
 
-	status = lttng_trigger_get_name(element->trigger, &trigger_name);
-	assert(status == LTTNG_TRIGGER_STATUS_OK);
+	trigger_status = lttng_trigger_get_name(element->trigger, &trigger_name);
+	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
 
-	evaluation = lttng_evaluation_event_rule_create(trigger_name);
+	evaluation = lttng_evaluation_event_rule_create(
+			trigger_name);
 	if (evaluation == NULL) {
-		ERR("Failed to create evaluation");
+		ERR("[notification-thread] Failed to create event rule hit evaluation");
 		ret = -1;
 		goto end_unlock;
 	}
@@ -4432,6 +4481,7 @@ next_client:
 		pthread_mutex_unlock(&client_list->lock);
 		break;
 	}
+	case ACTION_EXECUTOR_STATUS_INVALID:
 	case ACTION_EXECUTOR_STATUS_ERROR:
 		/* Fatal error, shut down everything. */
 		ERR("Fatal error encoutered while enqueuing action");
@@ -4443,6 +4493,7 @@ next_client:
 	}
 
 end_unlock:
+	lttng_trigger_notification_destroy(notification);
 	notification_client_list_put(client_list);
 	rcu_read_unlock();
 end:

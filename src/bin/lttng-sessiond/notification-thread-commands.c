@@ -403,3 +403,52 @@ int notification_thread_client_communication_update(
 	cmd.parameters.client_communication_update.status = transmission_status;
 	return run_command_no_wait(handle, &cmd);
 }
+
+/*
+ * Takes ownership of the payload if present.
+ */
+LTTNG_HIDDEN
+struct lttng_trigger_notification *lttng_trigger_notification_create(
+		uint64_t id,
+		enum lttng_domain_type domain,
+		char *payload,
+		size_t payload_size)
+{
+	struct lttng_trigger_notification *notification = NULL;
+
+	assert(domain != LTTNG_DOMAIN_NONE);
+
+	if (payload) {
+		assert(payload_size > 0);
+	} else {
+		assert(payload_size == 0);
+	}
+
+	notification = zmalloc(sizeof(struct lttng_trigger_notification));
+	if (notification == NULL) {
+		ERR("[notification-thread] Error allocating notification ");
+		goto end;
+	}
+
+	notification->id = id;
+	notification->type = domain;
+	notification->capture_buffer = payload;
+	notification->capture_buf_size = payload_size;
+
+end:
+	return notification;
+}
+
+LTTNG_HIDDEN
+void lttng_trigger_notification_destroy(
+		struct lttng_trigger_notification *notification)
+{
+	if (!notification) {
+		return;
+	}
+
+	if(notification->capture_buffer) {
+		free(notification->capture_buffer);
+	}
+	free(notification);
+}
