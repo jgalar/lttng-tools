@@ -1992,11 +1992,17 @@ int viewer_get_metadata(struct relay_connection *conn)
 	fs_handle_put_fd(vstream->stream_file.handle);
 	fd = -1;
 	if (read_len < len) {
-		PERROR("Relay reading metadata file");
+		if (read_len < 0) {
+			PERROR("Failed to read metadata file");
+		} else {
+			ERR("Failed to read metadata: requested = %zd, got = %zd",
+					len, read_len);
+		}
 		goto error;
 	}
 	vstream->metadata_sent += read_len;
 	reply.status = htobe32(LTTNG_VIEWER_METADATA_OK);
+	ERR("Sending %zd bytes of metadata to client", read_len);
 
 	goto send_reply;
 
@@ -2180,30 +2186,39 @@ int process_control(struct lttng_viewer_cmd *recv_hdr,
 
 	switch (msg_value) {
 	case LTTNG_VIEWER_CONNECT:
+		ERR("relayd live cmd: LTTNG_VIEWER_CONNECT");
 		ret = viewer_connect(conn);
 		break;
 	case LTTNG_VIEWER_LIST_SESSIONS:
+		ERR("relayd live cmd: LTTNG_VIEWER_LIST_SESSIONS");
 		ret = viewer_list_sessions(conn);
 		break;
 	case LTTNG_VIEWER_ATTACH_SESSION:
+		ERR("relayd live cmd: LTTNG_VIEWER_ATTACH_SESSION");
 		ret = viewer_attach_session(conn);
 		break;
 	case LTTNG_VIEWER_GET_NEXT_INDEX:
+		ERR("relayd live cmd: LTTNG_VIEWER_GET_NEXT_INDEX");
 		ret = viewer_get_next_index(conn);
 		break;
 	case LTTNG_VIEWER_GET_PACKET:
+		ERR("relayd live cmd: LTTNG_VIEWER_GET_PACKET");
 		ret = viewer_get_packet(conn);
 		break;
 	case LTTNG_VIEWER_GET_METADATA:
+		ERR("relayd live cmd: LTTNG_VIEWER_GET_METADATA");
 		ret = viewer_get_metadata(conn);
 		break;
 	case LTTNG_VIEWER_GET_NEW_STREAMS:
+		ERR("relayd live cmd: LTTNG_VIEWER_GET_NEW_STREAMS");
 		ret = viewer_get_new_streams(conn);
 		break;
 	case LTTNG_VIEWER_CREATE_SESSION:
+		ERR("relayd live cmd: LTTNG_VIEWER_CREATE_SESSION");
 		ret = viewer_create_session(conn);
 		break;
 	case LTTNG_VIEWER_DETACH_SESSION:
+		ERR("relayd live cmd: LTTNG_VIEWER_DETACH_SESSION");
 		ret = viewer_detach_session(conn);
 		break;
 	default:

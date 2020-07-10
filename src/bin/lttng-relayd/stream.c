@@ -133,7 +133,7 @@ static int stream_rotate_data_file(struct relay_stream *stream)
 {
 	int ret = 0;
 
-	DBG("Rotating stream %" PRIu64 " data file with size %" PRIu64,
+	ERR("Rotating stream %" PRIu64 " data file with size %" PRIu64,
 			stream->stream_handle, stream->tracefile_size_current);
 
 	if (stream->file) {

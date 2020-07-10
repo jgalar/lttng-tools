@@ -3205,7 +3205,7 @@ end_no_reply:
 }
 
 #define DBG_CMD(cmd_name, conn) \
-		DBG3("Processing \"%s\" command for socket %i", cmd_name, conn->sock->fd);
+		ERR("Processing \"%s\" command for socket %i", cmd_name, conn->sock->fd);
 
 static int relay_process_control_command(struct relay_connection *conn,
 		const struct lttcomm_relayd_hdr *header,
