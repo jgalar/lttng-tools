@@ -22,6 +22,7 @@
 #include <lttng/action/start-session.h>
 #include <lttng/action/stop-session.h>
 #include <lttng/condition/evaluation.h>
+#include <lttng/condition/event-rule-internal.h>
 #include <lttng/lttng-error.h>
 #include <lttng/trigger/trigger-internal.h>
 #include <pthread.h>
@@ -134,6 +135,17 @@ static bool is_trigger_allowed_for_session(const struct lttng_trigger *trigger,
 	return is_allowed;
 }
 
+static const char *get_trigger_name(const struct lttng_trigger *trigger)
+{
+	const char *trigger_name;
+	enum lttng_trigger_status trigger_status;
+
+	trigger_status = lttng_trigger_get_name(trigger, &trigger_name);
+	assert(trigger_status == LTTNG_TRIGGER_STATUS_OK);
+
+	return trigger_name;
+}
+
 static int client_handle_transmission_status(
 		struct notification_client *client,
 		enum client_transmission_status status,
@@ -211,9 +223,9 @@ static int action_executor_start_session_handler(struct action_executor *executo
 	session_lock_list();
 	session = session_find_by_name(session_name);
 	if (!session) {
-		DBG("Failed to find session `%s` by name while executing `%s` action of trigger `%p`",
+		DBG("Failed to find session `%s` by name while executing `%s` action of trigger `%s`",
 				session_name, get_action_name(action),
-		    work_item->trigger);
+				get_trigger_name(work_item->trigger));
 		goto error_unlock_list;
 	}
 
@@ -225,16 +237,16 @@ static int action_executor_start_session_handler(struct action_executor *executo
 	cmd_ret = cmd_start_trace(session);
 	switch (cmd_ret) {
 	case LTTNG_OK:
-		DBG("Successfully started session `%s` on behalf of trigger `%p`",
-				session_name, work_item->trigger);
+		DBG("Successfully started session `%s` on behalf of trigger `%s`",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	case LTTNG_ERR_TRACE_ALREADY_STARTED:
-		DBG("Attempted to start session `%s` on behalf of trigger `%p` but it was already started",
-				session_name, work_item->trigger);
+		DBG("Attempted to start session `%s` on behalf of trigger `%s` but it was already started",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	default:
-		WARN("Failed to start session `%s` on behalf of trigger `%p`: %s",
-				session_name, work_item->trigger,
+		WARN("Failed to start session `%s` on behalf of trigger `%s`: %s",
+				session_name, get_trigger_name(work_item->trigger),
 				lttng_strerror(-cmd_ret));
 		break;
 	}
@@ -270,9 +282,9 @@ static int action_executor_stop_session_handler(struct action_executor *executor
 	session_lock_list();
 	session = session_find_by_name(session_name);
 	if (!session) {
-		DBG("Failed to find session `%s` by name while executing `%s` action of trigger `%p`",
+		DBG("Failed to find session `%s` by name while executing `%s` action of trigger `%s`",
 				session_name, get_action_name(action),
-		    work_item->trigger);
+				get_trigger_name(work_item->trigger));
 		goto error_unlock_list;
 	}
 
@@ -284,16 +296,16 @@ static int action_executor_stop_session_handler(struct action_executor *executor
 	cmd_ret = cmd_stop_trace(session);
 	switch (cmd_ret) {
 	case LTTNG_OK:
-		DBG("Successfully stopped session `%s` on behalf of trigger `%p`",
-				session_name, work_item->trigger);
+		DBG("Successfully stopped session `%s` on behalf of trigger `%s`",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	case LTTNG_ERR_TRACE_ALREADY_STOPPED:
-		DBG("Attempted to stop session `%s` on behalf of trigger `%p` but it was already stopped",
-				session_name, work_item->trigger);
+		DBG("Attempted to stop session `%s` on behalf of trigger `%s` but it was already stopped",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	default:
-		WARN("Failed to stop session `%s` on behalf of trigger `%p`: %s",
-				session_name, work_item->trigger,
+		WARN("Failed to stop session `%s` on behalf of trigger `%s`: %s",
+				session_name, get_trigger_name(work_item->trigger),
 				lttng_strerror(-cmd_ret));
 		break;
 	}
@@ -329,9 +341,9 @@ static int action_executor_rotate_session_handler(struct action_executor *execut
 	session_lock_list();
 	session = session_find_by_name(session_name);
 	if (!session) {
-		DBG("Failed to find session `%s` by name while executing `%s` action of trigger `%p`",
+		DBG("Failed to find session `%s` by name while executing `%s` action of trigger `%s`",
 				session_name, get_action_name(action),
-		    work_item->trigger);
+				get_trigger_name(work_item->trigger));
 		goto error_unlock_list;
 	}
 
@@ -344,21 +356,21 @@ static int action_executor_rotate_session_handler(struct action_executor *execut
 			LTTNG_TRACE_CHUNK_COMMAND_TYPE_MOVE_TO_COMPLETED);
 	switch (cmd_ret) {
 	case LTTNG_OK:
-		DBG("Successfully started rotation of session `%s` on behalf of trigger `%p`",
-				session_name, work_item->trigger);
+		DBG("Successfully started rotation of session `%s` on behalf of trigger `%s`",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	case LTTNG_ERR_ROTATION_PENDING:
-		DBG("Attempted to start a rotation of session `%s` on behalf of trigger `%p` but a rotation is already ongoing",
-				session_name, work_item->trigger);
+		DBG("Attempted to start a rotation of session `%s` on behalf of trigger `%s` but a rotation is already ongoing",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	case LTTNG_ERR_ROTATION_MULTIPLE_AFTER_STOP:
 	case LTTNG_ERR_ROTATION_AFTER_STOP_CLEAR:
-		DBG("Attempted to start a rotation of session `%s` on behalf of trigger `%p` but a rotation has already been completed since the last stop or clear",
-				session_name, work_item->trigger);
+		DBG("Attempted to start a rotation of session `%s` on behalf of trigger `%s` but a rotation has already been completed since the last stop or clear",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	default:
-		WARN("Failed to start a rotation of session `%s` on behalf of trigger `%p`: %s",
-				session_name, work_item->trigger,
+		WARN("Failed to start a rotation of session `%s` on behalf of trigger `%s`: %s",
+				session_name, get_trigger_name(work_item->trigger),
 				lttng_strerror(-cmd_ret));
 		break;
 	}
@@ -424,12 +436,12 @@ static int action_executor_snapshot_session_handler(struct action_executor *exec
 	cmd_ret = cmd_snapshot_record(session, snapshot_output, 0);
 	switch (cmd_ret) {
 	case LTTNG_OK:
-		DBG("Successfully recorded snapshot of session `%s` on behalf of trigger `%p`",
-				session_name, work_item->trigger);
+		DBG("Successfully recorded snapshot of session `%s` on behalf of trigger `%s`",
+				session_name, get_trigger_name(work_item->trigger));
 		break;
 	default:
-		WARN("Failed to record snapshot of session `%s` on behalf of trigger `%p`: %s",
-				session_name, work_item->trigger,
+		WARN("Failed to record snapshot of session `%s` on behalf of trigger `%s`: %s",
+				session_name, get_trigger_name(work_item->trigger),
 				lttng_strerror(-cmd_ret));
 		break;
 	}
@@ -468,8 +480,8 @@ static int action_executor_group_handler(struct action_executor *executor,
 		ret = action_executor_generic_handler(
 				executor, work_item, action);
 		if (ret) {
-			ERR("Stopping the execution of the action group of trigger `%p` following a fatal error",
-					work_item->trigger);
+			ERR("Stopping the execution of the action group of trigger `%s` following a fatal error",
+					get_trigger_name(work_item->trigger));
 			goto end;
 		}
 	}
@@ -481,9 +493,9 @@ static int action_executor_generic_handler(struct action_executor *executor,
 		const struct action_work_item *work_item,
 		const struct lttng_action *action)
 {
-	DBG("Executing action `%s` of trigger `%p` action work item %" PRIu64,
+	DBG("Executing action `%s` of trigger `%s` action work item %" PRIu64,
 			get_action_name(action),
-			work_item->trigger,
+			get_trigger_name(work_item->trigger),
 			work_item->id);
 
 	return action_executors[lttng_action_get_type_const(action)](
@@ -497,11 +509,11 @@ static int action_work_item_execute(struct action_executor *executor,
 	const struct lttng_action *action =
 			lttng_trigger_get_const_action(work_item->trigger);
 
-	DBG("Starting execution of action work item %" PRIu64 " of trigger `%p`",
-			work_item->id, work_item->trigger);
+	DBG("Starting execution of action work item %" PRIu64 " of trigger `%s`",
+			work_item->id, get_trigger_name(work_item->trigger));
 	ret = action_executor_generic_handler(executor, work_item, action);
-	DBG("Completed execution of action work item %" PRIu64 " of trigger `%p`",
-			work_item->id, work_item->trigger);
+	DBG("Completed execution of action work item %" PRIu64 " of trigger `%s`",
+			work_item->id, get_trigger_name(work_item->trigger));
 	return ret;
 }
 
@@ -636,8 +648,8 @@ void action_executor_destroy(struct action_executor *executor)
 	cds_list_for_each_entry_safe (
 			work_item, tmp, &executor->work.list, list_node) {
 		WARN("Discarding action work item %" PRIu64
-				" associated to trigger `%p`",
-				work_item->id, work_item->trigger);
+				" associated to trigger `%s`",
+				work_item->id, get_trigger_name(work_item->trigger));
 		cds_list_del(&work_item->list_node);
 		action_work_item_destroy(work_item);
 	}
@@ -662,9 +674,9 @@ enum action_executor_status action_executor_enqueue(
 	/* Check for queue overflow. */
 	if (executor->work.pending_count >= MAX_QUEUED_WORK_COUNT) {
 		/* Most likely spammy, remove if it is the case. */
-		DBG("Refusing to enqueue action for trigger `%p` as work item %" PRIu64
+		DBG("Refusing to enqueue action for trigger `%s` as work item %" PRIu64
 		    " (overflow)",
-				trigger, work_item_id);
+				get_trigger_name(trigger), work_item_id);
 		executor_status = ACTION_EXECUTOR_STATUS_OVERFLOW;
 		goto error_unlock;
 	}
@@ -672,7 +684,7 @@ enum action_executor_status action_executor_enqueue(
 	work_item = zmalloc(sizeof(*work_item));
 	if (!work_item) {
 		PERROR("Failed to allocate action executor work item on behalf of trigger `%p`",
-				trigger);
+				get_trigger_name(trigger));
 		executor_status = ACTION_EXECUTOR_STATUS_ERROR;
 		goto error_unlock;
 	}
@@ -703,7 +715,7 @@ enum action_executor_status action_executor_enqueue(
 	cds_list_add_tail(&work_item->list_node, &executor->work.list);
 	executor->work.pending_count++;
 	DBG("Enqueued action for trigger `%p` as work item %" PRIu64,
-			trigger, work_item_id);
+			get_trigger_name(trigger), work_item_id);
 	signal = true;
 
 error_unlock:
