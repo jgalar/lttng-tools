@@ -26,6 +26,7 @@
 #include <lttng/condition/buffer-usage-internal.h>
 #include <lttng/condition/session-consumed-size-internal.h>
 #include <lttng/condition/session-rotation-internal.h>
+#include <lttng/condition/event-rule-internal.h>
 #include <lttng/notification/channel-internal.h>
 #include <lttng/trigger/trigger-internal.h>
 
@@ -444,6 +445,22 @@ unsigned long lttng_condition_session_rotation_hash(
 	return hash;
 }
 
+static
+unsigned long lttng_condition_event_rule_hash(
+	const struct lttng_condition *_condition)
+{
+	unsigned long hash, condition_type;
+	struct lttng_condition_event_rule *condition;
+
+	condition = container_of(_condition,
+			struct lttng_condition_event_rule, parent);
+	condition_type = (unsigned long) condition->parent.type;
+	hash = hash_key_ulong((void *) condition_type, lttng_ht_seed);
+
+	/* TODO: further hasg using the event rule? on pattern maybe?*/
+	return hash;
+}
+
 /*
  * The lttng_condition hashing code is kept in this file (rather than
  * condition.c) since it makes use of GPLv2 code (hashtable utils), which we
@@ -461,6 +478,8 @@ unsigned long lttng_condition_hash(const struct lttng_condition *condition)
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
 		return lttng_condition_session_rotation_hash(condition);
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+		return lttng_condition_event_rule_hash(condition);
 	default:
 		ERR("[notification-thread] Unexpected condition type caught");
 		abort();
@@ -509,6 +528,8 @@ enum lttng_object_type get_condition_binding_object(
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_ONGOING:
 	case LTTNG_CONDITION_TYPE_SESSION_ROTATION_COMPLETED:
 		return LTTNG_OBJECT_TYPE_SESSION;
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+		return LTTNG_OBJECT_TYPE_NONE;
 	default:
 		return LTTNG_OBJECT_TYPE_UNKNOWN;
 	}
@@ -2068,6 +2089,15 @@ int condition_is_supported(struct lttng_condition *condition)
 		 * mechanism to be available to be evaluated.
 		 */
 		ret = kernel_supports_ring_buffer_snapshot_sample_positions();
+		break;
+	}
+	case LTTNG_CONDITION_TYPE_EVENT_RULE_HIT:
+	{
+		/* TODO:
+		 * Check for kernel support.
+		 * Check for ust support ??
+		 */
+		ret = 1;
 		break;
 	}
 	default:
