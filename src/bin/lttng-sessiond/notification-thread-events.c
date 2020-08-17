@@ -2054,6 +2054,42 @@ end:
 	return ret;
 }
 
+static
+int action_is_supported(struct lttng_action *action)
+{
+	int ret;
+
+	switch (lttng_action_get_type(action)) {
+	case LTTNG_ACTION_TYPE_NOTIFY:
+	case LTTNG_ACTION_TYPE_START_SESSION:
+	case LTTNG_ACTION_TYPE_STOP_SESSION:
+	case LTTNG_ACTION_TYPE_ROTATE_SESSION:
+	case LTTNG_ACTION_TYPE_SNAPSHOT_SESSION:
+	{
+		/* TODO validate that this is true for kernel in regards to
+		 * rotation and snapshot. Start stop is not a problem notify
+		 * either.
+		 */
+		/* For now all type of actions are supported */
+		ret = 1;
+		break;
+	}
+	case LTTNG_ACTION_TYPE_GROUP:
+	{
+		/* TODO: Iterate over all internal actions and validate that
+		 * they are supported
+		 */
+		ret = 1;
+		break;
+
+	}
+	default:
+		ret = 1;
+	}
+
+	return ret;
+}
+
 /* Must be called with RCU read lock held. */
 static
 int bind_trigger_to_matching_session(struct lttng_trigger *trigger,
@@ -2252,7 +2288,9 @@ int handle_notification_thread_command_register_trigger(
 		enum lttng_error_code *cmd_result)
 {
 	int ret = 0;
+	int is_supported;
 	struct lttng_condition *condition;
+	struct lttng_action *action;
 	struct notification_client *client;
 	struct notification_client_list *client_list = NULL;
 	struct lttng_trigger_ht_element *trigger_ht_element = NULL;
@@ -2285,15 +2323,24 @@ int handle_notification_thread_command_register_trigger(
 	condition = lttng_trigger_get_condition(trigger);
 	assert(condition);
 
-	ret = condition_is_supported(condition);
-	if (ret < 0) {
+	action = lttng_trigger_get_action(trigger);
+	assert(action);
+
+	is_supported = condition_is_supported(condition);
+	if (is_supported < 0) {
 		goto error;
-	} else if (ret == 0) {
+	} else if (is_supported == 0) {
 		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
 		goto error;
-	} else {
-		/* Feature is supported, continue. */
+	}
+
+	is_supported = action_is_supported(action);
+	if (is_supported < 0) {
+		goto error;
+	} else if (is_supported == 0) {
 		ret = 0;
+		*cmd_result = LTTNG_ERR_NOT_SUPPORTED;
+		goto error;
 	}
 
 	trigger_ht_element = zmalloc(sizeof(*trigger_ht_element));
