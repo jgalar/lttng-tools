@@ -21,6 +21,7 @@
 #include <common/macros.h>
 #include <lttng/condition/condition.h>
 #include <lttng/action/action-internal.h>
+#include <lttng/action/group-internal.h>
 #include <lttng/notification/notification-internal.h>
 #include <lttng/condition/condition-internal.h>
 #include <lttng/condition/buffer-usage-internal.h>
