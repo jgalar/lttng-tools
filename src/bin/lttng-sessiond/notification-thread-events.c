@@ -2699,11 +2699,11 @@ int handle_notification_thread_command_register_trigger(
 		break;
 	case LTTNG_OBJECT_TYPE_NONE:
 		ret = 0;
-		goto error_put_client_list;
+		break;
 	case LTTNG_OBJECT_TYPE_UNKNOWN:
 	default:
 		ret = -1;
-		goto error_put_client_list;
+		break;
 	}
 
 	if (ret) {
@@ -2716,7 +2716,7 @@ int handle_notification_thread_command_register_trigger(
 	if (!evaluation) {
 		/* Evaluation yielded nothing. Normal exit. */
 		ret = 0;
-		goto error_put_client_list;
+		goto end;
 	}
 
 	/*
@@ -2747,11 +2747,12 @@ int handle_notification_thread_command_register_trigger(
 		 */
 		WARN("No space left when enqueuing action associated to newly registered trigger");
 		ret = 0;
-		goto error_put_client_list;
+		goto end;
 	default:
 		abort();
 	}
 
+end:
 	/* Increment the trigger unique id generator */
 	state->trigger_id.token_generator++;
 	*cmd_result = LTTNG_OK;
