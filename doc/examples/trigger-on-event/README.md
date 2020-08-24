@@ -50,33 +50,46 @@ The following output should be produced:
 $ ./demo.sh
 Registering a notification trigger named "demo_trigger" for the trigger_example:my_event user-space event
 Trigger registered successfully.
+Trigger registered successfully.
+Subscribed to notifications of trigger "demo_trigger_capture"
 Subscribed to notifications of trigger "demo_trigger"
-[02-14-2020] 18:13:34.779652 - Received notification of event rule trigger "demo_trigger_capture"
+[08-24-2020] 17:20:33.598221 - Received notification of event rule trigger "demo_trigger"
+[08-24-2020] 17:20:33.598855 - Received notification of event rule trigger "demo_trigger_capture"
 Captured field values:
-  Unsigned int: 0,
-  CAPTURE UNAVAILABE
-[02-14-2020] 18:13:34.779766 - Received notification of event rule trigger "demo_trigger"
-[02-14-2020] 18:13:36.779798 - Received notification of event rule trigger "demo_trigger_capture"
+  Field: iteration Value: [Unsigned int] 0,
+  Field: does_not_exist Value: Capture unavailable,
+  Field: $ctx.vtid Value: [Unsigned int] 2302494,
+  Field: $ctx.procname Value: [String] instrumented-ap.
+[08-24-2020] 17:20:35.598556 - Received notification of event rule trigger "demo_trigger"
+[08-24-2020] 17:20:35.599293 - Received notification of event rule trigger "demo_trigger_capture"
 Captured field values:
-  Unsigned int: 1,
-  CAPTURE UNAVAILABE
-[02-14-2020] 18:13:36.779888 - Received notification of event rule trigger "demo_trigger"
-[02-14-2020] 18:13:38.780234 - Received notification of event rule trigger "demo_trigger_capture"
+  Field: iteration Value: [Unsigned int] 1,
+  Field: does_not_exist Value: Capture unavailable,
+  Field: $ctx.vtid Value: [Unsigned int] 2302494,
+  Field: $ctx.procname Value: [String] instrumented-ap.
+[08-24-2020] 17:20:37.598977 - Received notification of event rule trigger "demo_trigger"
+[08-24-2020] 17:20:37.599676 - Received notification of event rule trigger "demo_trigger_capture"
 Captured field values:
-  Unsigned int: 2,
-  CAPTURE UNAVAILABE
-[02-14-2020] 18:13:38.780514 - Received notification of event rule trigger "demo_trigger"
-[02-14-2020] 18:13:40.780574 - Received notification of event rule trigger "demo_trigger_capture"
+  Field: iteration Value: [Unsigned int] 2,
+  Field: does_not_exist Value: Capture unavailable,
+  Field: $ctx.vtid Value: [Unsigned int] 2302494,
+  Field: $ctx.procname Value: [String] instrumented-ap.
+[08-24-2020] 17:20:39.599430 - Received notification of event rule trigger "demo_trigger"
+[08-24-2020] 17:20:39.600178 - Received notification of event rule trigger "demo_trigger_capture"
 Captured field values:
-  Unsigned int: 3,
-  CAPTURE UNAVAILABE
-[02-14-2020] 18:13:40.780656 - Received notification of event rule trigger "demo_trigger"
+  Field: iteration Value: [Unsigned int] 3,
+  Field: does_not_exist Value: Capture unavailable,
+  Field: $ctx.vtid Value: [Unsigned int] 2302494,
+  Field: $ctx.procname Value: [String] instrumented-ap.
+...
 ```
 
 ```
 $ ./instrumented-app
-[02-14-2020] 18:13:34.779433 - Tracing event "trigger_example:my_event"
-[02-14-2020] 18:13:36.779693 - Tracing event "trigger_example:my_event"
-[02-14-2020] 18:13:38.780010 - Tracing event "trigger_example:my_event"
-[02-14-2020] 18:13:40.780286 - Tracing event "trigger_example:my_event"
+[08-24-2020] 17:20:33.597441 - Tracing event "trigger_example:my_event"
+[08-24-2020] 17:20:35.597703 - Tracing event "trigger_example:my_event"
+[08-24-2020] 17:20:37.597997 - Tracing event "trigger_example:my_event"
+...
 ```
+
+

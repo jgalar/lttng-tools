@@ -18,9 +18,11 @@
 #include <sys/time.h>
 #include <time.h>
 
-static int print_capture(const struct lttng_event_field_value *capture,
+static int print_capture(const struct lttng_condition *condition,
+		const struct lttng_event_field_value *capture,
 		unsigned int indent_level);
-static int print_array(const struct lttng_event_field_value *array,
+static int print_array(const struct lttng_condition *condition,
+		const struct lttng_event_field_value *array,
 		unsigned int indent_level);
 
 static void indent(unsigned int indentation_level)
@@ -28,6 +30,73 @@ static void indent(unsigned int indentation_level)
 	unsigned int i;
 	for (i = 0; i < indentation_level; i++) {
 		printf(" ");
+	}
+}
+
+static
+void print_one_event_expr(const struct lttng_event_expr *event_expr)
+{
+	enum lttng_event_expr_type type;
+
+	type = lttng_event_expr_get_type(event_expr);
+
+	switch (type) {
+	case LTTNG_EVENT_EXPR_TYPE_EVENT_PAYLOAD_FIELD: {
+		const char *name;
+
+		name = lttng_event_expr_event_payload_field_get_name(event_expr);
+		printf("%s", name);
+
+		break;
+	}
+
+	case LTTNG_EVENT_EXPR_TYPE_CHANNEL_CONTEXT_FIELD: {
+		const char *name;
+
+		name = lttng_event_expr_channel_context_field_get_name(event_expr);
+		printf("$ctx.%s", name);
+
+		break;
+	}
+
+	case LTTNG_EVENT_EXPR_TYPE_APP_SPECIFIC_CONTEXT_FIELD: {
+		const char *provider_name;
+		const char *type_name;
+
+		provider_name =
+			lttng_event_expr_app_specific_context_field_get_provider_name(
+				event_expr);
+		type_name =
+			lttng_event_expr_app_specific_context_field_get_type_name(
+				event_expr);
+
+		printf("$app.%s:%s", provider_name, type_name);
+
+		break;
+	}
+
+	case LTTNG_EVENT_EXPR_TYPE_ARRAY_FIELD_ELEMENT: {
+		unsigned int index;
+		const struct lttng_event_expr *parent_expr;
+		enum lttng_event_expr_status status;
+
+		parent_expr = lttng_event_expr_array_field_element_get_parent_expr(
+			event_expr);
+		assert(parent_expr != NULL);
+
+		print_one_event_expr(parent_expr);
+
+		status = lttng_event_expr_array_field_element_get_index(
+			event_expr, &index);
+		assert(status == LTTNG_EVENT_EXPR_STATUS_OK);
+
+		printf("[%u]", index);
+
+		break;
+	}
+
+	default:
+		abort();
 	}
 }
 
@@ -57,7 +126,8 @@ static bool action_group_contains_notify(
 	return false;
 }
 
-static int print_capture(const struct lttng_event_field_value *capture,
+static int print_capture(const struct lttng_condition *condition,
+		const struct lttng_event_field_value *capture,
 		unsigned int indent_level)
 {
 	int ret = 0;
@@ -67,8 +137,6 @@ static int print_capture(const struct lttng_event_field_value *capture,
 	int64_t s_val;
 	double d_val;
 	const char *string_val = NULL;
-
-	indent(indent_level);
 
 	switch (lttng_event_field_value_get_type(capture)) {
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_UNSIGNED_INT:
@@ -81,7 +149,7 @@ static int print_capture(const struct lttng_event_field_value *capture,
 			goto end;
 		}
 
-		printf("Unsigned int: %" PRIu64, u_val);
+		printf("[Unsigned int] %" PRIu64, u_val);
 		break;
 	}
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_SIGNED_INT:
@@ -94,7 +162,7 @@ static int print_capture(const struct lttng_event_field_value *capture,
 			goto end;
 		}
 
-		printf("Signed int: %" PRId64, s_val);
+		printf("[Signed int]  %" PRId64, s_val);
 		break;
 	}
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_UNSIGNED_ENUM:
@@ -107,7 +175,7 @@ static int print_capture(const struct lttng_event_field_value *capture,
 			goto end;
 		}
 
-		printf("Unsigned enum: %" PRIu64, u_val);
+		printf("[Unsigned enum] %" PRIu64, u_val);
 		break;
 	}
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_SIGNED_ENUM:
@@ -120,7 +188,7 @@ static int print_capture(const struct lttng_event_field_value *capture,
 			goto end;
 		}
 
-		printf("Signed enum: %" PRId64, s_val);
+		printf("[Signed enum] %" PRId64, s_val);
 		break;
 	}
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_REAL:
@@ -132,7 +200,7 @@ static int print_capture(const struct lttng_event_field_value *capture,
 			goto end;
 		}
 
-		printf("Real: %lf", d_val);
+		printf("[Real] %lf", d_val);
 		break;
 	}
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_STRING:
@@ -143,12 +211,12 @@ static int print_capture(const struct lttng_event_field_value *capture,
 			goto end;
 		}
 
-		printf("String: %s", string_val);
+		printf("[String] %s", string_val);
 		break;
 	}
 	case LTTNG_EVENT_FIELD_VALUE_TYPE_ARRAY:
-		printf("Array: [\n");
-		print_array(capture, indent_level);
+		printf("[Array] [\n");
+		print_array(condition, capture, indent_level);
 		indent(indent_level);
 		printf("]\n");
 		break;
@@ -163,13 +231,13 @@ end:
 	return ret;
 }
 
-static void print_unavailabe(unsigned int indent_level)
+static void print_unavailabe(void)
 {
-	indent(indent_level);
-	printf("CAPTURE UNAVAILABE");
+	printf("Capture unavailable");
 }
 
-static int print_array(const struct lttng_event_field_value *array,
+static int print_array(const struct lttng_condition *condition,
+		const struct lttng_event_field_value *array,
 		unsigned int indent_level)
 {
 	int ret = 0;
@@ -185,22 +253,36 @@ static int print_array(const struct lttng_event_field_value *array,
 
 	for (unsigned int i = 0; i < captured_field_count; i++) {
 		const struct lttng_event_field_value *captured_field = NULL;
+		const struct lttng_event_expr *expr =
+				lttng_condition_event_rule_get_capture_descriptor_at_index(
+						condition, i);
+		assert(expr);
+
+		indent(indent_level + 1);
+
+		printf("Field: ");
+		print_one_event_expr(expr);
+		printf(" Value: ");
+
 		event_field_status =
 				lttng_event_field_value_array_get_element_at_index(
 						array, i, &captured_field);
 		if (event_field_status != LTTNG_EVENT_FIELD_VALUE_STATUS_OK) {
 			if (event_field_status ==
 					LTTNG_EVENT_FIELD_VALUE_STATUS_UNAVAILABLE) {
-				print_unavailabe(indent_level + 1);
+				print_unavailabe();
 			} else {
 				ret = 1;
 				goto end;
 			}
+		} else {
+			print_capture(condition, captured_field, indent_level + 1);
 		}
-		print_capture(captured_field, indent_level + 1);
 
 		if (i + 1 < captured_field_count) {
 			printf(",");
+		} else {
+			printf(".");
 		}
 		printf("\n");
 	}
@@ -251,7 +333,7 @@ static int print_captures(struct lttng_notification *notification)
 	}
 
 	printf("Captured field values:\n");
-	print_array(captured_field_array, 1);
+	print_array(condition, captured_field_array, 1);
 end:
 	return ret;
 }

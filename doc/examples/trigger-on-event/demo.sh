@@ -16,7 +16,7 @@ fi
 
 echo "Registering a notification trigger named \"$TRIGGER_NAME\" for the $EVENT_NAME user-space event"
 lttng add-trigger --id $TRIGGER_NAME --condition on-event --userspace $EVENT_NAME --action notify
-lttng add-trigger --id $TRIGGER_NAME_CAPTURE --condition on-event --userspace $EVENT_NAME --capture 'iteration' --capture 'does_not_exist' --action notify
+lttng add-trigger --id $TRIGGER_NAME_CAPTURE --condition on-event --userspace $EVENT_NAME --capture 'iteration' --capture 'does_not_exist' --capture '$ctx.vtid' --capture '$ctx.procname' --action notify
 
 ./notification-client $TRIGGER_NAME $TRIGGER_NAME_CAPTURE
 
