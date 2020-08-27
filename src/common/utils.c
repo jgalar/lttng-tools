@@ -1669,3 +1669,40 @@ end:
 	free(buf);
 	return ret_val;
 }
+
+LTTNG_HIDDEN
+int utils_parse_unsigned_long_long(const char *str,
+		unsigned long long *value)
+{
+	int ret;
+	char *endptr;
+
+	assert(str);
+	assert(value);
+
+	errno = 0;
+	*value = strtoull(str, &endptr, 10);
+
+	/* Conversion failed.  Out of range? */
+	if (errno != 0) {
+		ret = -1;
+		goto end;
+	}
+
+	/* Not the end of the string? */
+	if (*endptr) {
+		ret = -1;
+		goto end;
+	}
+
+	/* Empty string? */
+	if (endptr == str) {
+		ret = -1;
+		goto end;
+	}
+
+	ret = 0;
+
+end:
+	return ret;
+}
