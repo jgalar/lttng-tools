@@ -26,6 +26,8 @@
 /* Mi dependancy */
 #include <common/mi-lttng.h>
 
+#include <lttng/event-internal.h>
+
 #include "../command.h"
 
 #if (LTTNG_SYMBOL_NAME_LEN == 256)
@@ -564,7 +566,8 @@ end:
 /*
  * Maps LOG4j loglevel from string to value
  */
-static int loglevel_log4j_str_to_value(const char *inputstr)
+LTTNG_HIDDEN
+int loglevel_log4j_str_to_value(const char *inputstr)
 {
 	int i = 0;
 	char str[LTTNG_SYMBOL_NAME_LEN];
@@ -607,7 +610,8 @@ static int loglevel_log4j_str_to_value(const char *inputstr)
 /*
  * Maps JUL loglevel from string to value
  */
-static int loglevel_jul_str_to_value(const char *inputstr)
+LTTNG_HIDDEN
+int loglevel_jul_str_to_value(const char *inputstr)
 {
 	int i = 0;
 	char str[LTTNG_SYMBOL_NAME_LEN];
@@ -652,7 +656,8 @@ static int loglevel_jul_str_to_value(const char *inputstr)
 /*
  * Maps Python loglevel from string to value
  */
-static int loglevel_python_str_to_value(const char *inputstr)
+LTTNG_HIDDEN
+int loglevel_python_str_to_value(const char *inputstr)
 {
 	int i = 0;
 	char str[LTTNG_SYMBOL_NAME_LEN];
@@ -691,7 +696,7 @@ static int loglevel_python_str_to_value(const char *inputstr)
 /*
  * Maps loglevel from string to value
  */
-static
+LTTNG_HIDDEN
 int loglevel_str_to_value(const char *inputstr)
 {
 	int i = 0;
