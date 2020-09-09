@@ -218,6 +218,7 @@ struct notification_thread_state {
 	struct cds_lfht *triggers_ht;
 	struct cds_lfht *triggers_by_name_ht;
 	struct {
+		uint64_t token_generator;
 		uint64_t name_offset;
 	} trigger_id;
 	notification_client_id next_notification_client_id;

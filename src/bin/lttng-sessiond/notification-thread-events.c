@@ -2188,6 +2188,9 @@ int handle_notification_thread_command_register_trigger(
 
 	rcu_read_lock();
 
+	/* Set the trigger's tracer token */
+	lttng_trigger_set_tracer_token(trigger, state->trigger_id.token_generator);
+
 	if (lttng_trigger_get_name(trigger, &trigger_name) ==
 			LTTNG_TRIGGER_STATUS_UNSET) {
 		generate_trigger_name(state, trigger, &trigger_name);
@@ -2411,6 +2414,8 @@ int handle_notification_thread_command_register_trigger(
 		abort();
 	}
 
+	/* Increment the trigger unique id generator */
+	state->trigger_id.token_generator++;
 	*cmd_result = LTTNG_OK;
 
 error_put_client_list:

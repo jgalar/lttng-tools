@@ -28,6 +28,12 @@ struct lttng_trigger {
 	struct lttng_action *action;
 	char *name;
 	LTTNG_OPTIONAL(struct lttng_credentials) creds;
+	/*
+	 * Internal use only
+	 * The unique token passed to the tracer to identify a event-rule
+	 * notification
+	 */
+	LTTNG_OPTIONAL(uint64_t) tracer_token;
 };
 
 struct lttng_trigger_comm {
@@ -60,6 +66,13 @@ bool lttng_trigger_validate(struct lttng_trigger *trigger);
 LTTNG_HIDDEN
 int lttng_trigger_assign_name(struct lttng_trigger *dst,
 		const struct lttng_trigger *src);
+
+LTTNG_HIDDEN
+void lttng_trigger_set_tracer_token(
+		struct lttng_trigger *trigger, uint64_t token);
+
+LTTNG_HIDDEN
+uint64_t lttng_trigger_get_tracer_token(const struct lttng_trigger *trigger);
 
 LTTNG_HIDDEN
 int lttng_trigger_generate_name(struct lttng_trigger *trigger, uint64_t offset);
