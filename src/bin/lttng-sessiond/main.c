@@ -1760,6 +1760,8 @@ stop_threads:
 
 	destroy_all_sessions_and_wait();
 
+	/* Iterate on all triggers and unregister them. */
+
 	if (register_apps_thread) {
 		lttng_thread_shutdown(register_apps_thread);
 		lttng_thread_put(register_apps_thread);

@@ -4361,6 +4361,7 @@ void ust_app_clean_list(void)
 
 			app = container_of(node, struct ust_app,
 					notify_sock_n.node);
+			/* Assert that all notifiers are gone. */
 			ust_app_notify_sock_unregister(app->notify_sock);
 		}
 	}
