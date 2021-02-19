@@ -1,3 +1,5 @@
+2021-02-19 lttng-tools 2.12.4 (Friday Fish Fry Day)
+
 2021-02-19 lttng-tools 2.12.3 (Friday Fish Fry Day)
 	* Fix: ust-consumer: metadata thread not woken-up after version change
 	* Clean-up: ust-consumer: simplify metadata cache unlock on error path
